@@ -1,0 +1,41 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_reference_summary.c
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_reference_summary.c
+tests:
+  - tests/debug/test_debug_variable_child_shape.c
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 调试变量子节点与语义摘要合同
+
+本批复核18个既有单元：两个C实现的10个函数、3个非显然语句块和内部头的5个关联声明。13项已注释，5个声明无需重复注释，没有未审查项。10段完整中文Doxygen以同实体@fn选择器追加到C文件EOF，内部头只读并沿用实现合同。台账13个扁平路径旧键迁到inspect目录，另5键不变，总数不增加。
+
+child_shape为变量预览及求值结果计算named/indexed数量，并把类型、union信息、数量及ownership标签格式化为短文本。输出数量先清零；boxed union按一个variant加内部payload键计named，并提前返回；原生数组按长度计indexed，普通对象隐藏__zr_项，库容器的data/entries与原型按实际展开协议增加合成命名节点。这里不创建变量句柄，也不验证完整union编译元数据；数量规则必须与snapshot/union展开路径共同维护。
+
+对象字段查询沿Core普通对象查找而不执行用户getter。为内部键创建字符串可能分配、更新驻留表并沿Exception_Throw非局部退出；普通NULL回退不覆盖全部OOM，也不提供事务回滚。对象、值槽、原型和名字均借用，调用方在停点内维持GC有效期和对象图稳定，当前函数不加锁或新增root/pin。返回的原型名等借用视图应立即消费。
+
+语义摘要接收已有子节点计数，并不再次核实实际展开；ownership词仅显示当前标签，不证明借用仍合法或对象可跨线程。文本按字节容量尽力格式化与终止，可截断名称、UTF8或尾缀，没有单独的完整性状态。非局部退出时输出可能已清空或部分写入，不能要求原缓冲区恢复。
+
+reference_summary为变量列表、兼容标识符求值和语义事实生成来源文字。可取得帧时依次查closure捕获、当前PC活动局部槽，最后仅对zr、loadedModules和当前确有异常的error回退；没有帧仍可进行这三个内建名的回退。0帧映射1。匹配来源后立即格式化并按非空返回，即使小缓冲区导致空输出也不再尝试下一来源；TRUE仍可能表示截断文本。
+
+来源摘要只提供人类可读类别，不计算值、不执行用户代码，也不证明formal/canonical绑定或表达式可安全执行。捕获、局部名和字符串的有效期由暂停协议维持；不复制值或取得持久GC所有权。5个内部声明关联同一C文档，头文件中的其它单元不因本批引用获得完整审查信用。
+
+两个文件原286+102共388行原始字节完整保留，分别追加171和74行。有限正则核对1904个程序atom和60个字符串/字符字面量的拼写、原始行、UTF8字节列及绝对偏移一致，移除精确后缀可还原。这是有限文本证据，不声称编译器lexer或AST等价证明。24个有限支持整文件、76个EOL锚点、直接调用及snapshot/eval/协议的间接入口共同支撑合同，支持模块不据引用获得新信用。
+
+原F和I验证方案曾误写测试创建磁盘.zr夹具，两个原件保持不变并明确勘误：test_debug_variable_child_shape.c:34–46把内存source及sourceName交给Source_Compile；265–273、518–531、718–727的三个.zr名字用于sourceLabel/断点源码身份。完整831行测试无显式文件创建或删除。该勘误只改验证叙述，不改10段源码文档或18行合同，不增加信用。
+
+修改前后均在实际checkout复用既有E盘构建目录，构建zr_vm_debug_variable_child_shape_test后直接无argv运行完整EXE。三个有序用例检查per-value子节点元数据、union variant payload展开和closure捕获语义摘要，均3PASS/0FAIL/0IGNORE、退出0；stdout及stderr原字节一致，无归一化。它们不证明全部类型/形状、getter、OOM、非局部退出、Unity-longjmp清理或并发安全。
+
+每case启动127.0.0.1:0监听，由主线程客户端与一个VM线程协作；普通尾部依次join、关闭客户端、停止Agent、释放函数并销毁VM。空tearDown不保证Unity长跳转后的清理。连接和单次读取有局部期限，但发送、暂停轮询及join仍可能无限等待；build900秒/direct120秒仅为本任务watchdog。
+
+现有CTest debug_variable_child_shape有shared-host resource lock，无显式目标TIMEOUT/WORKING_DIRECTORY；本轮直接顺序运行不声称执行了CTest调度。两阶段使用最初不存在的独占cwd，预期生成文件为空，实际均未生成文件。提交后仅按字面路径和哈希删除自有临时索引及空cwd；共享构建、缓存和失败/验证证据保留OPEN。
+
+两源定义已完整审查，inventory两项由pending更新为reviewed并记录实际源码哈希。全叶742行中其余724行原字节保留，外来inventory48行85格及正常索引4个既有暂存路径保留。整叶与全局检查如有历史诊断，按修改前后原文比较，只验收本批18行，不宣称全仓完成。未新增BUG/TODO或修复程序行为。
+
+配对证据：debug-variable-display-summaries-current-native-pair-r1.json，SHA256 83b7103b95d144322660e7dc4e6b2fd4906e4613f411cd933b4c8ceaa4632c6a；源码应用：debug-variable-display-summaries-current-source-application-r1.json，SHA256 55ee7b51911f10216ebbad65170c709e2ab8c29e1d39f3c2021145e283f49fd7。

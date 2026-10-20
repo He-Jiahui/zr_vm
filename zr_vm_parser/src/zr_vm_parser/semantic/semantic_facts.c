@@ -3,6 +3,7 @@
  * @note 本层管理原生复制载荷；借用输入、内部 VM 文本的 GC 根及完整 OOM 保证分别受对应契约约束。
  */
 #include "zr_vm_parser/semantic.h"
+#include "semantic/semantic_diagnostic_evidence.h"
 
 static TZrBool semantic_facts_has_offset(const SZrFilePosition *position) {
     return position != ZR_NULL && position->offset > 0;
@@ -573,6 +574,10 @@ TZrBool ZrParser_SemanticFacts_AppendDiagnostic(
                  ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED)) {
         return ZR_FALSE;
     }
+    if (fact->diagnostic.location.ownerKey != 0U ||
+        fact->diagnostic.location.evidenceIndex != 0U) {
+        return ZrParser_SemanticDiagnosticEvidence_Append(context, fact);
+    }
     for (index = 0U; index < context->diagnosticFacts.length; index++) {
         const SZrSemanticDiagnosticFact *existing =
                 (const SZrSemanticDiagnosticFact *)ZrCore_Array_Get(
@@ -835,6 +840,7 @@ TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(
         SZrSemanticContext *context,
         const SZrReceiverGuardFact *fact) {
     SZrReceiverGuardFact copy;
+    TZrSize index;
 
     if (context == ZR_NULL || fact == ZR_NULL ||
         !context->receiverGuardFacts.isValid) {
@@ -843,17 +849,17 @@ TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(
     copy = *fact;
     ZrParser_InferredType_Copy(context->state, &copy.receiverType, &fact->receiverType);
     ZrParser_InferredType_Copy(context->state, &copy.guardedType, &fact->guardedType);
-    /* LSP type checking may infer the same access more than once. Keep one
-     * current guard per segment, including its final inferred type. */
-    for (TZrSize index = 0; index < context->receiverGuardFacts.length; index++) {
-        SZrReceiverGuardFact *existing =
+    if (fact->node != ZR_NULL) {
+        for (index = 0; index < context->receiverGuardFacts.length; index++) {
+            SZrReceiverGuardFact *existing =
                 (SZrReceiverGuardFact *)ZrCore_Array_Get(
-                        &context->receiverGuardFacts, index);
-        if (existing->node == fact->node) {
-            ZrParser_InferredType_Free(context->state, &existing->receiverType);
-            ZrParser_InferredType_Free(context->state, &existing->guardedType);
-            *existing = copy;
-            return ZR_TRUE;
+                    &context->receiverGuardFacts, index);
+            if (existing != ZR_NULL && existing->node == fact->node) {
+                ZrParser_InferredType_Free(context->state, &existing->receiverType);
+                ZrParser_InferredType_Free(context->state, &existing->guardedType);
+                *existing = copy;
+                return ZR_TRUE;
+            }
         }
     }
     ZrCore_Array_Push(context->state, &context->receiverGuardFacts, &copy);

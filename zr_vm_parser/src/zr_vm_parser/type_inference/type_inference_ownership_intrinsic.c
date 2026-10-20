@@ -73,8 +73,10 @@ static TZrUInt32 intrinsic_argument_place_id(
     }
     if (argument->type == ZR_AST_IDENTIFIER_LITERAL &&
         argument->data.identifier.name != ZR_NULL) {
-        binding = ZrParser_TypeEnvironment_FindVariableBinding(
-                cs->typeEnv, argument->data.identifier.name);
+        binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                cs->typeEnv,
+                argument->data.identifier.name,
+                argument->data.identifier.syntaxContext);
         if (binding != ZR_NULL) {
             return binding->placeId;
         }

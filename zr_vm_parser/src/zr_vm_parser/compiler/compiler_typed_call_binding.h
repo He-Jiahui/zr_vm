@@ -5,9 +5,10 @@
 #include "zr_vm_parser/type_inference.h"
 
 TZrBool compiler_resolve_typed_callable_value(SZrCompilerState *compiler,
-        SZrString *name, SZrResolvedCallSignature *signature, SZrFileRange location);
-TZrBool compiler_register_typed_callable_parameter(SZrCompilerState *compiler,
-        SZrString *name, SZrType *type);
+        SZrString *name, SZrSyntaxContext syntaxContext,
+        SZrResolvedCallSignature *signature, SZrFileRange location);
+TZrBool compiler_register_typed_callable_annotation(SZrCompilerState *compiler,
+        SZrString *name, SZrType *type, SZrSyntaxContext syntaxContext);
 void compiler_typed_call_use_generic_dispatch(SZrFunction *function, TZrUInt32 instructionIndex);
 
 #endif

@@ -822,7 +822,10 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
+        sourceSlot = find_local_var_with_context(
+                cs,
+                constructExpr->target->data.identifier.name,
+                constructExpr->target->data.identifier.syntaxContext);
         if (sourceSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs,
                                     "drop() currently only supports local identifier bindings",
@@ -864,7 +867,10 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
              shouldResetConsumedIdentifier);
 
     if (shouldUseDirectIdentifier) {
-        argumentSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
+        argumentSlot = find_local_var_with_context(
+                cs,
+                constructExpr->target->data.identifier.name,
+                constructExpr->target->data.identifier.syntaxContext);
         if (argumentSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs,
                                     "Failed to resolve ownership source binding",
@@ -903,9 +909,11 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     }
     collapse_stack_to_slot(cs, resultSlot);
     if (shouldResetConsumedIdentifier) {
-        if (!emit_null_reset_to_identifier_binding_local(cs,
-                                                         constructExpr->target->data.identifier.name,
-                                                         location)) {
+        if (!emit_null_reset_to_identifier_binding_local_with_context(
+                    cs,
+                    constructExpr->target->data.identifier.name,
+                    constructExpr->target->data.identifier.syntaxContext,
+                    location)) {
             ZrParser_Compiler_Error(cs,
                                      "Failed to reset consumed ownership source binding",
                                      location);
@@ -1243,6 +1251,15 @@ EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerStat
 TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
                                                     SZrString *name,
                                                     SZrFileRange location) {
+    return emit_null_reset_to_identifier_binding_local_with_context(
+            cs, name, ZrParser_SyntaxContext_Root(), location);
+}
+
+TZrBool emit_null_reset_to_identifier_binding_local_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrFileRange location) {
     SZrTypeValue nullValue;
     TZrUInt32 nullSlot;
     TZrUInt32 localVarIndex;
@@ -1256,7 +1273,7 @@ TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
     ZrCore_Value_ResetAsNull(&nullValue);
     emit_constant_to_slot_local(cs, nullSlot, &nullValue, location);
 
-    localVarIndex = find_local_var(cs, name);
+    localVarIndex = find_local_var_with_context(cs, name, syntaxContext);
     if (localVarIndex != ZR_PARSER_SLOT_NONE) {
         emit_instruction(cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
@@ -1266,7 +1283,7 @@ TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    closureVarIndex = find_closure_var(cs, name);
+    closureVarIndex = find_closure_var_with_context(cs, name, syntaxContext);
     if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
         SZrFunctionClosureVariable *closureVar =
                 (SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, closureVarIndex);
@@ -1958,7 +1975,8 @@ TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrComp
     }
 
     name = node->data.identifier.name;
-    localSlot = find_local_var(cs, name);
+    localSlot = find_local_var_with_context(
+            cs, name, node->data.identifier.syntaxContext);
     if (localSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
@@ -2030,7 +2048,10 @@ static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *cs, SZrAstN
     if (node->type == ZR_AST_IDENTIFIER_LITERAL &&
         node->data.identifier.name != ZR_NULL) {
         SZrInferredType sourceType;
-        TZrUInt32 sourceSlot = find_local_var(cs, node->data.identifier.name);
+        TZrUInt32 sourceSlot = find_local_var_with_context(
+                cs,
+                node->data.identifier.name,
+                node->data.identifier.syntaxContext);
         TZrBool isDirectResourceOwner = ZR_FALSE;
 
         ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);

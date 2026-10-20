@@ -68,6 +68,7 @@ SZrAstNode *parse_member_identifier(SZrParserState *ps) {
     SZrFileRange location;
     const TZrChar *name;
     SZrString *value;
+    SZrSyntaxContext syntaxContext;
 
     if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
         return ZR_NULL;
@@ -77,14 +78,16 @@ SZrAstNode *parse_member_identifier(SZrParserState *ps) {
     }
 
     location = get_current_token_location(ps);
+    syntaxContext = ps->lexer->t.syntaxContext;
     name = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
     if (name == ZR_NULL) {
         report_error(ps, "Expected member identifier");
         return ZR_NULL;
     }
-    value = ZrCore_String_Create(ps->state, (TZrNativeString)name, strlen(name));
+    value = ZrParser_Lexer_CreateString(ps->lexer, name, strlen(name));
     ZrParser_Lexer_Next(ps->lexer);
-    return create_identifier_node_with_location(ps, value, location);
+    return create_identifier_node_with_context(
+            ps, value, location, syntaxContext);
 }
 
 /* 所有权 intrinsic 仅接受一个位置实参；多参数诊断后消耗到右括号以恢复后续解析。 */
@@ -180,18 +183,17 @@ SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps) {
 
     callCloseRange = get_current_token_location(ps);
     consume_token(ps, ZR_TK_RPAREN);
-    node = create_ast_node(
-            ps,
-            ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION,
-            ZrParser_FileRange_Merge(nameRange, callCloseRange));
-    if (node == ZR_NULL) {
+    SZrFileRange intrinsicRange;
+    SZrFileRange callRange;
+    if (!ZrParser_MergeLocations(ps, nameRange, callCloseRange, &intrinsicRange) ||
+        !ZrParser_MergeLocations(ps, callOpenRange, callCloseRange, &callRange) ||
+        (node = create_ast_node(ps, ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION, intrinsicRange)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, argument);
         return ZR_NULL;
     }
     node->data.ownershipIntrinsicExpression.operation = operation;
     node->data.ownershipIntrinsicExpression.argument = argument;
     node->data.ownershipIntrinsicExpression.nameRange = nameRange;
-    node->data.ownershipIntrinsicExpression.callRange =
-            ZrParser_FileRange_Merge(callOpenRange, callCloseRange);
+    node->data.ownershipIntrinsicExpression.callRange = callRange;
     return node;
 }

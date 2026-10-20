@@ -20,6 +20,7 @@
 #define ZR_IO_MAX_BINARY_BYTES ((TZrSize)256u * 1024u * 1024u)
 #define ZR_IO_MAX_DECODE_BYTES ((TZrSize)512u * 1024u * 1024u)
 #define ZR_IO_MAX_DECODE_DEPTH 128u
+#define ZR_IO_MAX_SERIALIZED_SIZE ((TZrSize)1000000u)
 
 #include "io_bytecode_verify.h"
 
@@ -27,8 +28,9 @@ static TZrPtr io_read_array(SZrIo *io, TZrSize count, TZrSize elementSize) {
     TZrPtr result;
     TZrSize bytes;
     if (count == 0 || io->hasReadError) return ZR_NULL;
-    if (!io->boundedBinaryInput || elementSize == 0 || count > io->remained ||
-        count > io->decodeAllocationBudget / elementSize) {
+    if (!io->boundedBinaryInput || elementSize == 0 ||
+        count > ZR_IO_MAX_SERIALIZED_SIZE || count > io->remained ||
+        count > io->allocationBudgetRemaining / elementSize) {
         io->hasReadError = ZR_TRUE;
         return ZR_NULL;
     }
@@ -38,7 +40,7 @@ static TZrPtr io_read_array(SZrIo *io, TZrSize count, TZrSize elementSize) {
         io->hasReadError = ZR_TRUE;
         return ZR_NULL;
     }
-    io->decodeAllocationBudget -= bytes;
+    io->allocationBudgetRemaining -= bytes;
     ZrCore_Memory_RawSet(result, 0, bytes);
     return result;
 }
@@ -62,6 +64,8 @@ static TZrBool io_refill(SZrIo *io) {
     return ZR_TRUE;
 }
 
+static void io_validate_serialized_size(SZrIo *io, TZrSize value);
+
 static TZrInt32 io_read_char(SZrIo *io) {
     TZrByte value = 0;
     return ZrCore_Io_Read(io, &value, 1u) == 1u ? value : ZR_IO_EOF;
@@ -71,6 +75,7 @@ static TZrInt32 io_read_char(SZrIo *io) {
 static ZR_FORCE_INLINE TZrSize io_read_size(SZrIo *io) {
     TZrSize size = 0;
     ZrCore_Io_Read(io, (TZrBytePtr) &size, sizeof(size));
+    io_validate_serialized_size(io, size);
     return size;
 }
 
@@ -93,23 +98,55 @@ static ZR_FORCE_INLINE TZrUInt64 io_read_u_int(SZrIo *io) {
 }
 
 /* 两类标量读取宏均依赖 SZrIo 的粘滞错误位，由最外层统一判定截断。 */
-#define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE) do { \
-    ZrCore_Io_Read(IO, (TZrBytePtr)&(DATA), sizeof(TYPE)); \
-    if ((IO)->hasReadError) return; \
-} while (0)
+#define ZR_IO_READ_RAW(IO, VALUE, SIZE) ZrCore_Io_Read(IO, &(VALUE), SIZE);
+
+#define ZR_IO_TYPE_IS_SIZE_EZrIoMemberDeclareType 0
+#define ZR_IO_TYPE_IS_SIZE_EZrValueType 0
+#define ZR_IO_TYPE_IS_SIZE_TZrBool 0
+#define ZR_IO_TYPE_IS_SIZE_TZrInt32 0
+#define ZR_IO_TYPE_IS_SIZE_TZrMetadataToken 0
+#define ZR_IO_TYPE_IS_SIZE_TZrSize 1
+#define ZR_IO_TYPE_IS_SIZE_TZrUInt16 0
+#define ZR_IO_TYPE_IS_SIZE_TZrUInt32 0
+#define ZR_IO_TYPE_IS_SIZE_TZrUInt64 0
+#define ZR_IO_TYPE_IS_SIZE_TZrUInt8 0
+static void io_validate_serialized_size(SZrIo *io, TZrSize value) {
+    if (io != ZR_NULL && value > ZR_IO_MAX_SERIALIZED_SIZE) {
+        io->hasReadError = ZR_TRUE;
+    }
+}
+
+static TZrBool io_validate_array_count(SZrIo *io, TZrSize count, TZrSize elementSize) {
+    if (io == ZR_NULL || elementSize == 0u || count > (TZrSize)-1 / elementSize ||
+        count > ZR_IO_MAX_SERIALIZED_SIZE) {
+        if (io != ZR_NULL) {
+            io->hasReadError = ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+#define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE)                                                                        \
+    do {                                                                                                             \
+        ZrCore_Io_Read((IO), (TZrBytePtr) &(DATA), sizeof(TYPE));                                                    \
+        if (ZR_IO_TYPE_IS_SIZE_##TYPE) {                                                                             \
+            io_validate_serialized_size((IO), (TZrSize)(DATA));                                                      \
+        }                                                                                                            \
+        if ((IO)->hasReadError) return;                                                                             \
+    } while (0)
 
 
-/* The binary cursor owns a contiguous, bounded copy of the encoded input. */
+/* The binary cursor lends bounded string bytes directly to GC string creation. */
 static SZrString *io_read_string_with_length(SZrIo *io) {
     TZrSize length = io_read_size(io);
     SZrString *string;
     if (io->hasReadError || length == 0) return ZR_NULL;
     if (!io->boundedBinaryInput || length > io->remained ||
-        length > io->decodeAllocationBudget) {
+        length > io->allocationBudgetRemaining) {
         io->hasReadError = ZR_TRUE;
         return ZR_NULL;
     }
-    io->decodeAllocationBudget -= length;
+    io->allocationBudgetRemaining -= length;
     string = ZrCore_String_Create(io->state, (TZrNativeString)io->pointer, length);
     if (string == ZR_NULL) {
         io->hasReadError = ZR_TRUE;
@@ -249,11 +286,11 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
 
             ZR_IO_READ_NATIVE_TYPE(io, entryCount, TZrSize);
             if (entryCount > io->remained / sizeof(TZrUInt32) ||
-                entryCount > io->decodeAllocationBudget / (2u * sizeof(SZrTypeValue))) {
+                entryCount > io->allocationBudgetRemaining / (2u * sizeof(SZrTypeValue))) {
                 io->hasReadError = ZR_TRUE;
                 return;
             }
-            io->decodeAllocationBudget -= entryCount * (2u * sizeof(SZrTypeValue));
+            io->allocationBudgetRemaining -= entryCount * (2u * sizeof(SZrTypeValue));
             object = ZrCore_Object_New(state, ZR_NULL);
             if (object == ZR_NULL) {
                 value->object = ZR_NULL;
@@ -278,11 +315,11 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
 
             ZR_IO_READ_NATIVE_TYPE(io, elementCount, TZrSize);
             if (elementCount > io->remained / sizeof(TZrUInt32) ||
-                elementCount > io->decodeAllocationBudget / (2u * sizeof(SZrTypeValue))) {
+                elementCount > io->allocationBudgetRemaining / (2u * sizeof(SZrTypeValue))) {
                 io->hasReadError = ZR_TRUE;
                 return;
             }
-            io->decodeAllocationBudget -= elementCount * (2u * sizeof(SZrTypeValue));
+            io->allocationBudgetRemaining -= elementCount * (2u * sizeof(SZrTypeValue));
             arrayObject = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
             if (arrayObject == ZR_NULL) {
                 value->object = ZR_NULL;
@@ -323,7 +360,12 @@ static void io_read_typed_value(SZrIo *io, SZrTypeValue *value) {
 
     ZrCore_Memory_RawSet(&pureValue, 0, sizeof(pureValue));
     ZR_IO_READ_NATIVE_TYPE(io, rawType, TZrUInt32);
-    io_read_value(io, (EZrValueType)rawType, &pureValue);
+    if (rawType > (TZrUInt32)ZR_VALUE_TYPE_UNKNOWN) {
+        io->hasReadError = ZR_TRUE;
+    }
+    if (!io->hasReadError) {
+        io_read_value(io, (EZrValueType)rawType, &pureValue);
+    }
     io_init_value_from_pure(io->state, (EZrValueType)rawType, &pureValue, value);
 }
 
@@ -527,6 +569,9 @@ static void io_read_function_typed_export_generic_parameters(
     }
 
     ZR_IO_READ_NATIVE_TYPE(io, serializedCount, TZrUInt32);
+    if (serializedCount > ZR_IO_MAX_SERIALIZED_SIZE) {
+        io->hasReadError = ZR_TRUE;
+    }
     if (serializedCount == 0) {
         return;
     }
@@ -555,6 +600,9 @@ static void io_read_function_typed_export_generic_parameters(
         ZR_IO_READ_NATIVE_TYPE(io, parameter->reserved0, TZrUInt16);
         ZR_IO_READ_NATIVE_TYPE(io, parameter->requiredOwnershipQualifier, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, serializedConstraintCount, TZrUInt32);
+        if (serializedConstraintCount > ZR_IO_MAX_SERIALIZED_SIZE) {
+            io->hasReadError = ZR_TRUE;
+        }
 
         if (symbol->genericParameters != ZR_NULL && serializedConstraintCount > 0) {
             parameter->constraintTypeNames = io_read_array(io, serializedConstraintCount, sizeof(SZrString *));
@@ -1668,6 +1716,10 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->instructionsLength, TZrSize);
         // read instructions ...
+        if (function->instructionsLength > 0 &&
+            !io_validate_array_count(io, function->instructionsLength, sizeof(TZrInstruction))) {
+            return;
+        }
         if (function->instructionsLength > 0) {
             function->instructions =
                     io_read_array(io, function->instructionsLength, sizeof(TZrInstruction));
@@ -2244,7 +2296,10 @@ static void io_read_modules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
 
 SZrIo *ZrCore_Io_New(struct SZrGlobalState *global) {
     SZrIo *io = ZrCore_Memory_RawMallocWithType(global, sizeof(*io), ZR_MEMORY_NATIVE_TYPE_IO);
-    if (io != ZR_NULL) ZrCore_Memory_RawSet(io, 0, sizeof(*io));
+    if (io != ZR_NULL) {
+        ZrCore_Memory_RawSet(io, 0, sizeof(*io));
+        io->allocationBudgetRemaining = ZR_IO_MAX_DECODE_BYTES;
+    }
     return io;
 }
 
@@ -2265,7 +2320,7 @@ void ZrCore_Io_Init(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close
     io->hasReadError = ZR_FALSE;
     io->sourceVersionPatch = 0;
     io->boundedBinaryInput = ZR_FALSE;
-    io->decodeAllocationBudget = 0;
+    io->allocationBudgetRemaining = ZR_IO_MAX_DECODE_BYTES;
     io->decodeDepth = 0;
 }
 
@@ -2389,10 +2444,11 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
             bounded.pointer = bytes;
             bounded.remained = length;
             bounded.boundedBinaryInput = ZR_TRUE;
-            bounded.decodeAllocationBudget = ZR_IO_MAX_DECODE_BYTES;
+            bounded.allocationBudgetRemaining = ZR_IO_MAX_DECODE_BYTES;
             bounded.decodeDepth = 0;
             io_read_source(&bounded, source);
             io->sourceVersionPatch = bounded.sourceVersionPatch;
+            io->allocationBudgetRemaining = bounded.allocationBudgetRemaining;
             io->hasReadError = (TZrBool)(bounded.hasReadError || bounded.remained != 0);
         } else {
             io->hasReadError = ZR_TRUE;

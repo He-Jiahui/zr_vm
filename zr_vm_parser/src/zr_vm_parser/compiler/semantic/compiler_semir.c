@@ -640,7 +640,7 @@ static void semir_init_default_type_ref(SZrFunctionTypedTypeRef *typeRef) {
     }
 
     ZrCore_Memory_RawSet(typeRef, 0, sizeof(*typeRef));
-    typeRef->baseType = ZR_VALUE_TYPE_OBJECT;
+    typeRef->baseType = ZR_VALUE_TYPE_UNKNOWN;
     typeRef->elementBaseType = ZR_VALUE_TYPE_OBJECT;
     typeRef->staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
     typeRef->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;

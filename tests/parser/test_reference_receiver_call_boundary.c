@@ -179,6 +179,11 @@ static void test_top_level_const_fn_is_rejected(void) {
     SZrParserState parserState;
     SParserErrorCapture capture;
     SZrAstNode *script;
+    TZrBool rejected;
+    TZrBool hasError;
+    TZrBool hasFatalError;
+    TZrUInt32 errorCount;
+    char firstMessage[sizeof(capture.firstMessage)];
 
     memset(&capture, 0, sizeof(capture));
     ZrParser_State_Init(&parserState, g_state, source, strlen(source), sourceName);
@@ -186,10 +191,22 @@ static void test_top_level_const_fn_is_rejected(void) {
     parserState.errorCallback = capture_parser_error;
     parserState.errorUserData = &capture;
     script = ZrParser_ParseWithState(&parserState);
-    TEST_ASSERT_NULL(script);
-    TEST_ASSERT_GREATER_THAN_UINT32(0U, capture.count);
-    ZrParser_Ast_Free(g_state, script);
+    rejected = script == ZR_NULL;
+    hasError = parserState.hasError;
+    hasFatalError = parserState.hasFatalError;
+    errorCount = capture.count;
+    memcpy(firstMessage, capture.firstMessage, sizeof(firstMessage));
+    if (script != ZR_NULL) {
+        ZrParser_Ast_Free(g_state, script);
+    }
     ZrParser_State_Free(&parserState);
+
+    TEST_ASSERT_TRUE(rejected);
+    TEST_ASSERT_TRUE(hasError);
+    TEST_ASSERT_TRUE(hasFatalError);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, errorCount);
+    TEST_ASSERT_EQUAL_STRING(
+            "Expected identifier or destructuring pattern", firstMessage);
 }
 
 static void assert_receiver_decision(
@@ -886,6 +903,9 @@ static const SZrFunction *find_named_function_recursive(
     return ZR_NULL;
 }
 
+#include "test_reference_receiver_frame_contract_cases.h"
+#include "test_reference_receiver_layout_contract_support.h"
+
 static void test_readonly_struct_source_pipeline_freezes_contract_without_copy(void) {
     const TZrChar *source =
             "readonly struct Snapshot {\n"
@@ -937,6 +957,7 @@ static void test_readonly_struct_source_pipeline_freezes_contract_without_copy(v
     assert_inline_receiver_argument_is_borrowed(function);
     readFunction = find_named_function_recursive(function, "read", 0U);
     assert_readonly_receiver_parameter_is_borrowed(readFunction);
+    assert_i64_receiver_storage_layout(function, prototype, members, readFunction);
     TEST_ASSERT_EQUAL_UINT32(0U, count_non_identity_semir_value_copies(function));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
@@ -1285,5 +1306,8 @@ int main(void) {
     RUN_TEST(test_compiler_two_phase_receiver_rejects_writable_argument_call);
     RUN_TEST(test_compiler_two_phase_receiver_rejects_projected_writable_argument);
     RUN_TEST(test_compiler_readonly_receiver_rejects_writable_argument_call);
+    RUN_TEST(test_const_struct_receiver_direct_call_has_usable_inline_source);
+    RUN_TEST(test_const_struct_receiver_rejects_out_of_range_source_layout);
+    RUN_TEST(test_const_struct_receiver_rejects_callee_layout_mismatch);
     return UNITY_END();
 }

@@ -1,5 +1,20 @@
 ---
 related_code:
+  - docs/parser-and-semantics/macro-token-foundation.md
+  - docs/parser-and-semantics/comptime-aggregate-reservation.md
+  - docs/parser-and-semantics/comptime-definition-environment.md
+  - docs/parser-and-semantics/lambda-semantic-ir-isolation.md
+  - docs/parser-and-semantics/diagnostic-message-catalog.md
+  - docs/parser-and-semantics/comptime-import-alias-environment.md
+  - docs/parser-and-semantics/named-finally-completion.md
+  - docs/parser-and-semantics/macro-generic-type-identity.md
+  - docs/parser-and-semantics/macro-compiler-prototype-lookup.md
+  - docs/parser-and-semantics/macro-receiver-member-identity.md
+  - docs/parser-and-semantics/macro-base-relation-publication.md
+  - docs/parser-and-semantics/macro-field-result-identity.md
+  - docs/parser-and-semantics/function-type-conversion-ownership.md
+  - docs/parser-and-semantics/type-prototype-metadata-ownership.md
+  - docs/parser-and-semantics/open-array-annotation.md
   - docs/parser-and-semantics/ssa-source-module-contract.md
   - docs/parser-and-semantics/ssa-host-aot-target.md
   - docs/parser-and-semantics/template-literal-source-range.md
@@ -604,7 +619,7 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - descriptor-plugin receiver type member fact优先于通用import-chain解释
   - compact synthetic member coordinates仅由descriptor `sourceKind`显式投影
   - completion、definition、references和documentHighlight消费同一member identity
-- `union-types.md`
+- [Union types](union-types.md)
   - Rust-like `union` 声明、unit/tuple/struct variant AST 和泛型声明解析
   - `Shape.Circle(...)` / `Option<int>.Some(...)` 构造器解析、类型推断和 object carrier lowering
   - LSP type prototype / symbol 支持，以及后续 pattern matching、tagged layout、owner drop 分派边界
@@ -696,3 +711,45 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - Actual source CONSTANT/plain NOP/RETURN descriptor to caller-owned C/LLVM text buffers
   - Primitive/frame/state/source records preserved; genuine RED and failed r1/r2 retained; finite r3 five-suite GREEN
   - [Acceptance](../acceptance/ssa-source-aot-scalar-text.md) and [test guide](../../tests/acceptance/ssa-source-aot-scalar-text.md)
+
+## Macro Foundation
+
+- [Token foundation](macro-token-foundation.md): TokenStream, source spans,
+  SyntaxContext, resource budgets and comptime control flow; M1 remains active.
+- [Aggregate reservation](comptime-aggregate-reservation.md): paired pre-allocation
+  budgets, canonical rejection and cumulative successful-work accounting.
+- [Definition environment](comptime-definition-environment.md): locked provider
+  ownership, caller arguments, callee defaults and lexical frame isolation.
+- [Lambda semantic isolation](lambda-semantic-ir-isolation.md): callable-owned
+  semantic facts, actual parent slot identity and complete failure restoration.
+- [Diagnostic message catalog](diagnostic-message-catalog.md): descriptor keys,
+  informational optimization reasons, complete text coverage and locale fallback.
+- [Import alias environment](comptime-import-alias-environment.md): owner imports,
+  local receivers, cross-owner callbacks and fixture cleanup.
+- [Named finally completion](named-finally-completion.md): live return-value
+  ownership, pending cleanup state and ordinary source validation boundaries.
+- [Generic identity](macro-generic-type-identity.md): source declaration ownership,
+  specialization keys, const argument owners and typed-target handoff.
+- [Compiler prototype lookup](macro-compiler-prototype-lookup.md): Root visibility,
+  explicit structured aliases, imported metadata and consumer precedence.
+- [Receiver member identity](macro-receiver-member-identity.md): structured field
+  and method lookup, shared overload resolution and prototype growth.
+- [Base relation publication](macro-base-relation-publication.md): real class
+  producers, annotation context and exact semantic hierarchy targets.
+- [Field result identity](macro-field-result-identity.md): genuine field producer
+  metadata, closed substitution, value projection and failure ownership.
+- [Function type ownership](function-type-conversion-ownership.md): shared
+  signature conversion, return failure cleanup and isolated allocator checks.
+- [Open array annotations](open-array-annotation.md): const-parameter extent
+  conversion, concrete-value precedence and field capture compatibility.
+- [Prototype metadata ownership](type-prototype-metadata-ownership.md): pending,
+  unpublished and published member buffers, source rejection and recovery.
+- [Validation ledger](../testing-and-validation/macro-foundation-validation.md):
+  immutable native evidence and open cross-platform acceptance gates.
+- [Receiver guard facts](semantic-receiver-guard-facts.md): same-node publication,
+  independent nodes, owned type payloads and strict source-aware queries.
+- [Ownership release evidence](ownership-flow-release-evidence.md): rejected weak
+  arguments, owner-set causes, using metadata and immutable native failures.
+- [Callable parameter identity](callable-parameter-semantic-identity.md): real
+  parameter places, receiver ranges, slot isolation and fail-closed consumers.
+- [Primary expression source ranges](primary-expression-source-ranges.md): postfix parent spans, parse-only RED-to-GREEN evidence, and unchanged child identities.

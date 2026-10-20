@@ -238,22 +238,6 @@ static void type_inference_record_primary_call_info(SZrCompilerState *cs,
     fact->argumentCount = call->args != ZR_NULL ? call->args->count : 0;
     fact->hasNamedArguments = call->hasNamedArgs;
     fact->isMemberCall = isMemberCall;
-    if (callNode->location.end.offset > fact->range.end.offset) {
-        fact->range.end = callNode->location.end;
-    }
-    if (call->args != ZR_NULL && call->args->count > 0u) {
-        SZrAstNode *lastArgument = call->args->nodes[call->args->count - 1u];
-        if (lastArgument != ZR_NULL && lastArgument->location.end.offset > fact->range.end.offset) {
-            fact->range.end = lastArgument->location.end;
-        }
-    } else if (call->genericArguments != ZR_NULL && call->genericArguments->count > 0u) {
-        SZrAstNode *lastGenericArgument =
-                call->genericArguments->nodes[call->genericArguments->count - 1u];
-        if (lastGenericArgument != ZR_NULL &&
-            lastGenericArgument->location.end.offset > fact->range.end.offset) {
-            fact->range.end = lastGenericArgument->location.end;
-        }
-    }
 }
 
 static void type_inference_record_primary_member_info(const SZrPrimaryExpression *primary,

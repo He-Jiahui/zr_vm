@@ -9,12 +9,8 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_library/native_registry.h"
 
-/* BUG: 后续把此数组强转成 ZrLibGenericParameterDescriptor*；额外的 constraintTypeNames 指针改变元素步长，
- * 两个及以上泛型参数时 VM 按 descriptor 步长读取第二项会落到首项 storage 尾部。 */
-typedef struct ZrRustBindingNativeGenericParameterStorage {
-    ZrLibGenericParameterDescriptor descriptor;
-    TZrChar **constraintTypeNames;
-} ZrRustBindingNativeGenericParameterStorage;
+/* Keep the public descriptors contiguous: consumers advance by this exact ABI stride. */
+typedef ZrLibGenericParameterDescriptor ZrRustBindingNativeGenericParameterStorage;
 
 typedef struct ZrRustBindingNativeCallbackStorage {
     FZrRustBindingNativeCallback callback;
@@ -909,10 +905,10 @@ static void zr_rust_binding_free_generic_parameter_array(
     }
 
     for (index = 0; index < genericParameterCount; index++) {
-        free((TZrChar *)genericParameters[index].descriptor.name);
-        free((TZrChar *)genericParameters[index].descriptor.documentation);
-        zr_rust_binding_free_string_array(genericParameters[index].constraintTypeNames,
-                                          genericParameters[index].descriptor.constraintTypeCount);
+        free((TZrChar *)genericParameters[index].name);
+        free((TZrChar *)genericParameters[index].documentation);
+        zr_rust_binding_free_string_array((TZrChar **)genericParameters[index].constraintTypeNames,
+                                          genericParameters[index].constraintTypeCount);
     }
     free(genericParameters);
 }
@@ -1488,12 +1484,12 @@ static TZrBool zr_rust_binding_copy_generic_parameter_array(
     }
 
     for (index = 0; index < count; index++) {
-        genericParameters[index].descriptor.name = zr_rust_binding_dup_optional_string(source[index].name);
-        genericParameters[index].descriptor.documentation =
+        genericParameters[index].name = zr_rust_binding_dup_optional_string(source[index].name);
+        genericParameters[index].documentation =
                 zr_rust_binding_dup_optional_string(source[index].documentation);
-        genericParameters[index].descriptor.constraintTypeCount = source[index].constraintTypeCount;
-        if ((source[index].name != ZR_NULL && genericParameters[index].descriptor.name == ZR_NULL) ||
-            (source[index].documentation != ZR_NULL && genericParameters[index].descriptor.documentation == ZR_NULL)) {
+        genericParameters[index].constraintTypeCount = source[index].constraintTypeCount;
+        if ((source[index].name != ZR_NULL && genericParameters[index].name == ZR_NULL) ||
+            (source[index].documentation != ZR_NULL && genericParameters[index].documentation == ZR_NULL)) {
             zr_rust_binding_free_generic_parameter_array(genericParameters, count);
             return ZR_FALSE;
         }
@@ -1504,24 +1500,26 @@ static TZrBool zr_rust_binding_copy_generic_parameter_array(
                 return ZR_FALSE;
             }
 
-            genericParameters[index].constraintTypeNames =
+            TZrChar **constraintTypeNames =
                     (TZrChar **)calloc(source[index].constraintTypeCount, sizeof(TZrChar *));
-            if (genericParameters[index].constraintTypeNames == ZR_NULL) {
+            if (constraintTypeNames == ZR_NULL) {
                 zr_rust_binding_free_generic_parameter_array(genericParameters, count);
                 return ZR_FALSE;
             }
 
             for (constraintIndex = 0; constraintIndex < source[index].constraintTypeCount; constraintIndex++) {
-                genericParameters[index].constraintTypeNames[constraintIndex] =
+                constraintTypeNames[constraintIndex] =
                         zr_rust_binding_dup_optional_string(source[index].constraintTypeNames[constraintIndex]);
                 if (source[index].constraintTypeNames[constraintIndex] != ZR_NULL &&
-                    genericParameters[index].constraintTypeNames[constraintIndex] == ZR_NULL) {
+                    constraintTypeNames[constraintIndex] == ZR_NULL) {
+                    genericParameters[index].constraintTypeNames =
+                            (const TZrChar *const *)constraintTypeNames;
                     zr_rust_binding_free_generic_parameter_array(genericParameters, count);
                     return ZR_FALSE;
                 }
             }
-            genericParameters[index].descriptor.constraintTypeNames =
-                    (const TZrChar *const *)genericParameters[index].constraintTypeNames;
+            genericParameters[index].constraintTypeNames =
+                    (const TZrChar *const *)constraintTypeNames;
         }
     }
 

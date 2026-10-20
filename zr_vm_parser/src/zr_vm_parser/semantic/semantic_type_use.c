@@ -22,7 +22,7 @@ static TZrBool type_use_reference_range(
     } else if (node->type == ZR_AST_GENERIC_TYPE &&
                node->data.genericType.name != ZR_NULL) {
         *name = node->data.genericType.name->name;
-        *range = node->data.genericType.wholeRange;
+        *range = ZrParser_FileRange_WithoutEvidence(node->data.genericType.wholeRange);
         length = *name != ZR_NULL ? ZrCore_String_GetByteLength(*name) : 0U;
         if (range->source == ZR_NULL || node->location.source == ZR_NULL ||
             !ZrCore_String_Equal(range->source, node->location.source) ||

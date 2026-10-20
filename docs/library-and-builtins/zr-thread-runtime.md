@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
   - CMakeLists.txt
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_lib_thread/include/zr_vm_lib_thread/runtime.h
@@ -11,6 +12,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/global.c
   - zr_vm_core/src/zr_vm_core/execution/execution_memory.c
 implementation_files:
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_isolated_domain.c
@@ -121,23 +123,23 @@ policy or partly updated quota while these C APIs still return true.
 
 AttachedDomain worker 使用 caller GC 域中的独立 state；IsolatedDomain 新建 GlobalState/GcDomain，
 捕获与结果走 Send 及跨域复制预算。策略及 quota 都在 scheduler 构造时快照，已有实例不追溯修改。
-具体入口为 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215`、`:1228`、`:1259`、`:1266`，
+具体入口为 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1271`、`:1284`、`:1315`、`:1322`，
 提交端 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_isolated_domain.c:823` 消费实例预算。
 
 BUG: 配置与 shutdown marker 都经 void object 字段 setter；对象 ignore 注册扩容、字段 key 创建/固定或
 对象字段分配失败可静默返回，外层仍报告 true。此处是静态可达链，没有故障注入或运行时复现信用。
 前提是 global/mainThreadState/根对象合法，且 shutdown 字段原先缺失或 false。停止路径
-`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:359` 写 marker 后，`:360` 只处理已登记 runtime 的 pending 队列。
+`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:415` 写 marker 后，`:416` 只处理已登记 runtime 的 pending 队列。
 真实宿主用例 `tests/thread/test_thread_runtime.c:928` 至 `:947` 在停止后新建 scheduler；构造器
-`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215` 至 `:1240` 消费配置，后续公开 schedule
-经 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1259` 至 `:1264` 选择隔离后端，
+`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1271` 至 `:1296` 消费配置，后续公开 schedule
+经 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1315` 至 `:1320` 选择隔离后端，
 `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_isolated_domain.c:829` 至 `:839` 仍读取旧 false 时放行，
 `:902` 至 `:912` 继续排队/派发并可启动新隔离域；成功写 true 时同一检查会 fault 已准备的 job。
 核查低层入口为 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385`、`:1393`、`:1400`，
 以及 `zr_vm_core/src/zr_vm_core/object/object.c:1855`、`:1863` 的最终字段存储失败。
 
-成功 completion 的诊断写入在 `runtime.c:565`、`:586`，读取在 `runtime.c:390` 至 `:411`；
-Shutdown 或新建实例不会自动清除旧记录。TODO: id/generation 两个字段分别写入，需沿 `runtime.c:287`
+成功 completion 的诊断写入在 `runtime.c:621`、`:642`，读取在 `runtime.c:446` 至 `:467`；
+Shutdown 或新建实例不会自动清除旧记录。TODO: id/generation 两个字段分别写入，需沿 `runtime.c:343`
 核对部分写失败及未来 generation 重用契约；当前新 worker 的 `gc_domain.c:183` 固定 generation=1，
 本轮不宣称已经证明混合身份。身份副本不是 GC root、活动 handle 或停止完成证明。
 
@@ -150,3 +152,32 @@ TODO: runtime-head 的 void 登记写失败可能使本次 pending 遍历遗漏�
 以及 `:676` 的根链读取如何处理未登记 runtime 的队列。本轮仅记录该核查入口。
 
 本节只覆盖公开头部的 11 个单元；runtime.c 的完整单元、文档格式和整个 thread 模块仍待独立重核。
+
+## 内部 callback 借用与结果交接
+
+runtime_internal.h 为跨 Thread 编译单元的内部接口保存参数、返回及生命周期契约；
+runtime.c 的定义只补非显然限制或关联说明。本阶段覆盖请求类型、三个成员、
+Self 适配、结果标签选择、对象结果交接、字段写入四个 helper，以及三个内部声明，
+共 11 条正式记录（5 条返工、6 条新增字段/声明）；两个源码文件和整个模块仍为 pending。
+
+| 单元 | 对调用链的职责 | 调用限制 |
+| --- | --- | --- |
+| ZrVmTaskExecuteRequest | 在同步 TryRun 的 void callback 和旧执行链之间交付 CallValue 结果及单次 bool。 | 栈本地请求不能逃逸；TryRun 状态、completed 与 VM threadStatus 分别判断。 |
+| zr_vm_task_self_object | 为 ThreadScheduler、Channel 和 wrapper callback 借用 Self 对象。 | NULL context 安全返回 NULL；标签筛选不验证业务包装类型，返回指针没有独立根。 |
+| zr_vm_task_value_type_for_object | 统一对象/数组的 callback 结果标签。 | 只投影 internalType；唯一 caller 已拒绝 NULL，对象有效性留在调用方。 |
+| zr_vm_task_finish_object | 将有效对象 raw 初始化进 callback 输出槽。 | 不 Copy、retain 或建立 root；true 不证明业务字段成功，旧槽管理和对象保活由调用链承担。 |
+| zr_vm_task_set_value_field | 统一 Thread 状态、队列和包装对象的 Native 字段写入约定。 | void 不报告成功；正常返回不保证字段已保存，不提供多字段事务或回滚。 |
+
+TODO: ZrVmTaskExecuteRequest 所在 create/pump/wait 旧链尚未找到公开 descriptor 的入口；
+沿 zr_vm_task_create_async_handle、zr_vm_task_scheduler_pump_internal 和
+zr_vm_task_wait_for_handle 继续核对保留意图。公开 ThreadScheduler.schedule 将
+canonical Job 委派到 attached/isolated 后端，不能作为旧请求的生产调用点。
+
+TODO: 旧链借用 callable 字段后先写状态字段，才进入 CallValue；需核对这一阶段的
+字段地址和对象保活保证。CallValue 在入口已复制 stableCallable，后续 VM 栈复制
+不是首次读取。若旧链预期可达且结果带 ownership metadata，继续核对将结果复制到
+handle 或用于 fault fallback 后的临时槽释放与保活责任。以上疑点不记作已证 BUG。
+
+本阶段的验证范围为实际 checkout 的两个 native Windows C11 编译单元
+runtime.c、runtime_wrappers.c（后者包含内部声明），并比较前后依赖。
+未运行 Thread 测试、故障注入或旧链运行复现，编译证据不代表完整模块验收。

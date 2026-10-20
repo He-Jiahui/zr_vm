@@ -6,6 +6,9 @@
 #define ZR_VM_PARSER_LEXER_H
 
 #include "zr_vm_parser/conf.h"
+#include "zr_vm_parser/syntax_context.h"
+#include "zr_vm_parser/token_span.h"
+#include "zr_vm_parser/location.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/state.h"
 
@@ -131,8 +134,23 @@ enum EZrToken {
 
 typedef enum EZrToken EZrToken;
 
+typedef struct SZrTokenStream SZrTokenStream;
+typedef struct SZrAstOwnership SZrAstOwnership;
+
+/* A compound punctuation token can be assembled from leaves that do not share
+ * a source buffer or hygiene context.  Keep each leaf's origin alongside the
+ * compatibility token span/context below. */
+typedef struct SZrTokenPunctPiece {
+    SZrTokenSpan span;
+    SZrSyntaxContext syntaxContext;
+    const TZrChar *rawText;
+    TZrSize rawLength;
+    TZrUInt32 nativeOrdinal;
+    TZrUInt32 evidenceIndex;
+} SZrTokenPunctPiece;
+
 /** @brief 当前 token 的值载荷；仅与 token 种类对应的字段有效。
- * @note stringValue 由 VM 字符串系统持有，词法状态释放时不单独释放。 */
+ * @note Parsed string payloads are rooted by the lexer/AST shared owner. */
 typedef struct TZrSemInfo {
     TZrBool booleanValue;
     TZrInt64 intValue;
@@ -147,6 +165,15 @@ typedef struct SZrToken {
     TZrSemInfo seminfo;
     TZrBool hasLexError;
     const TZrChar *lexErrorMessage;
+    const TZrChar *rawText;
+    TZrSize rawLength;
+    SZrTokenSpan span;
+    SZrSyntaxContext syntaxContext;
+    TZrSize punctPieceCount;
+    SZrTokenPunctPiece punctPieces[3];
+    TZrUInt32 firstNativeOrdinal;
+    TZrUInt32 lastNativeOrdinal;
+    TZrUInt32 evidenceIndex;
 } SZrToken;
 
 /** @brief 顺序扫描与一 token 前瞻的游标。
@@ -185,6 +212,21 @@ typedef struct SZrLexState {
     TZrChar *buffer;
     TZrSize bufferSize;
     TZrSize bufferLength;
+    /* Native token bytes borrow this retained input; AST nodes independently
+     * retain their shared ownership after Lexer_Free. */
+    SZrTokenStream *tokenStream;
+    TZrPtr tokenSourceState;
+    TZrBool hasLookahead;
+    TZrBool hasSplitPending;
+    SZrToken splitPending;
+    SZrAstOwnership *ownership;
+    TZrBool sharesOwnership;
+    SZrSyntaxContext textSyntaxContext;
+    SZrTokenSpan inheritedSpan;
+    TZrBool hasInheritedSpan;
+    SZrFileRange inheritedLocation;
+    TZrBool hasInheritedLocation;
+    TZrBool hasSourceEvidenceError;
 } SZrLexState;
 
 /** @brief 绑定源文本、分配扫描缓冲并预读第一个 token。
@@ -192,7 +234,16 @@ typedef struct SZrLexState {
  * @note 函数没有失败返回值，调用方不能仅靠其结果判断缓冲分配是否成功。 */
 ZR_PARSER_API void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
-/** @brief 释放 Init 创建的扫描缓冲；不释放源文本、源名或 VM 字符串。 */
+/** @brief Bind a retained native token stream without displaying or re-lexing it. */
+ZR_PARSER_API void ZrParser_Lexer_InitTokenStream(
+        SZrLexState *ls,
+        SZrState *state,
+        const SZrTokenStream *stream,
+        SZrString *sourceName);
+
+/** @brief Release cursor storage and its independent VM string roots.
+ * Source bytes remain borrowed. Returned AST nodes retain shared ownership of
+ * sourceName and token strings until their last node is destroyed. */
 ZR_PARSER_API void ZrParser_Lexer_Free(SZrLexState *ls);
 
 /** @brief 消费当前 token 并更新 t；若已前瞻则消费缓存及其游标快照。 */
@@ -201,6 +252,12 @@ ZR_PARSER_API void ZrParser_Lexer_Next(SZrLexState *ls);
 /** @brief 扫描并缓存下一个 token，返回其种类而保持当前 t 与游标不变。
  * @note 前瞻可能分配 VM 字符串，也可能触发词法诊断。 */
 ZR_PARSER_API EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls);
+
+/** @brief Split a compound punctuation token into its first punctuation and a
+ * pending second token, preserving each byte span and syntax context. */
+ZR_PARSER_API TZrBool ZrParser_Lexer_SplitCurrentPunct(
+        SZrLexState *ls,
+        TZrChar firstPunct);
 
 /** @brief Record the current token's first lexical error without writing output.
  * @note msg is borrowed until the token is no longer used. The parser or

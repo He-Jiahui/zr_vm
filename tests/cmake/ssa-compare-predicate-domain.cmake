@@ -18,7 +18,7 @@ if (NOT TARGET zr_vm_ssa_compare_predicate_domain_test)
             "${_zr_compare_core_dir}/exec_ir/exec_ir_deopt_aggregate.c"
             "${_zr_compare_core_dir}/exec_ir/exec_ir_state_map_storage.c"
             "${_zr_compare_core_dir}/exec_ir/exec_ir_owner_state.c"
-            "${_zr_compare_core_dir}/runtime/execution_contract.c"
+            "${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c"
             "${_zr_compare_core_dir}/exec_ir/exec_ir_interpreter.c"
             "${_zr_compare_core_dir}/exec_ir/exec_ir_interpreter_validate.c"
             "${_zr_compare_core_dir}/exec_ir/exec_ir_interpreter_run.c"

@@ -1,5 +1,6 @@
 #include "compiler/metadata/compiler_metadata_type_ref.h"
 #include "compiler/metadata/compiler_metadata_signature.h"
+#include "compiler/compiler_type_value_alias.h"
 #include "compiler/module_init_analysis.h"
 #include "type_inference/type_inference_internal.h"
 
@@ -208,19 +209,10 @@ TZrBool compiler_metadata_type_ref_split_module_qualified_type(SZrCompilerState 
 
 /* 只返回名称匹配且确实改写为另一类型名的 value alias，跳过自指绑定。 */
 static SZrTypeBinding *metadata_type_ref_find_type_alias(SZrCompilerState *cs, SZrString *aliasName) {
-    if (cs == ZR_NULL || aliasName == ZR_NULL || !cs->typeValueAliases.isValid) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL &&
-            binding->name != ZR_NULL &&
-            binding->type.typeName != ZR_NULL &&
-            ZrCore_String_Equal(binding->name, aliasName) &&
-            !ZrCore_String_Equal(binding->type.typeName, aliasName)) {
-            return binding;
-        }
+    SZrTypeBinding *binding = compiler_find_type_value_alias(cs, aliasName, ZrParser_SyntaxContext_Root());
+    if (binding != ZR_NULL && binding->type.typeName != ZR_NULL &&
+        !ZrCore_String_Equal(binding->type.typeName, aliasName)) {
+        return binding;
     }
 
     return ZR_NULL;

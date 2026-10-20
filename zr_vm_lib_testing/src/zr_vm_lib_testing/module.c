@@ -37,7 +37,7 @@ const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void) {
  * TaskRuntime_RegisterBuiltins自身已按需Attach，后续Attach可以复用registry；显式保留顺序供直接C宿主调用。
  * 短路不回滚前序task/registry登记；CLI初始化失败会释放整个新global，直接调用者须管理原global的残留状态。
  * 注册与模块消费分离；宿主在成功后另设TEST phase，不在此执行action或创建Task实例。
- * TODO: bool短路不捕获依赖内部异常或初始化缺陷；沿zr_vm_library/src/zr_vm_library/native_binding/native_binding.c:109 的既有Array_Init失败问题核查OOM传播。
+ * Attach 使用三次 TryInit，并在普通失败时释放未发布的数组和registry；bool短路不回滚已成功的task登记，也不捕获后续Throw。
  * TODO: tests/testing/test_assertions.c:25 的helper在Register false时先触发TEST_ASSERT跳出，未先Destroy；沿测试失败清理入口补核。
  *
  * ## References
@@ -64,14 +64,14 @@ TZrBool ZrVmLibTesting_Register(SZrGlobalState *global) {
  * 仅在定义ZR_LIBRARY_TYPE_SHARED时编译；当前CommonMacros共享目标将其定义为1，静态目标不定义它。
  * TODO: 自定义SHARED=0仍通过defined guard，但ZR_API导出条件按数值判断；沿自定义配置和Windows符号表核查是否需统一门禁。
  * 调用此入口不注册zr.task或切TEST phase；插件宿主须独立满足链接解析与消费phase。
- * BUG: 上游loader先登记借用descriptor再复制handle归属字符串；复制失败关闭DLL但未撤回module record，留下悬空借用。
- * 入口 zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:438 与 zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:462 已记录此加载层错误；本getter不修复它，未做运行时故障注入。
+ * loader先复制handle归属字符串并入表，再登记借用descriptor；复制/入表/登记失败均走对应释放分支，不沿用旧悬空登记前提。
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:315 至 zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:356 给出复制、入表、登记及失败撤销的顺序。
  * TODO: invalidation按module ownerRefCount门禁却未清closure绑定；沿保留export闭包后释放module再invalidate的路径核查DLL消费寿命。
- * 继续从 zr_vm_library/src/zr_vm_library/native_binding/native_binding.c:647、zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:186 及LSP调用 zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c:1402 核查。
+ * 继续从 zr_vm_library/src/zr_vm_library/native_binding/native_binding.c:603、zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:187 和 zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:694 核查模块持有、闭包借用与卸载顺序。
  *
  * ## References
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:370 查符号，zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:383 实际调用，zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:396/zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:410 校验；
- * zr_vm_common/CommonMacros.cmake:40 共享定义和 zr_vm_common/include/zr_vm_common/zr_api_conf.h:14 导出条件。
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:239 查符号、zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:252 调用、zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:265 校验ABI；
+ * zr_vm_common/CommonMacros.cmake:43 共享定义和 zr_vm_common/include/zr_vm_common/zr_api_conf.h:14 导出条件。
  */
 const ZrLibModuleDescriptor *ZrVm_GetNativeModule_v1(void) {
     return ZrVmLibTesting_GetModuleDescriptor();

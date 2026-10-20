@@ -14,6 +14,7 @@
 #include "type_inference_reflection_surface.h"
 #include "type_inference_semantic_facts.h"
 #include "type_inference_call_diagnostics.h"
+#include "type_inference_nominal_member.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -2201,7 +2202,10 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
                     cs, memberInfo->fieldTypeName, result);
         case ZR_AST_STRUCT_FIELD:
         case ZR_AST_CLASS_FIELD:
-            if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {
+            if (memberInfo->hasStructuredReturnType) {
+                ZrParser_InferredType_Copy(
+                        cs->state, result, &memberInfo->structuredReturnType);
+            } else if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {
                 return ZR_FALSE;
             }
             result->ownershipQualifier = memberInfo->ownershipQualifier;
@@ -4202,8 +4206,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 }
 
                 if (nextIsFunctionCall) {
-                    if (!find_compiler_type_member_call_inference(cs,
-                                                                  currentType.typeName,
+                    if (!type_inference_find_receiver_member_call(cs,
+                                                                  &currentType,
                                                                   memberLookupName,
                                                                   &members->nodes[i + 1]->data.functionCall,
                                                                   members->nodes[i + 1]->location,
@@ -4212,7 +4216,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                         return ZR_FALSE;
                     }
                 } else {
-                    memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                    memberInfo = type_inference_find_receiver_member(cs, &currentType, memberLookupName);
                 }
                 if (memberInfo == ZR_NULL) {
                     if (currentType.typeName != ZR_NULL &&
@@ -4226,8 +4230,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     }
                     type_inference_ensure_imported_module_runtime_metadata(cs, currentType.typeName);
                     if (nextIsFunctionCall) {
-                        if (!find_compiler_type_member_call_inference(cs,
-                                                                      currentType.typeName,
+                        if (!type_inference_find_receiver_member_call(cs,
+                                                                      &currentType,
                                                                       memberLookupName,
                                                                       &members->nodes[i + 1]->data.functionCall,
                                                                       members->nodes[i + 1]->location,
@@ -4236,7 +4240,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             return ZR_FALSE;
                         }
                     } else {
-                        memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                        memberInfo = type_inference_find_receiver_member(cs, &currentType, memberLookupName);
                     }
                 }
                 if (memberInfo == ZR_NULL) {

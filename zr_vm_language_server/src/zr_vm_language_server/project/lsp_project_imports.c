@@ -54,6 +54,7 @@ static SZrFileRange normalize_import_module_path_location(SZrFileRange range, TZ
         return range;
     }
 
+    range = ZrParser_FileRange_WithoutEvidence(range);
     if (range.end.column > (TZrInt32)(moduleNameLength + 2)) {
         range.start.column = range.end.column - (TZrInt32)moduleNameLength - 2;
         if (range.start.column < 1) {
@@ -83,6 +84,7 @@ static SZrFileRange normalize_zero_width_identifier_location(SZrFileRange range,
         return range;
     }
 
+    range = ZrParser_FileRange_WithoutEvidence(range);
     if (range.start.offset >= length) {
         range.start.offset -= length;
     }

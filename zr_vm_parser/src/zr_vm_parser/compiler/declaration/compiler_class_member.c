@@ -3,6 +3,8 @@
 //
 
 #include "compiler/compiler_internal.h"
+#include "compiler/compiler_child_function_relocation.h"
+#include "compiler/compiler_function_parameters.h"
 #include "compiler/compiler_typed_call_binding.h"
 #include "type_inference/type_inference_semantic_facts.h"
 
@@ -401,6 +403,9 @@ static SZrFunction *compile_type_member_function(
     SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
     SZrTypeValue *savedParentConstants = ZR_NULL;
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
+    SZrCompilerArraySnapshot savedParentLocalBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentClosureBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentChildFunctionBindingIdentities = {0};
     SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
     SZrCompilerCallableTypeScope callableTypeScope = {0};
     TZrBool hasSemanticIrIsolation = ZR_FALSE;
@@ -474,6 +479,37 @@ static SZrFunction *compile_type_member_function(
         memcpy(savedParentClosureVars, cs->closureVars.head, savedParentClosureVarsSize);
     }
 
+    if (!compiler_capture_array_snapshot(
+                cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs,
+                &cs->childFunctionBindingIdentities,
+                &savedParentChildFunctionBindingIdentities)) {
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
+        if (savedParentInstructions != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        ZrParser_Compiler_Error(cs, "Failed to backup parent binding identities for class member compilation", node->location);
+        return ZR_NULL;
+    }
+
     oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
 
     cs->isInConstructor = isConstructor ? ZR_TRUE : ZR_FALSE;
@@ -500,6 +536,9 @@ static SZrFunction *compile_type_member_function(
         cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
         compiler_end_constructor_const_field_tracking(cs);
         compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
         return ZR_NULL;
     }
 
@@ -512,10 +551,13 @@ static SZrFunction *compile_type_member_function(
     cs->closureVarCount = 0;
     cs->instructions.length = 0;
     cs->localVars.length = 0;
+    cs->localBindingIdentities.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->closureBindingIdentities.length = 0;
     cs->childFunctions.length = 0;
     cs->childFunctionNameMap.length = 0;
+    cs->childFunctionBindingIdentities.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
@@ -542,7 +584,7 @@ static SZrFunction *compile_type_member_function(
                 get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(node));
         SZrString *thisName = ZrCore_String_CreateFromNative(cs->state, "this");
         if (thisName != ZR_NULL) {
-            allocate_local_var(cs, thisName);
+            TZrUInt32 thisSlot = allocate_local_var(cs, thisName);
             parameterCount++;
             if (cs->typeEnv != ZR_NULL) {
                 SZrInferredType thisType;
@@ -555,8 +597,16 @@ static SZrFunction *compile_type_member_function(
                 thisType.ownershipQualifier = thisOwnershipQualifier;
                 thisType.isReadonlyView =
                         receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
+                TZrBool registered = ZrParser_TypeEnvironment_RegisterVariable(
+                        cs->state, cs->typeEnv, thisName, &thisType);
                 ZrParser_InferredType_Free(cs->state, &thisType);
+                if (!registered ||
+                    compiler_register_parameter_semantic_identity(
+                            cs, thisName, ZrParser_SyntaxContext_Root(),
+                            thisSlot, node->location) == ZR_COMPILER_PARAMETER_IDENTITY_ERROR) {
+                    ZrParser_Compiler_Error(cs, "Cannot register receiver parameter identity", node->location);
+                    goto class_member_type_scope_cleanup;
+                }
             }
         }
 
@@ -568,8 +618,13 @@ static SZrFunction *compile_type_member_function(
                 superType.ownershipQualifier = thisOwnershipQualifier;
                 superType.isReadonlyView =
                         receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, superName, &superType);
+                TZrBool registered = ZrParser_TypeEnvironment_RegisterVariable(
+                        cs->state, cs->typeEnv, superName, &superType);
                 ZrParser_InferredType_Free(cs->state, &superType);
+                if (!registered) {
+                    ZrParser_Compiler_Error(cs, "Cannot register receiver super type", node->location);
+                    goto class_member_type_scope_cleanup;
+                }
             }
         }
     }
@@ -581,7 +636,8 @@ static SZrFunction *compile_type_member_function(
                 SZrParameter *param = &paramNode->data.parameter;
                 if (param->name != ZR_NULL && param->name->name != ZR_NULL) {
                     SZrString *paramName = param->name->name;
-                    TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
+                    TZrUInt32 parameterSlot = allocate_local_var_with_context(
+                            cs, paramName, param->name->syntaxContext);
                     parameterCount++;
                     compiler_register_typed_owner_cleanup_slot(
                             cs, parameterSlot, param->typeInfo);
@@ -590,9 +646,10 @@ static SZrFunction *compile_type_member_function(
 
                     if (cs->typeEnv != ZR_NULL) {
                         SZrInferredType paramType;
+                        TZrBool registered;
                         if (param->typeInfo != ZR_NULL &&
                             ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
-                            ZrParser_TypeEnvironment_RegisterVariableEx(
+                            registered = ZrParser_TypeEnvironment_RegisterVariableEx(
                                     cs->state,
                                     cs->typeEnv,
                                     paramName,
@@ -600,11 +657,19 @@ static SZrFunction *compile_type_member_function(
                                     paramNode,
                                     paramNode->location);
                             ZrParser_InferredType_Free(cs->state, &paramType);
-                            if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo))
+                            if (!registered) {
+                                ZrParser_Compiler_Error(cs, "Cannot register member parameter type", paramNode->location);
+                                goto class_member_type_scope_cleanup;
+                            }
+                            if (!compiler_register_typed_callable_annotation(
+                                        cs, paramName, param->typeInfo,
+                                        param->name->syntaxContext)) {
                                 ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
+                                goto class_member_type_scope_cleanup;
+                            }
                         } else {
                             ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                            ZrParser_TypeEnvironment_RegisterVariableEx(
+                            registered = ZrParser_TypeEnvironment_RegisterVariableEx(
                                     cs->state,
                                     cs->typeEnv,
                                     paramName,
@@ -612,6 +677,17 @@ static SZrFunction *compile_type_member_function(
                                     paramNode,
                                     paramNode->location);
                             ZrParser_InferredType_Free(cs->state, &paramType);
+                            if (!registered) {
+                                ZrParser_Compiler_Error(cs, "Cannot register member parameter type", paramNode->location);
+                                goto class_member_type_scope_cleanup;
+                            }
+                        }
+                        if (compiler_register_parameter_semantic_identity(
+                                    cs, paramName, param->name->syntaxContext,
+                                    parameterSlot, paramNode->location) ==
+                                    ZR_COMPILER_PARAMETER_IDENTITY_ERROR) {
+                            ZrParser_Compiler_Error(cs, "Cannot register member parameter identity", paramNode->location);
+                            goto class_member_type_scope_cleanup;
                         }
                     }
                 }
@@ -630,13 +706,24 @@ static SZrFunction *compile_type_member_function(
 
         if (cs->typeEnv != ZR_NULL) {
             SZrInferredType paramType;
+            TZrBool registered;
+            SZrFileRange parameterRange = propertyAccessorNode != ZR_NULL
+                                                 ? propertyAccessorNode->location
+                                                 : node->location;
             if (manualParamType != ZR_NULL && ZrParser_AstTypeToInferredType_Convert(cs, manualParamType, &paramType)) {
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
+                registered = ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
                 ZrParser_InferredType_Free(cs->state, &paramType);
             } else {
                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
+                registered = ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
                 ZrParser_InferredType_Free(cs->state, &paramType);
+            }
+            if (!registered ||
+                compiler_register_parameter_semantic_identity(
+                        cs, manualParamName, ZrParser_SyntaxContext_Root(),
+                        manualParamSlot, parameterRange) == ZR_COMPILER_PARAMETER_IDENTITY_ERROR) {
+                ZrParser_Compiler_Error(cs, "Cannot register property parameter identity", parameterRange);
+                goto class_member_type_scope_cleanup;
             }
         }
     }
@@ -802,14 +889,19 @@ class_member_type_scope_cleanup:
         cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->instructions.length = oldInstructionLength;
         cs->localVars.length = oldLocalVarLength;
+        compiler_restore_array_snapshot(cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities);
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        compiler_restore_array_snapshot(cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities);
         cs->executionLocations.length = oldExecutionLocationLength;
         cs->catchClauseInfos.length = oldCatchClauseInfoLength;
         cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
         cs->tryContextStack.length = oldTryContextLength;
         cs->childFunctions.length = oldChildFunctionLength;
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        compiler_restore_array_snapshot(cs,
+                                        &cs->childFunctionBindingIdentities,
+                                        &savedParentChildFunctionBindingIdentities);
         cs->isInConstructor = oldIsInConstructor;
         cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
@@ -877,6 +969,7 @@ class_member_type_scope_cleanup:
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
+            compiler_relocate_copied_child_constants(newFunc, srcArray);
             compiler_rebind_moved_child_constants(newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
@@ -951,14 +1044,19 @@ class_member_type_scope_cleanup:
     cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->instructions.length = oldInstructionLength;
     cs->localVars.length = oldLocalVarLength;
+    compiler_restore_array_snapshot(cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities);
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    compiler_restore_array_snapshot(cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities);
     cs->executionLocations.length = oldExecutionLocationLength;
     cs->catchClauseInfos.length = oldCatchClauseInfoLength;
     cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
     cs->tryContextStack.length = oldTryContextLength;
     cs->childFunctions.length = oldChildFunctionLength;
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+    compiler_restore_array_snapshot(cs,
+                                    &cs->childFunctionBindingIdentities,
+                                    &savedParentChildFunctionBindingIdentities);
     cs->isInConstructor = oldIsInConstructor;
     cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;

@@ -17,7 +17,7 @@ TZrBool ZrMath_Complex_Construct(ZrLibCallContext *context, SZrTypeValue *result
     if (!ZrLib_CallContext_ReadFloat(context, 0, &real) || !ZrLib_CallContext_ReadFloat(context, 1, &imag)) return ZR_FALSE;
     values[0] = real;
     values[1] = imag;
-    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields)); /* 可复用兼容目标；字段发布状态不由 setter 返回。 */
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields)); /* 可复用兼容目标；有效 state 的字段写入失败会 Throw，不保证整体回滚。 */
 }
 TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result) {
     /* BUG: 有限输入 (1e200, 0) 的平方中间值溢出，magnitude 返回无穷；
@@ -32,7 +32,7 @@ TZrBool ZrMath_Complex_Phase(ZrLibCallContext *context, SZrTypeValue *result) {
 TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    object = ZrMath_MakeComplex(context->state, value.real, -value.imag); /* 使用共享新对象字段工厂；窄化 pin 发布风险见 complex.h 文件级契约。 */
+    object = ZrMath_MakeComplex(context->state, value.real, -value.imag); /* 共享新对象工厂；字段写入失败可 Throw，已建对象归 VM/GC 管理。 */
     if (object == ZR_NULL) return ZR_FALSE;
     ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
@@ -53,7 +53,7 @@ TZrBool ZrMath_Complex_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result) 
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;
-    object = ZrMath_MakeComplex(context->state, lhs.real + rhs.real, lhs.imag + rhs.imag); /* 使用共享字段发布路径；窄化风险见 complex.h 文件级契约。 */
+    object = ZrMath_MakeComplex(context->state, lhs.real + rhs.real, lhs.imag + rhs.imag); /* 共享逐字段发布路径；后段失败不回滚前面字段。 */
     if (object == ZR_NULL) return ZR_FALSE;
     ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
@@ -62,7 +62,7 @@ TZrBool ZrMath_Complex_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) 
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;
-    object = ZrMath_MakeComplex(context->state, lhs.real - rhs.real, lhs.imag - rhs.imag); /* 使用共享字段发布路径；窄化风险见 complex.h 文件级契约。 */
+    object = ZrMath_MakeComplex(context->state, lhs.real - rhs.real, lhs.imag - rhs.imag); /* 共享逐字段发布路径；后段失败不回滚前面字段。 */
     if (object == ZR_NULL) return ZR_FALSE;
     ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
@@ -79,7 +79,7 @@ TZrBool ZrMath_Complex_MetaMul(ZrLibCallContext *context, SZrTypeValue *result) 
 TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    object = ZrMath_MakeComplex(context->state, -value.real, -value.imag); /* 使用共享字段发布路径；窄化风险见 complex.h 文件级契约。 */
+    object = ZrMath_MakeComplex(context->state, -value.real, -value.imag); /* 共享逐字段发布路径；失败通过 Throw 传播，不是静默成功。 */
     if (object == ZR_NULL) return ZR_FALSE;
     ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
@@ -94,8 +94,8 @@ TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *resu
     dl = lhs.real * lhs.real + lhs.imag * lhs.imag; dr = rhs.real * rhs.real + rhs.imag * rhs.imag;
     ZrLib_Value_SetInt(context->state, result, dl > dr ? 1 : (dl < dr ? -1 : 0)); return ZR_TRUE;
 }
-/* BUG: 合法短串对象申请成功但哈希桶扩容失败时，zr_vm_core/src/zr_vm_core/base/hash_set.c:181 与 zr_vm_core/src/zr_vm_core/string/string.c:808 正常返回 NULL；
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果槽，常规派发在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362 预置 NULL；zr_vm_lib_math/src/zr_vm_lib_math/common.c:519 仍 TRUE，toString 可报告成功而无字符串。 */
+/* 字符串 helper 在有效 state/result 下正常返回时已发布字符串；旧短串缓存软失败的成功结论已不适用。
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1318 在创建结果 NULL 时 Throw(MEMORY_ERROR)；zr_vm_lib_math/src/zr_vm_lib_math/common.c:532 普通返回后才会到 zr_vm_lib_math/src/zr_vm_lib_math/common.c:533 的 TRUE。 */
 TZrBool ZrMath_Complex_MetaToString(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;

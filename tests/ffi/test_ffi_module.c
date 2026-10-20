@@ -528,6 +528,8 @@ void setUp(void) {}
  */
 void tearDown(void) {}
 
+#include "test_ffi_integer_precision_contract_cases.h"
+
 /**
  * @brief 核对 zr.ffi 的基础导出入口
  *
@@ -747,7 +749,10 @@ static void test_zr_ffi_preserves_64_bit_integer_precision(void) {
             "});\n"
             "var high = identityU64.call([9007199254740993]);\n"
             "var signed = identityI64.call([-9007199254740991]);\n"
-            "return high == 9007199254740993 && signed == -9007199254740991;\n";
+            "var signedHigh = identityI64.call([9007199254740993]);\n"
+            "var signedLow = identityI64.call([-9007199254740993]);\n"
+            "return high == 9007199254740993 && signed == -9007199254740991"
+            " && signedHigh == 9007199254740993 && signedLow == -9007199254740993;\n";
     SZrTestTimer timer;
     char source[4096];
     char escapedPath[4096];
@@ -757,6 +762,8 @@ static void test_zr_ffi_preserves_64_bit_integer_precision(void) {
 
     ZR_TEST_START("zr.ffi preserves 64-bit integer precision");
     timer.startTime = clock();
+
+    ffi_assert_signed64_precision_contract();
 
     escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
     snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
@@ -2017,7 +2024,7 @@ static void test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper
             "#zr.ffi.lowering(\"handle_id\")#\n"
             "#zr.ffi.underlying(\"i32\")#\n"
             "class ModeHandle {\n"
-            "  var handleId:i32;\n"
+            "  pub var handleId:i32;\n"
             "}\n"
             "var mode = new ModeHandle();\n"
             "mode.handleId = 1;\n"
@@ -2079,7 +2086,7 @@ static void test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls(void
             "#zr.ffi.lowering(\"handle_id\")#\n"
             "#zr.ffi.underlying(\"i32\")#\n"
             "class ModeHandle {\n"
-            "  var handleId:i32;\n"
+            "  pub var handleId:i32;\n"
             "}\n"
             "fn FlipLocal(mode:i32): i32 {\n"
             "  return mode;\n"

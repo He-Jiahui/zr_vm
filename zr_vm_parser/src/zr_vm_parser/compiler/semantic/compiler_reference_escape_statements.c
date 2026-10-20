@@ -166,7 +166,7 @@ static TZrBool reference_escape_report_owner_return(
     sourceMessage = qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED
                             ? "Borrow source is here"
                             : "Loan source is here";
-    lifetimeEnd = context->bodyRoot->location;
+    lifetimeEnd = ZrParser_FileRange_WithoutEvidence(context->bodyRoot->location);
     lifetimeEnd.start = lifetimeEnd.end;
     if (!built ||
         !ZrParser_StructuredDiagnostic_AddRelatedInformation(

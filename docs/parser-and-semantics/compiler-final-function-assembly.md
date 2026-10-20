@@ -1,27 +1,40 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
-  - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_child_function_relocation.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_child_function_relocation.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_native_call_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_native_call_binding.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
 implementation_files:
-  - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_child_function_relocation.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_child_function_relocation.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_native_call_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_native_call_binding.h
+  - zr_vm_core/src/zr_vm_core/function/function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
 plan_sources:
-  - user: 2026-04-04 回到实现侧，把 lambda 路径也显式纳入 childFunctions，补一个更强的不变量检查
-  - user: 2026-04-04 拆分边界“final function assembly + invariant validation”独立出去
+  - "user: 2026-04-04 回到实现侧，把 lambda 路径也显式纳入 childFunctions，补一个更强的不变量检查"
+  - "user: 2026-04-04 拆分边界 final function assembly + invariant validation 独立出去"
+  - .codex/plans/20261008-macro-tokenstream-structured-generation.md
 tests:
   - tests/parser/test_compiler_regressions.c
   - tests/parser/test_escape_metadata_pipeline.c
+  - tests/parser/test_escape_metadata_pipeline_main.c
+  - tests/parser/test_escape_native_member_cases.inc
+  - tests/iterator/test_yield_semantic.c
+  - tests/iterator/yield_public_compile_graph_cases.inc
 doc_type: module-detail
 ---
 
@@ -100,6 +113,33 @@ doc_type: module-detail
 - 每个 `CREATE_CLOSURE` 指向的函数常量都必须能从当前函数的 `childFunctionList` 图递归找到
 
 因此 AOT / runtime 不再允许依赖“constant graph 还能把漏掉的 child function 找回来”这种结构偶然性。
+
+## Native Capture Metadata Probe
+
+MSVC escape pipeline 的完整 RED 为 13 项测试、5 项失败、0 项忽略。
+新增 public compile 用例保留了 typed `CallbackHandle`，实际调用为 opcode
+109 的 `FUNCTION_CALL`；seed、closure、capture flags 均为 2，native flags
+为 0。原有四项 source/binary capture 断言仍失败。日志为
+`m1-msvc-escape-native-member-red-r1-zr_vm_escape_pipeline_test.log`，SHA256
+`E8F22C0320A0385E83C13CBCFB35D36ECFA095EF160D4C81ABF8BE857316C3E2`，7855 bytes。
+
+新增诊断从实际 instruction 对应的 CALL cache 读取 relocation、contract 与
+provider predicate，保持原判据和清理顺序。实际运行确认 instruction 18 有唯一
+`KNOWN_CALL` cache，参数数为 2、relocation 为 `MODULE`，完整契约校验返回
+`ZR_CALL_BINDING_OK`，provider predicate 为真。捕获 flags 仍缺失，完整结果
+仍为 13/5/0；日志 `m1-msvc-escape-knowncall-diagnostic-r2-zr_vm_escape_pipeline_test.log`
+的 SHA256 为 `1B4AE21BF114A261A4DF7465F6895D859AA2EF34FAD88D2BBC002487D97841E5`，8269 bytes。
+分类修复现在由独立的 native call-binding 模块实现。它只接受与真实
+`FUNCTION_CALL` 唯一对应、参数数一致且通过完整 provider 契约校验的
+`KNOWN_CALL` / `MODULE` cache；重复条目或不完整契约不会被认作 native 调用。
+最终装配通过这个判定沿用现有 capture 分类，不手动补写 runtime flags。
+
+MSVC 验证通过全部 13 项 source/binary escape 测试，pipeline 的 18 项及
+artifact 的 8 项也全部通过，共 39 项、0 失败、0 忽略。escape 日志
+`m1-msvc-escape-provider-classification-r1-zr_vm_escape_pipeline_test.log` 的
+SHA256 为 `16626D053785F614749E5C64AEEC57687229B9397B1E5E25D4E5726BC0F87AEE`，8541 bytes。
+生成器的 public child-graph 验证及复制前指针重绑另见
+[Iterator Yield Suspension](iterator-yield-suspension.md)。M1 仍未验收。
 
 ## 测试函数边界
 

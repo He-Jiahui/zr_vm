@@ -39,13 +39,13 @@ TZrBool ZrSystem_Vm_LoadedModules(ZrLibCallContext *context, SZrTypeValue *resul
  * @param[out] result 可写的结果槽。正常分派会先置为 null，成功时接收 VM 管理的新对象。
  *
  * ## Returns
- * @return 对象分配成功并交付时为真；无效上下文、结果槽或对象创建失败时为假。字段由 void setter 写入，字段失败不改变此状态码。
+ * @return 对象完成字段写入并交付时为真；无效上下文、结果槽或实例构造返回空时为假。字段写入失败沿 setter 的 VM 异常路径报告。
  *
  * ## Constraints and lifecycle
  * 注册元数为零。读取值来自不同的当前状态位置，随后对象和字段物化可能分配或触发 GC；此接口不提供跨字段原子快照。
- * 字段写入可能因软分配失败而被静默跳过，调用者不能把返回真解释为所有字段均成功写入。
+ * 字段 setter 失败会 Throw；此前已成功的字段及其他 VM 副作用不由本接口整体回滚，不能把局部写入保护当作快照事务。
  * TODO: 同 global 的其他 mutator 可能导入模块或调整 GC；沿 State_MutatorLaunch/Module_AddToCache
- * 及 collector 写路径核实遍历和普通字段读取的同步协议；非原子快照说明不能代替该核查。
+ * 及 collector 写路径核实同步；debt 通过原子 accessor 读取，mode/threshold 读取仍不构成跨字段一致快照。
  *
  * ## References
  * `ZrSystem_VmRegistry_GetModule` 声明 `SystemVmState` 及其零参函数；实现由 `system_vm_make_state` 组装当前线程与 global 数据。
@@ -64,7 +64,7 @@ TZrBool ZrSystem_Vm_State(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 注册元数恰为三，dispatcher 在回调前检查。导出查询可触发模块导入，目标函数可执行任意 VM 副作用；临时 C 参数数组只在本回调期间存在。
- * TODO: 导入/目标查找可在共享 helper 安装局部 panic handler 前分配或跳转；需核实浅拷贝参数和两个借用字符串在该窗口的 GC/非局部退出安全性。
+ * TODO: helper 已保护查找/导入；仍需核实参数入栈前浅拷贝值/文本的 GC 保活，以及 helper 前 Array_Get 物化失败时的缓冲清理。
  *
  * ## References
  * `ZrSystem_VmRegistry_GetModule` 注册该入口；回调通过 `ZrLib_CallModuleExport` 复用通用模块导出调用流程。

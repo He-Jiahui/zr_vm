@@ -16,12 +16,17 @@
 
 static SZrState *g_state;
 
+static void semantic_receiver_guard_fact_cleanup(void);
+static void semantic_da_ast_fact_cleanup(void);
+
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
 void tearDown(void) {
+    semantic_da_ast_fact_cleanup();
+    semantic_receiver_guard_fact_cleanup();
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
@@ -29,7 +34,7 @@ void tearDown(void) {
 }
 
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;
@@ -1158,6 +1163,9 @@ static void test_cfg_reaching_definitions_clears_finally_read_from_normal_and_re
     ZrParser_SemanticContext_Free(context);
 }
 
+#include "test_semantic_receiver_guard_fact_cases.h"
+#include "test_semantic_da_ast_fact_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_context_initializes_fact_arrays);
@@ -1178,5 +1186,8 @@ int main(void) {
     RUN_TEST(test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast);
     RUN_TEST(test_ownership_dataflow_ignores_sourceless_fact_for_sourced_statement);
     RUN_TEST(test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths);
+    RUN_TEST(test_semantic_receiver_guard_republish_replaces_same_node);
+    RUN_TEST(test_semantic_receiver_guards_preserve_distinct_nodes);
+    RUN_TEST(test_cfg_definite_assignment_accepts_standalone_body_root);
     return UNITY_END();
 }

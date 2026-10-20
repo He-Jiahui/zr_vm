@@ -148,4 +148,9 @@ ZR_NETWORK_API TZrBool ZrNetwork_FormatEndpoint(const SZrNetworkEndpoint *endpoi
  *  @note 长度不同会提前返回，相同长度才逐字节累积差异。 */
 ZR_NETWORK_API TZrBool ZrNetwork_TokenMatches(const TZrChar *expected, const TZrChar *actual);
 
+/** @brief 生成 256-bit CSPRNG 调试令牌的 64 位十六进制编码（加 NUL）。 */
+ZR_NETWORK_API TZrBool ZrNetwork_GenerateDebugToken(TZrChar *buffer, TZrSize bufferSize);
+
+/** @brief 生成 256-bit CSPRNG 调试令牌的 64 位十六进制编码（加 NUL）。 */
+
 #endif

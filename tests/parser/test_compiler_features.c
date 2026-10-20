@@ -500,6 +500,8 @@ static TZrUInt32 test_align_offset_u32(TZrUInt32 offset, TZrUInt32 align) {
     return ((offset + align - 1) / align) * align;
 }
 
+#include "test_compiler_storage_alignment_contract_cases.h"
+
 // 测试1: 函数声明参数处理
 void test_function_parameter_handling(void) {
     SZrTestTimer timer;
@@ -2329,6 +2331,8 @@ void test_struct_prototype_metadata_serializes_layout_size_and_align(void) {
     ZR_TEST_INFO("Struct byte layout metadata",
                  "Testing that compiled prototypeData stores whole-struct byte size and alignment alongside field offsets");
 
+    assert_compiler_storage_alignment_contracts();
+
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
@@ -2338,9 +2342,9 @@ void test_struct_prototype_metadata_serializes_layout_size_and_align(void) {
 
     {
         const char *source = "pub struct LayoutProbe { var a: i8; var b: int; var c: i32; }";
-        const TZrUInt32 expectedAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 expectedAlign = (TZrUInt32)_Alignof(TZrInt64);
         const TZrUInt32 offsetA = 0;
-        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), (TZrUInt32)_Alignof(TZrInt64));
         const TZrUInt32 offsetC = test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), (TZrUInt32)sizeof(TZrInt32));
         const TZrUInt32 expectedSize =
                 test_align_offset_u32(offsetC + (TZrUInt32)sizeof(TZrInt32), expectedAlign);
@@ -2401,9 +2405,9 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
         const char *source =
             "pub struct FrameProbe { var a: i8; var b: int; }\n"
             "fn useProbe(p: FrameProbe) { var n: int = 7; return n; }";
-        const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 expectedStructAlign = (TZrUInt32)_Alignof(TZrInt64);
         const TZrUInt32 offsetA = 0;
-        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), (TZrUInt32)_Alignof(TZrInt64));
         const TZrUInt32 expectedStructSize =
                 test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
         SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout.zr", 24);
@@ -2433,10 +2437,10 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
         declaredFunction = get_single_compiled_child_function(wrapper);
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2, declaredFunction->stackSize);
         TEST_ASSERT_EQUAL_UINT32(declaredFunction->stackSize, declaredFunction->frameSlotLayoutLength);
-        TEST_ASSERT_EQUAL_UINT32(ZR_ALIGN_SIZE, declaredFunction->frameByteAlign);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)_Alignof(SZrTypeValue), declaredFunction->frameByteAlign);
         expectedFrameByteBaseOffset =
                 test_align_offset_u32((TZrUInt32)(declaredFunction->stackSize * sizeof(SZrTypeValueOnStack)),
-                                      ZR_ALIGN_SIZE);
+                                      expectedStructAlign);
         expectedLocalOffset = test_align_offset_u32(expectedFrameByteBaseOffset + expectedStructSize,
                                                     (TZrUInt32)sizeof(SZrTypeValueOnStack));
 
@@ -2711,9 +2715,9 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
             "var snapshot: Snapshot = init Snapshot(7);\n"
             "return snapshot.read();";
         const char *binaryPath = "function_frame_layout_roundtrip.zro";
-        const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 expectedStructAlign = (TZrUInt32)_Alignof(TZrInt64);
         const TZrUInt32 offsetA = 0;
-        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), (TZrUInt32)_Alignof(TZrInt64));
         const TZrUInt32 expectedStructSize =
                 test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
         SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout_roundtrip.zr", 34);
@@ -2838,7 +2842,7 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteAlign, runtimeFunction->frameByteAlign);
         expectedFrameByteBaseOffset =
                 test_align_offset_u32((TZrUInt32)(runtimeFunction->stackSize * sizeof(SZrTypeValueOnStack)),
-                                      ZR_ALIGN_SIZE);
+                                      expectedStructAlign);
 
         runtimeParameterLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 0);
         runtimeLocalLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 1);
@@ -2923,11 +2927,13 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
 
     {
         const char *source =
+            "pub resource class Resource {}\n"
             "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
             "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "owned_field_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *resourceProto;
         const SZrCompiledPrototypeInfoView *structProto;
         const SZrCompiledPrototypeInfoView *classProto;
         const SZrCompiledMemberInfoView *handleMember;
@@ -2951,7 +2957,13 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
         }
 
         TEST_ASSERT_NOT_NULL(func->prototypeData);
-        TEST_ASSERT_EQUAL_UINT32(2, func->prototypeCount);
+        TEST_ASSERT_EQUAL_UINT32(3, func->prototypeCount);
+
+        resourceProto = find_compiled_prototype_by_name(state, func, "Resource");
+        TEST_ASSERT_NOT_NULL(resourceProto);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OBJECT_PROTOTYPE_TYPE_CLASS, resourceProto->type);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, resourceProto->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE);
+        TEST_ASSERT_EQUAL_UINT32(0, resourceProto->membersCount);
 
         structProto = find_compiled_prototype_by_name(state, func, "HandleBox");
         classProto = find_compiled_prototype_by_name(state, func, "Holder");
@@ -3012,6 +3024,7 @@ void test_intrinsic_ownership_generic_fields_serialize_owner_metadata(void) {
 
     {
         const char *source =
+            "pub resource class Resource {}\n"
             "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
             "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -3019,6 +3032,7 @@ void test_intrinsic_ownership_generic_fields_serialize_owner_metadata(void) {
                                                      strlen("ownership_generic_field_meta.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *resourceProto;
         const SZrCompiledPrototypeInfoView *structProto;
         const SZrCompiledPrototypeInfoView *classProto;
         const SZrCompiledMemberInfoView *handleMember;
@@ -3040,6 +3054,14 @@ void test_intrinsic_ownership_generic_fields_serialize_owner_metadata(void) {
             destroy_test_state(state);
             return;
         }
+
+        TEST_ASSERT_NOT_NULL(func->prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(3, func->prototypeCount);
+        resourceProto = find_compiled_prototype_by_name(state, func, "Resource");
+        TEST_ASSERT_NOT_NULL(resourceProto);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OBJECT_PROTOTYPE_TYPE_CLASS, resourceProto->type);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, resourceProto->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE);
+        TEST_ASSERT_EQUAL_UINT32(0, resourceProto->membersCount);
 
         structProto = find_compiled_prototype_by_name(state, func, "HandleBox");
         classProto = find_compiled_prototype_by_name(state, func, "Holder");

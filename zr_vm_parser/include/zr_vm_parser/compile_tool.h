@@ -27,7 +27,9 @@ typedef enum EZrParserCompileToolRole {
 typedef enum EZrParserCompileToolEffect {
     ZR_PARSER_COMPILE_TOOL_EFFECT_PURE_VALUE = 0,
     ZR_PARSER_COMPILE_TOOL_EFFECT_DIAGNOSTIC = 1,
-    ZR_PARSER_COMPILE_TOOL_EFFECT_DECLARATION_BUILD = 2
+    ZR_PARSER_COMPILE_TOOL_EFFECT_DECLARATION_BUILD = 2,
+    /* Token and syntax-tree construction is confined to syntax expansion. */
+    ZR_PARSER_COMPILE_TOOL_EFFECT_SYNTAX_BUILD = 3
 } EZrParserCompileToolEffect;
 
 typedef enum EZrParserCompilePhase {
@@ -35,8 +37,14 @@ typedef enum EZrParserCompilePhase {
     ZR_PARSER_COMPILE_PHASE_SIGNATURE = 1,
     ZR_PARSER_COMPILE_PHASE_EXPANSION = 2,
     ZR_PARSER_COMPILE_PHASE_LAYOUT = 3,
-    ZR_PARSER_COMPILE_PHASE_LATE_CHECK = 4
+    ZR_PARSER_COMPILE_PHASE_LATE_CHECK = 4,
+    /* Appended to preserve the serialized IDs of the existing phases. */
+    ZR_PARSER_COMPILE_PHASE_SYNTAX_EXPANSION = 5
 } EZrParserCompilePhase;
+
+/* Existing expansion is the semantic expansion phase. Keep its legacy ID. */
+#define ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION \
+    ZR_PARSER_COMPILE_PHASE_EXPANSION
 
 typedef enum EZrParserCompileToolTypeRole {
     ZR_PARSER_COMPILE_TOOL_TYPE_NONE = 0,
@@ -111,6 +119,11 @@ typedef struct SZrParserCompileToolResolvedArtifact {
 ZR_PARSER_API const SZrParserCompileToolModuleDescriptor *ZrParser_CompileTool_FindModule(
         const TZrChar *moduleName);
 ZR_PARSER_API TZrBool ZrParser_CompileTool_IsModuleName(const TZrChar *moduleName);
+ZR_PARSER_API TZrBool ZrParser_CompilePhase_IsValid(
+        EZrParserCompilePhase phase);
+ZR_PARSER_API TZrBool ZrParser_CompilePhase_IsAtLeast(
+        EZrParserCompilePhase currentPhase,
+        EZrParserCompilePhase minimumPhase);
 ZR_PARSER_API const SZrParserCompileToolCallableDescriptor *ZrParser_CompileTool_FindCallable(
         const SZrParserCompileToolModuleDescriptor *module,
         EZrParserCompileToolRole role);

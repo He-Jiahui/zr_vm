@@ -6,6 +6,7 @@
 #include "compiler/expression/compile_expression_internal.h"
 #include "type_inference_internal.h"
 #include "compiler/declaration/compiler_attribute_binding.h"
+#include "compiler_type_value_alias.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/project_imports.h"
@@ -259,7 +260,8 @@ static void compiler_collect_callable_parameter_types(SZrCompilerState *cs,
 
 static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
                                                       SZrString *name,
-                                                      SZrAstNode *lambdaNode) {
+                                                      SZrAstNode *lambdaNode,
+                                                      SZrSyntaxContext syntaxContext) {
     SZrLambdaExpression *lambda;
     SZrTypeEnvironment *savedEnv;
     SZrTypeEnvironment *lambdaEnv;
@@ -341,7 +343,7 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
     compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, lambda->params);
 
     bindingIndex = savedEnv->functionReturnTypes.length;
-    if (ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+    if (ZrParser_TypeEnvironment_RegisterCallableValueFunctionWithContext(
                 cs->state,
                 savedEnv,
                 name,
@@ -349,7 +351,8 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
                 &paramTypes,
                 ZR_NULL,
                 &parameterPassingModes,
-                lambdaNode)) {
+                lambdaNode,
+                syntaxContext)) {
         (void)compiler_publish_lambda_callable_binding_identity(
                 cs, savedEnv, bindingIndex, lambdaNode);
     }
@@ -396,25 +399,27 @@ static void compiler_bind_function_parameters_for_return_inference(
 
         if (parameter->typeInfo != ZR_NULL &&
             ZrParser_AstTypeToInferredType_Convert(cs, parameter->typeInfo, &paramType)) {
-            ZrParser_TypeEnvironment_RegisterVariableEx(
+            ZrParser_TypeEnvironment_RegisterVariableExWithContext(
                     cs->state,
                     cs->typeEnv,
                     parameter->name->name,
                     &paramType,
                     paramNode,
-                    paramNode->location);
+                    paramNode->location,
+                parameter->name->syntaxContext);
             ZrParser_InferredType_Free(cs->state, &paramType);
             continue;
         }
 
         ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_TypeEnvironment_RegisterVariableEx(
+        ZrParser_TypeEnvironment_RegisterVariableExWithContext(
                 cs->state,
                 cs->typeEnv,
                 parameter->name->name,
                 &paramType,
                 paramNode,
-                paramNode->location);
+                paramNode->location,
+                parameter->name->syntaxContext);
         ZrParser_InferredType_Free(cs->state, &paramType);
     }
 }
@@ -485,15 +490,19 @@ static void compiler_infer_unresolved_function_binding_return(
 
 static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
                                                           SZrString *name,
-                                                          SZrString *sourceName) {
+                                                          const SZrIdentifier *source,
+                                                          SZrSyntaxContext syntaxContext) {
     SZrArray candidates;
 
-    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL || sourceName == ZR_NULL) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        name == ZR_NULL || source == ZR_NULL || source->name == ZR_NULL) {
         return;
     }
 
     ZrCore_Array_Construct(&candidates);
-    if (!ZrParser_TypeEnvironment_LookupFunctions(cs->state, cs->typeEnv, sourceName, &candidates)) {
+    if (!ZrParser_TypeEnvironment_LookupFunctionsWithContext(
+                cs->state, cs->typeEnv, source->name, source->syntaxContext,
+                &candidates)) {
         return;
     }
 
@@ -508,7 +517,7 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
         if (cs->hasError) {
             break;
         }
-        ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+        ZrParser_TypeEnvironment_RegisterCallableValueFunctionWithContext(
                 cs->state,
                 cs->typeEnv,
                 name,
@@ -516,7 +525,8 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
                 &(*candidatePtr)->paramTypes,
                 &(*candidatePtr)->genericParameters,
                 &(*candidatePtr)->parameterPassingModes,
-                (*candidatePtr)->declarationNode);
+                (*candidatePtr)->declarationNode,
+                syntaxContext);
     }
 
     if (candidates.isValid && candidates.head != ZR_NULL) {
@@ -541,7 +551,8 @@ static TZrBool compiler_reference_is_external_callable_contract(
 static void compiler_register_external_member_callable_binding(
         SZrCompilerState *cs,
         SZrString *name,
-        SZrAstNode *valueNode) {
+        SZrAstNode *valueNode,
+        SZrSyntaxContext syntaxContext) {
     SZrPrimaryExpression *primary;
     SZrAstNode *memberNode;
     SZrAstNode *property;
@@ -573,32 +584,43 @@ static void compiler_register_external_member_callable_binding(
         reference->declarationRange.end.offset != 0U) {
         return;
     }
-    (void)ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
+    (void)ZrParser_TypeEnvironment_RegisterExternalCallableAliasWithContext(
             cs->state,
             cs->typeEnv,
             name,
             reference->typeId,
-            reference->signatureDisplay);
+            reference->signatureDisplay,
+            syntaxContext);
 }
 
 void ZrParser_Compiler_RegisterCallableValueBinding(SZrCompilerState *cs,
                                                      SZrString *name,
                                                      SZrAstNode *valueNode) {
+    ZrParser_Compiler_RegisterCallableValueBindingWithContext(
+            cs, name, valueNode, ZrParser_SyntaxContext_Root());
+}
+
+void ZrParser_Compiler_RegisterCallableValueBindingWithContext(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrAstNode *valueNode,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL || cs->typeEnv == ZR_NULL) {
         return;
     }
 
     if (valueNode->type == ZR_AST_LAMBDA_EXPRESSION) {
-        compiler_register_lambda_callable_binding(cs, name, valueNode);
+        compiler_register_lambda_callable_binding(cs, name, valueNode, syntaxContext);
         return;
     }
 
     if (valueNode->type == ZR_AST_IDENTIFIER_LITERAL && valueNode->data.identifier.name != ZR_NULL) {
-        compiler_register_identifier_callable_binding(cs, name, valueNode->data.identifier.name);
+        compiler_register_identifier_callable_binding(
+                cs, name, &valueNode->data.identifier, syntaxContext);
         return;
     }
 
-    compiler_register_external_member_callable_binding(cs, name, valueNode);
+    compiler_register_external_member_callable_binding(cs, name, valueNode, syntaxContext);
 }
 
 void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
@@ -725,6 +747,14 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
 }
 
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) {
+    return find_local_var_in_current_scope_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+TZrUInt32 find_local_var_in_current_scope_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     SZrScope *scope;
     TZrSize startIndex;
 
@@ -741,8 +771,17 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
     for (TZrSize i = cs->localVars.length; i > startIndex; i--) {
         SZrFunctionLocalVariable *var =
                 (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, i - 1);
-        if (var != ZR_NULL && var->name != ZR_NULL && ZrCore_String_Equal(var->name, name)) {
-            return var->stackSlot;
+        if (var != ZR_NULL && var->name != ZR_NULL &&
+            ZrCore_String_Equal(var->name, name) &&
+            (i - 1U) < cs->localBindingIdentities.length) {
+            const SZrCompilerBindingIdentity *identity =
+                    (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                            &cs->localBindingIdentities, i - 1U);
+            if (identity != ZR_NULL &&
+                ZrParser_SyntaxContext_Equal(
+                        identity->syntaxContext, syntaxContext)) {
+                return var->stackSlot;
+            }
         }
     }
 
@@ -776,14 +815,14 @@ static void compiler_predeclare_visible_module_alias_binding(SZrCompilerState *c
     }
 
     ZrParser_InferredType_InitFull(cs->state, &moduleType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
-    ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, aliasName, &moduleType);
+    ZrParser_TypeEnvironment_RegisterVariableWithContext(
+            cs->state, cs->typeEnv, aliasName, &moduleType,
+            decl->pattern->data.identifier.syntaxContext);
     ZrParser_InferredType_Free(cs->state, &moduleType);
 }
 
 static void compiler_predeclare_visible_type_value_alias_binding(SZrCompilerState *cs, SZrAstNode *node) {
     SZrVariableDeclaration *decl;
-    SZrString *aliasName;
-    SZrInferredType aliasType;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
         return;
@@ -796,38 +835,8 @@ static void compiler_predeclare_visible_type_value_alias_binding(SZrCompilerStat
         return;
     }
 
-    aliasName = decl->pattern->data.identifier.name;
-    if (aliasName == ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
-    if (!ZrParser_AstTypeToInferredType_Convert(cs,
-                                                decl->value->data.typeLiteralExpression.typeInfo,
-                                                &aliasType)) {
-        ZrParser_InferredType_Free(cs->state, &aliasType);
-        return;
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, aliasName)) {
-            ZrParser_InferredType_Free(cs->state, &binding->type);
-            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
-            ZrParser_InferredType_Free(cs->state, &aliasType);
-            return;
-        }
-    }
-
-    {
-        SZrTypeBinding binding;
-        binding.name = aliasName;
-        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
-        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
-    }
-
-    ZrParser_InferredType_Free(cs->state, &aliasType);
+    compiler_register_type_value_alias_literal(cs, decl->pattern->data.identifier.name,
+            decl->value, decl->pattern->data.identifier.syntaxContext);
 }
 
 void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) {
@@ -895,11 +904,15 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
             return;
         }
 
-        if (find_local_var_in_current_scope(cs, funcDecl->name->name) != ZR_PARSER_SLOT_NONE) {
+        if (find_local_var_in_current_scope_with_context(
+                    cs,
+                    funcDecl->name->name,
+                    funcDecl->name->syntaxContext) != ZR_PARSER_SLOT_NONE) {
             continue;
         }
 
-        slot = allocate_local_var(cs, funcDecl->name->name);
+        slot = allocate_local_var_with_context(
+                cs, funcDecl->name->name, funcDecl->name->syntaxContext);
         ZrCore_Value_ResetAsNull(&nullValue);
         emit_constant_to_slot(cs, slot, &nullValue);
         if (cs->hasError) {

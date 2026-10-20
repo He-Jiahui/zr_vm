@@ -1,11 +1,17 @@
 ---
 related_code:
+  - scripts/artifacts/policy.py
+  - scripts/artifacts/maintenance.py
+  - scripts/artifacts/ExecutePlan.ps1
+  - scripts/artifacts/ScheduledMaintenance.ps1
   - zr_vm_common/include/zr_vm_common/zr_common_conf.h
   - zr_vm_core/include/zr_vm_core/array.h
   - zr_vm_core/include/zr_vm_core/string.h
   - tests/benchmarks/README.md
   - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
+  - tests/cmake/close-proxy-tests.cmake
+  - tests/cmake/exception-gc-scopes-tests.cmake
   - tests/cmake/zr_vm_register_executable_suite.cmake
   - tests/cmake/run_executable_suite.cmake
   - tests/cmake/run_performance_suite.cmake
@@ -32,10 +38,16 @@ related_code:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 implementation_files:
+  - scripts/artifacts/policy.py
+  - scripts/artifacts/maintenance.py
+  - scripts/artifacts/ExecutePlan.ps1
+  - scripts/artifacts/ScheduledMaintenance.ps1
   - zr_vm_common/include/zr_vm_common/zr_common_conf.h
   - tests/benchmarks/README.md
   - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
+  - tests/cmake/close-proxy-tests.cmake
+  - tests/cmake/exception-gc-scopes-tests.cmake
   - tests/cmake/zr_vm_register_executable_suite.cmake
   - tests/cmake/run_executable_suite.cmake
   - tests/cmake/run_performance_suite.cmake
@@ -72,6 +84,8 @@ plan_sources:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 tests:
+  - tests/tooling/test_artifact_maintenance.py
+  - tests/tooling/test_artifact_schedule.py
   - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/acceptance/2026-08-25-clang-force-inline-portability.md
   - tests/benchmarks/test_benchmark_registry.c
@@ -103,6 +117,9 @@ doc_type: category-index
 
 ## 当前主题
 
+- [artifact-maintenance.md](artifact-maintenance.md)：每天北京时间 04:00 扫描、owner 明确释放记录、哈希删除保护与 Windows 计划任务操作。
+- [ctest-runtime-control-registration.md](ctest-runtime-control-registration.md)
+  - close proxy 与异常 GC scope 的 CMake 入口、静态链接条件、CTest 调度和运行证据边界。
 - [lsp-semantic-query-parity.md](lsp-semantic-query-parity.md)
   - Query result ownership, snapshot parity and public DLL linkage boundaries.
 - `compiler-inline-portability.md`
@@ -175,9 +192,8 @@ the full type-inference runner under Clang ASan/UBSan; see
 10. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
 10. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
 
-- [String storage failure](string-storage-allocation-failure.md)：长载荷、数字暂存、rehash 与 API cache 提交。
-
 - [Core bootstrap support OOM](core-bootstrap-support-allocation-failure.md)：GC/StringTable 管理器和驻留桶失败的完整回滚。
+- [String storage failure](string-storage-allocation-failure.md)：长载荷、数字暂存、rehash 与 API cache 提交。
 
 - [Benchmark 对比页面的数据入口](benchmark-compare-viewer.md)：报告格式、bundle 自动加载、UTF-8、实现分类与文本转义的实际页面回归。
 
@@ -186,6 +202,15 @@ the full type-inference runner under Clang ASan/UBSan; see
 - [FS 文本及包装失败](system-fs-failures.md)：内嵌零字节长度与指定文件句柄的失败清理。
 
 - [Thread worker count](thread-worker-count.md)：构造前的 uint32 计数边界与正常控制。
+
+- [System FS resource cleanup](system-fs-resource-cleanup.md)：异常时关闭临时句柄并释放原生缓冲和目录列表。
+
+- [AOT C source contracts](aot-c-source-contracts.md): lowering definitions and conditional known-call instruction publication.
+- [AOT generic struct return](aot-generic-struct-return.md): exact CLI source,
+  pure-memory module regression and failure-only frame projection evidence.
+- [AOT C return representation](aot-c-return-representation.md): raw semantic
+  metadata, projected return types, all-return scalar proof and C signature rows.
+- [FFI tagged64 argument precision](ffi-tagged64-argument-precision.md): tagged i64/u64 argument paths and discriminating native regressions.
 
 - [后端服务版本与保留字段准入](ssa-backend-admission.md)：33项诊断、错误优先级、失败恢复及当前有限编译与CTest证据。
 

@@ -148,10 +148,15 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
             endLocation = get_current_token_location(ps);
             ZrParser_Lexer_Next(ps->lexer);
         } else {
+            SZrFileRange expressionLocation;
+            if (!ZrParser_MergeLocations(ps, delimiterLocation, endLocation, &expressionLocation)) {
+                ZrParser_Ast_Free(ps->state, body);
+                return ZR_NULL;
+            }
             report_missing_statement_semicolon(
                     ps,
                     "property expression accessor",
-                    ZrParser_FileRange_Merge(delimiterLocation, endLocation));
+                    expressionLocation);
         }
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         bodyKind = ZR_PROPERTY_ACCESSOR_BODY_BLOCK;
@@ -166,11 +171,9 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
         report_missing_statement_semicolon(ps, "property accessor", endLocation);
     }
 
-    node = create_ast_node(
-            ps,
-            ZR_AST_PROPERTY_ACCESSOR,
-            ZrParser_FileRange_Merge(startLocation, endLocation));
-    if (node == ZR_NULL) {
+    SZrFileRange accessorLocation;
+    if (!ZrParser_MergeLocations(ps, startLocation, endLocation, &accessorLocation) ||
+        (node = create_ast_node(ps, ZR_AST_PROPERTY_ACCESSOR, accessorLocation)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, body);
         return ZR_NULL;
     }
@@ -209,6 +212,9 @@ SZrAstNode *parse_property_declaration(SZrParserState *ps,
     }
 
     decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
     access = parse_access_modifier(ps);
     isStatic = consume_token(ps, ZR_TK_STATIC);
     modifierFlags = parse_declaration_modifier_flags(
@@ -236,8 +242,7 @@ SZrAstNode *parse_property_declaration(SZrParserState *ps,
         return ZR_NULL;
     }
 
-    accessors = ZrParser_AstNodeArray_New(
-            ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    accessors = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (accessors == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, nameNode);
         property_free_declaration_parts(ps, decorators, typeInfo, ZR_NULL);
@@ -265,8 +270,17 @@ SZrAstNode *parse_property_declaration(SZrParserState *ps,
         SZrAstNode *accessor = parse_property_accessor(ps, access);
 
         if (accessor != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, accessors, accessor);
+            if (!parser_ast_array_add(ps, accessors, accessor)) {
+                ZrParser_Ast_Free(ps->state, accessor);
+                ZrParser_Ast_Free(ps->state, nameNode);
+                property_free_declaration_parts(ps, decorators, typeInfo, accessors);
+                return ZR_NULL;
+            }
             endLocation = accessor->location;
+        } else if (ps->hasFatalError) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+            property_free_declaration_parts(ps, decorators, typeInfo, accessors);
+            return ZR_NULL;
         } else if (ps->lexer->t.token != ZR_TK_RBRACE &&
                    ps->lexer->t.token != ZR_TK_EOS) {
             ZrParser_Lexer_Next(ps->lexer);
@@ -284,11 +298,9 @@ SZrAstNode *parse_property_declaration(SZrParserState *ps,
         }
     }
 
-    node = create_ast_node(
-            ps,
-            ZR_AST_PROPERTY_DECLARATION,
-            ZrParser_FileRange_Merge(startLocation, endLocation));
-    if (node == ZR_NULL) {
+    SZrFileRange propertyLocation;
+    if (!ZrParser_MergeLocations(ps, startLocation, endLocation, &propertyLocation) ||
+        (node = create_ast_node(ps, ZR_AST_PROPERTY_DECLARATION, propertyLocation)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, nameNode);
         property_free_declaration_parts(ps, decorators, typeInfo, accessors);
         return ZR_NULL;

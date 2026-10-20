@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use zr_vm_rust_binding::{
-    CompileOptions, ExecutionMode, FunctionBuilder, ModuleBuilder, NativeArgumentKind,
-    ProjectWorkspace, PrototypeType, RunOptions, RuntimeBuilder, TypeBuilder, Value,
+    CompileOptions, ExecutionMode, FunctionBuilder, GenericParameterDescriptor, ModuleBuilder,
+    NativeArgumentKind, ProjectWorkspace, PrototypeType, RunOptions, RuntimeBuilder, TypeBuilder,
+    Value,
 };
 use zr_vm_rust_binding_sys::ZrRustBindingStatus;
 
@@ -135,6 +136,46 @@ fn native_module_registration_roundtrip() -> Result<(), Box<dyn std::error::Erro
     drop(registration);
     assert_eq!(function_drop_count.load(Ordering::SeqCst), 1);
     assert_eq!(method_drop_count.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
+fn native_function_with_multiple_generic_parameters_registers_and_runs(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = acquire_test_lock();
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("native_generic_parameters_project");
+    let workspace = ProjectWorkspace::scaffold(&root, "native_generic_parameters_project")?;
+    fs::write(
+        workspace.project_root()?.join("src").join("main.zr"),
+        "let host = import(\"host_generics\"); return host.echo(23);\n",
+    )?;
+
+    let module = ModuleBuilder::new("host_generics")
+        .add_function(
+            FunctionBuilder::new("echo", 1, 1, |context| {
+                Value::new_int(context.with_argument(0, |argument| argument.read_int())?)
+            })
+            .parameter("value", "int", "value")
+            .return_type("int")
+            .generic_parameter(
+                GenericParameterDescriptor::new("T")
+                    .constraint("int")
+                    .documentation("The input type."),
+            )
+            .generic_parameter(
+                GenericParameterDescriptor::new("U")
+                    .constraint("string")
+                    .documentation("The output type."),
+            ),
+        )
+        .build()?;
+
+    let mut runtime = RuntimeBuilder::standard().build()?;
+    let _registration = runtime.register_native_module(module)?;
+    workspace.compile(&mut runtime, &CompileOptions::default())?;
+    let result = workspace.run(&mut runtime, &RunOptions::default())?;
+    assert_eq!(result.as_int()?, 23);
     Ok(())
 }
 

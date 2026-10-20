@@ -1,0 +1,45 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_evaluation_effect_internal.h
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_evaluation_effect_internal.h
+tests:
+  - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_evaluation_effect_policy_cases.h
+  - tests/debug/test_debug_formal_evaluation_cases.h
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 调试表达式副作用与准备上下文合同
+
+本批完整复核20个既有单元：C文件10个函数，以及私有头中的1个上下文、8个接口和1个guard。19项已有完整中文Doxygen，guard由名称和预处理结构充分表达，无需额外注释，没有未审查项。20个扁平路径键一一迁至eval目录，单元总数及问题家族不增加。公开签名和程序行为保持。
+
+分类器在执行前汇总结构、规范引用、getter与所有权事实，交付hasCanonicalFacts、effectFlags及isPure。结构分类会检查逻辑和条件的所有当前支持子分支，短路执行不跳过这一前置检查；lambda计创建时分配而不遍历函数体。CALL、ALLOCATION和MUTATION为潜在要求，不代表实际执行，也不由CALL推出NATIVE_CALL。
+
+范围检查只在双方source均存在时比较来源，双方各至少一个offset非零时用offset，否则用行列；空source或零offset不自动拒绝。未解析引用检查返回false不等于事实完整；规范门还联合根事实EXACT且非ERROR、AST指针及有效symbol/type等身份。当前递归的默认分支接受不能证明未来全部AST种类均有完整检查。
+
+getter和非违规所有权事实补充PROPERTY_GETTER与OWNER_MUTATION能力，生产调用点先检查规范事实。这些函数只查询事实，不执行getter、移动或借用。暂停数组索引的窄补充由准备层核对当前规范根及整数字面量索引形状；不是深层类型、下标范围或全部数组访问安全性证明。
+
+Classify入口先清零非空outPolicy，并在有容量的errorBuffer写NUL。普通准备失败false后策略维持零值；true表示分类完成，hasCanonicalFacts仍可false。isPure仅表示有规范事实且无能力位；Allows检查hasCanonicalFacts和要求位是否属于许可集合，不读取isPure，不重新分类，也不能替代正式求值器独立的mutation拒绝和支持度检查。
+
+SZrDebugFormalEvaluationContext拥有本次parser、compiler、推断值、AST和复制诊断；expressionFact借用compiler语义上下文。初始化标志支配普通释放，不能对任意未初始化内存释放，不能浅拷贝后分别释放。prepare要求新建或已释放context；入口memset不是回收旧资源。准备true可能只有部分上下文且规范事实不足，调用方仍须配套Free，并在VM销毁前完成。
+
+普通释放次序为inferredType、compiler、AST、独立诊断、parser，最后清零。绑定注册失败仍可能对reference-free值AST继续推断；调用方不能把准备成功等同完整规范绑定、纯表达式或执行许可。outFailure不在入口自动清零，成功也不保证清空errorBuffer。详细合同分别记录普通失败、true但unsupported和成功输出的有效边界。
+
+暂停局部、runtime root及closure读值由正式执行链再次验证当前身份和代际。上下文不替上层建立暂停锁或持久GC保活；复制的VM值及运行时对象仍借用或由VM管理。分析、解析和数组构造可分配并非局部Throw，两文件及包装没有通用异常回滚保证；普通Free路径不能扩大为所有OOM或Unity长跳转均会清理。
+
+10个C函数和头中上下文/8接口分别以同实体Doxygen追加EOF，C原558LF、H原72LF的630行字节完整保留，追加251及265行。有限正则核对3517个程序atom、13个字符串/字符字面量的拼写、行、UTF8字节列及绝对偏移相同，移除精确后缀可还原。该证据不是编译器lexer或AST等价证明。19个整文件和593个EOL锚点、全部可检索调用、跨文件prepare/execute及公开snapshot/条件/logpoint链共同支持合同；借用模块不获本批完整审查信用。
+
+修改前后均在实际checkout复用E盘既有clang-cl构建，构建zr_vm_debug_expression_diagnostics_test后直接无argv运行全部56个有序用例。两次构建退出0，两次测试均55PASS/1FAIL/0IGNORE、退出1，stdout与stderr逐字节相同且无归一化。9个effect policy用例属于56的子集，不计为65个不同用例。
+
+唯一失败为test_debug_evaluation_effect_policy_marks_resolved_property_getter。Unity显示主C第484行，实际断言在included test_debug_evaluation_effect_policy_cases.h:484，policy.hasCanonicalFacts为false；后续485的isPure和486的getter能力断言未到达。保持已有失败证据，不把它称作全通过、已定位根因或getter执行失败，本轮不修复行为。
+
+完整既有测试使用内存源码标签，独占cwd起初不存在，两阶段实际无生成文件；没有据标签假设磁盘夹具。空tearDown与普通VM/Hook释放尾部不能保证Unity长跳转后的清理。现有CTest debug_expression_diagnostics经run_suite/shared-host约束，无该目标显式TIMEOUT；本轮build900/direct120秒为任务watchdog，直接顺序运行不声称覆盖CTest调度、服务集成、OOM、Throw或竞态。
+
+两个源文件定义已完整审查，inventory两项pending更新reviewed并记录实际hash。全叶742行其余722行原字节保留，外来inventory48行85格、正常索引4个既有暂存路径均保留；510叶43979完整键总量不增加。整叶/全局如有历史诊断仅比较本批及剩余原文，不宣称全仓完成。本批不新增BUG/TODO、不新增重复实现的测试。
+
+配对证据：debug-evaluation-effect-current-native-pair-r1.json，SHA256 a1b8d7af215d83be2fe0b467036d9b63958a32436bd25ad6c4dde826190f8d41；源码应用：debug-evaluation-effect-current-source-application-r1.json，SHA256 a54aa483086608a98af4c5cb36603512a808f43d69642c38ec2b149d03046117。

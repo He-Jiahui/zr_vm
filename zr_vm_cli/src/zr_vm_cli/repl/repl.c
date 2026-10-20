@@ -101,8 +101,29 @@ static int zr_cli_repl_submit_session(ZrCliReplSession *session, const TZrChar *
     return result;
 }
 
+/* Commands and source submissions are delimited by physical input lines. */
+static int zr_cli_repl_read_line(TZrChar **line, TZrSize *capacity) {
+    TZrSize length = 0u;
+    int character;
+    while ((character = fgetc(stdin)) != EOF) {
+        if (length + 1u >= *capacity) {
+            TZrSize nextCapacity = *capacity == 0u ? ZR_CLI_REPL_LINE_BUFFER_LENGTH : *capacity * 2u;
+            TZrChar *next = (TZrChar *)realloc(*line, nextCapacity);
+            if (next == ZR_NULL) return -1;
+            *line = next;
+            *capacity = nextCapacity;
+        }
+        (*line)[length++] = (TZrChar)character;
+        if (character == '\n') break;
+    }
+    if (length == 0u) return 0;
+    (*line)[length] = '\0';
+    return 1;
+}
+
 int ZrCli_Repl_Run(void) {
-    TZrChar line[ZR_CLI_REPL_LINE_BUFFER_LENGTH];
+    TZrChar *line = ZR_NULL;
+    TZrSize lineCapacity = 0u;
     TZrChar *buffer = ZR_NULL;
     TZrSize bufferLength = 0u;
     TZrSize bufferCapacity = 0u;
@@ -123,7 +144,15 @@ int ZrCli_Repl_Run(void) {
         TZrSize lineLength;
 
         ZrCore_Log_FlushDefaultSinks();
-        if (fgets(line, sizeof(line), stdin) == ZR_NULL) {
+        int readStatus = zr_cli_repl_read_line(&line, &lineCapacity);
+        if (readStatus <= 0) {
+            if (readStatus < 0) {
+                free(line);
+                free(buffer);
+                ZrCli_ReplSession_Free(&session);
+                ZrCore_Log_Error(ZR_NULL, "out of memory\n");
+                return 1;
+            }
             break;
         }
 
@@ -137,6 +166,7 @@ int ZrCli_Repl_Run(void) {
                 zr_cli_repl_write_help();
             } else if (strcmp(line, ":quit") == 0) {
                 ZrCore_Log_FlushDefaultSinks();
+                free(line);
                 free(buffer);
                 ZrCli_ReplSession_Free(&session);
                 return 0;
@@ -177,6 +207,7 @@ int ZrCli_Repl_Run(void) {
             }
             newBuffer = (TZrChar *)realloc(buffer, newCapacity);
             if (newBuffer == ZR_NULL) {
+                free(line);
                 free(buffer);
                 ZrCli_ReplSession_Free(&session);
                 ZrCore_Log_Error(ZR_NULL, "out of memory\n");
@@ -186,9 +217,6 @@ int ZrCli_Repl_Run(void) {
             bufferCapacity = newCapacity;
         }
 
-        /* BUG: 单个物理输入行超过 1023 字节时，fgets 分段但这里仍为每段插入换行。
-         * 例如长字符串字面量会被改写为含换行源码并在空行提交时意外编译失败；
-         * tests/cli/test_cli_repl_e2e.c 目前只覆盖短行。 */
         memcpy(buffer + bufferLength, line, lineLength);
         bufferLength += lineLength;
         buffer[bufferLength++] = '\n';
@@ -196,6 +224,7 @@ int ZrCli_Repl_Run(void) {
     }
 
     ZrCore_Log_FlushDefaultSinks();
+    free(line);
     free(buffer);
     ZrCli_ReplSession_Free(&session);
     return 0;

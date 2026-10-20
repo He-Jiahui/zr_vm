@@ -13,7 +13,7 @@
  *
  * ## References
  * `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:264` implements the session wrapper and LINE hook;
- * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102` registers the entry tree; `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:103` installs the hook; `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1151` stops it before reporting;
+ * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:106` registers the entry tree; `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:107` installs the hook; `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1204` stops it before reporting;
  * `docs/wiki/03-modules/debug-testing-api.md:100` records the Init/register/Start/Stop/report lifecycle.
  */
 #ifndef ZR_VM_DEBUG_COVERAGE_H
@@ -68,7 +68,7 @@
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:316 supplies static rows;
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249 merges LINE hits, including a row first seen dynamically;
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:207 writes the fields and tests/profile/test_coverage.c:132 asserts them.
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:210 writes the fields and tests/profile/test_coverage.c:132 asserts them.
  */
 typedef struct ZrDebugCoverageLine {
     /** 借用的 VM 函数身份；调用方须使该函数至少存活到最后一次读取行快照。 */
@@ -108,14 +108,14 @@ typedef struct ZrDebugCoverageLine {
  * 任一 hook 遍历并发；同一会话的行数组修改/读取也须由宿主协调。
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:12` 的全局活动表无锁，需用多 state 并发采集测试核对同步模型。
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:391` 的外部 SetHook 冲突需核对宿主允许策略。
- * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249` 的 LINE 扩容失败没有 incomplete 标记，需沿 CLI 报告 `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:201` 和可控 OOM 测试核对。
+ * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249` 的 LINE 扩容失败没有 incomplete 标记，需沿 CLI 报告 `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:205` 和可控 OOM 测试核对。
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:119`、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:124` 的倍增/字节乘法、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:173` 的计数加一及 `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:309` 的静态行号数组乘法未查上界；沿 `zr_vm_common/include/zr_vm_common/zr_common_conf.h:35`、`zr_vm_core/include/zr_vm_core/function.h:646`、`zr_vm_core/src/zr_vm_core/debug/debug.c:744` 核实各宽度和可达规模，尚不足以标 BUG。
  * `Destroy` 会先 Stop（若仍活动）、释放 `lines` 并恢复为可重新 Init 的空对象。
  *
  * ## References
  * `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:374` publishes the hook and `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:393` unregisters it;
  * `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:290` reuses the array;
- * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102` and `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:103` show the normal registration/start sequence.
+ * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:106` and `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:107` show the normal registration/start sequence.
  */
 typedef struct ZrDebugCoverage {
     /** 活动会话绑定的 VM state 借用指针；空闲或 Stop 后为 NULL。 */
@@ -124,7 +124,7 @@ typedef struct ZrDebugCoverage {
     FZrDebugHook previous_hook;
     /** Start 前的事件订阅掩码；Coverage 只在此基础上加入 LINE。 */
     TZrUInt32 previous_mask;
-    /** Start 前的 COUNT 周期；Stop 时与旧掩码一起恢复。 */
+    /** Start 前的 COUNT 周期基值；Stop 恢复该基值并重启倒计时，不保存剩余 tick。 */
     TZrUInt32 previous_count;
     /** 是否已加入活动表并安装 Coverage hook。 */
     TZrBool active;
@@ -157,7 +157,7 @@ typedef struct ZrDebugCoverage {
  *
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:283 clears the object; CLI initializes the stack session at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:961.
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:996.
  */
 ZR_DEBUG_API void ZrDebug_Coverage_Init(ZrDebugCoverage *coverage);
 /**
@@ -204,7 +204,7 @@ ZR_DEBUG_API void ZrDebug_Coverage_Reset(ZrDebugCoverage *coverage);
  *
  * ## References
  * `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:333` calls this function for each tree node; CLI begins registration at
- * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102`; core line enumeration is implemented at
+ * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:106`; core line enumeration is implemented at
  * `zr_vm_core/src/zr_vm_core/debug/debug.c:744`.
  */
 ZR_DEBUG_API TZrBool ZrDebug_Coverage_RegisterFunction(ZrDebugCoverage *coverage, const struct SZrFunction *function);
@@ -229,7 +229,7 @@ ZR_DEBUG_API TZrBool ZrDebug_Coverage_RegisterFunction(ZrDebugCoverage *coverage
  *
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:338 walks the child function list; CLI invokes it at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102; the profile test invokes it at
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:106; the profile test invokes it at
  * tests/profile/test_coverage.c:119.
  */
 ZR_DEBUG_API TZrBool ZrDebug_Coverage_RegisterFunctionTree(ZrDebugCoverage *coverage,
@@ -279,8 +279,8 @@ ZR_DEBUG_API TZrBool ZrDebug_Coverage_Start(ZrDebugCoverage *coverage, struct SZ
  *
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:391 restores the saved hook; early/error cleanup calls it at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:81, while the successful report path stops at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1151 and the test stops at tests/profile/test_coverage.c:125.
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:85, while the successful report path stops at
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1204 and the test stops at tests/profile/test_coverage.c:125.
  */
 ZR_DEBUG_API void ZrDebug_Coverage_Stop(ZrDebugCoverage *coverage);
 /**
@@ -301,8 +301,8 @@ ZR_DEBUG_API void ZrDebug_Coverage_Stop(ZrDebugCoverage *coverage);
  *
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:408 frees the line array; the successful CLI report path destroys after reporting at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1158; the early/error helper performs Stop then Destroy at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:82.
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1211; the early/error helper performs Stop then Destroy at
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:86.
  */
 ZR_DEBUG_API void ZrDebug_Coverage_Destroy(ZrDebugCoverage *coverage);
 /**
@@ -322,8 +322,8 @@ ZR_DEBUG_API void ZrDebug_Coverage_Destroy(ZrDebugCoverage *coverage);
  * 对象也返回零。
  *
  * ## References
- * CLI obtains the count at zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:201 and reads each row at
- * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:202; the test drives the same loop from
+ * CLI obtains the count at zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:205 and reads each row at
+ * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:206; the test drives the same loop from
  * tests/profile/test_coverage.c:128.
  */
 ZR_DEBUG_API TZrSize ZrDebug_Coverage_GetLineCount(const ZrDebugCoverage *coverage);
@@ -347,7 +347,7 @@ ZR_DEBUG_API TZrSize ZrDebug_Coverage_GetLineCount(const ZrDebugCoverage *covera
  * `function` 字段，不得把该地址保存到会话之外长期使用。
  *
  * ## References
- * CLI writes executable and executed at zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:207; the test reads each
+ * CLI writes executable and executed at zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:210; the test reads each
  * borrowed row at tests/profile/test_coverage.c:129 and asserts hit/miss states at
  * tests/profile/test_coverage.c:132 and tests/profile/test_coverage.c:137.
  */

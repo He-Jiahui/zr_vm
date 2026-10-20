@@ -6,40 +6,23 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic_display.h"
+#include "parser/parser_range_evidence.h"
 #include "type_inference_internal.h"
+#include "compiler_type_value_alias.h"
 
 /* 本模块把类型 AST 中的源码拼写记录为可选 use-site 展示事实；推导结果和 canonical identity 仍由类型转换路径决定。 */
-
-static SZrTypeBinding *type_inference_find_type_value_alias_binding(
-        SZrCompilerState *cs,
-        SZrString *name) {
-    TZrSize index;
-
-    /* 表内 binding 借用当前 CompilerState 的生命周期，只在本次解析中读取。 */
-    if (cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_NULL;
-    }
-    for (index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(
-                &cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL &&
-            ZrCore_String_Equal(binding->name, name)) {
-            return binding;
-        }
-    }
-    return ZR_NULL;
-}
 
 TZrBool type_inference_resolve_type_value_alias(
         SZrCompilerState *cs,
         SZrString *name,
+        SZrSyntaxContext syntaxContext,
         SZrInferredType *result) {
     SZrTypeBinding *binding;
 
     if (result == ZR_NULL) {
         return ZR_FALSE;
     }
-    binding = type_inference_find_type_value_alias_binding(cs, name);
+    binding = compiler_find_type_value_alias(cs, name, syntaxContext);
     if (binding == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -309,13 +292,16 @@ void type_inference_publish_explicit_type_display_alias(
     if (!type_inference_type_use_name_range(typeUse->name, &useRange)) {
         return;
     }
-    {
+    if (typeUse->name != terminalType->name) {
+        SZrAstOwnership *owner = typeUse->name->ownership;
         SZrFileRange terminalRange;
-        if (!type_inference_type_use_name_range(
-                    terminalType->name, &terminalRange)) {
+        if (owner == ZR_NULL || terminalType->name->ownership != owner ||
+            !type_inference_type_use_name_range(
+                    terminalType->name, &terminalRange) ||
+            !ZrParser_RangeEvidence_Merge(
+                    owner, useRange, terminalRange, &useRange)) {
             return;
         }
-        useRange.end = terminalRange.end;
     }
     typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, type);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
@@ -402,8 +388,8 @@ void type_inference_publish_type_value_display_alias(
         typeUse->name->type != ZR_AST_IDENTIFIER_LITERAL) {
         return;
     }
-    binding = type_inference_find_type_value_alias_binding(
-            cs, typeUse->name->data.identifier.name);
+    binding = compiler_find_type_value_alias(cs, typeUse->name->data.identifier.name,
+            typeUse->name->data.identifier.syntaxContext);
     if (binding == ZR_NULL) {
         return;
     }

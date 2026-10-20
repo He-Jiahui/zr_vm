@@ -2062,7 +2062,12 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap_layout(
     receiverTypeLayout = resolver(function, receiverLayout->typeLayoutId, resolverUserData);
     if (!function_frame_slot_matches_layout_kind(receiverLayout, receiverTypeLayout) ||
         !ZrCore_TypeLayout_Validate(receiverTypeLayout) ||
-        receiverTypeLayout->byteSize != receiverLayout->byteSize ||
+        (receiverTypeLayout->byteSize != receiverLayout->byteSize &&
+         (resolver != ZrCore_Function_ResolvePrototypeFrameTypeLayout ||
+          !ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+                  function, receiverLayout->typeLayoutId,
+                  receiverLayout->byteSize, receiverLayout->byteAlign,
+                  (SZrState *)resolverUserData))) ||
         receiverTypeLayout->byteAlign != receiverLayout->byteAlign ||
         (requireCanonicalLayoutIdentity &&
          receiverTypeLayout->cTypeId != receiverLayout->typeLayoutId) ||

@@ -16,12 +16,22 @@ typedef struct SZrFilePosition {
     TZrInt32 column;   // 列号
 } SZrFilePosition;
 
-/** @brief 同一源文件中的范围；source 借用 VM 字符串，不转移所有权。
- * @note 正常解析位置按起点包含、终点不包含使用；占位范围可退化为空。 */
+typedef enum EZrFileRangeFlags {
+    ZR_FILE_RANGE_FLAG_COMPOSITE = 1U,
+    ZR_FILE_RANGE_FLAG_PARTIAL = 2U
+} EZrFileRangeFlags;
+
+/** @brief A physical source anchor, optionally backed by owner-held token evidence.
+ * @note source is borrowed; offsets are half-open. Zero keys mean unknown origin.
+ * Composite ranges retain their first native anchor, not a fabricated envelope. */
 typedef struct SZrFileRange {
     SZrFilePosition start;
     SZrFilePosition end;
     SZrString *source;  // 源文件名
+    TZrUInt64 originKey;
+    TZrUInt64 ownerKey;
+    TZrUInt32 evidenceIndex;
+    TZrUInt32 flags;
 } SZrFileRange;
 
 /** @brief 直接包装调用方给出的字节偏移与行列，不做边界或基数校验。 */
@@ -30,9 +40,12 @@ ZR_PARSER_API SZrFilePosition ZrParser_FilePosition_Create(TZrSize offset, TZrIn
 /** @brief 组合两个位置与借用的源名；调用方负责保持三者指向同一源文本。 */
 ZR_PARSER_API SZrFileRange ZrParser_FileRange_Create(SZrFilePosition start, SZrFilePosition end, SZrString *source);
 
-/** @brief 按字节偏移取最早起点和最晚终点，并沿用第一个范围的源名。
- * @pre 两个范围应属于同一源文件；函数不核查 source 是否一致。 */
+/** @brief Conservatively combine anchors without access to token evidence.
+ * @note Parser construction must use its checked, owner-aware merge instead. */
 ZR_PARSER_API SZrFileRange ZrParser_FileRange_Merge(SZrFileRange range1, SZrFileRange range2);
+
+/** @brief Drop token evidence after changing an anchor's physical endpoints. */
+ZR_PARSER_API SZrFileRange ZrParser_FileRange_WithoutEvidence(SZrFileRange range);
 
 #endif //ZR_VM_PARSER_LOCATION_H
 

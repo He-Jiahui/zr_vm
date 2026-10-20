@@ -356,9 +356,9 @@ not a proof of the entire runtime or generated AOT entry behavior. See
 `tests/core/test_close_proxy.c:730` and `tests/core/test_close_proxy.c:733`.
 
 CTest dispatches the three standalone Unity mains through actual `add_test`
-COMMAND entries: `tests/cmake/close-proxy-tests.cmake:8` for `close_proxy_core`,
-`tests/cmake/close-proxy-tests.cmake:20` for `close_meta_exception`, and
-`tests/cmake/close-proxy-tests.cmake:29` for `close_proxy_instruction`.
+COMMAND entries: `tests/cmake/close-proxy-tests.cmake:13` for `close_proxy_core`,
+`tests/cmake/close-proxy-tests.cmake:28` for `close_meta_exception`, and
+`tests/cmake/close-proxy-tests.cmake:40` for `close_proxy_instruction`.
 The mains register 19, four and two cases, respectively, through `RUN_TEST`;
 Unity supplies their setup/teardown lifecycle. The existing Windows compile-only before/after check completed six compile steps
 successfully for these three core translation units. It supplies no link,

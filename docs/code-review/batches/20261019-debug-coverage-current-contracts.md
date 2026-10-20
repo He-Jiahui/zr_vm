@@ -1,0 +1,41 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
+tests:
+  - tests/profile/test_coverage.c
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 覆盖率会话与行快照合同
+
+本批完整复核56个既有单元：C文件26项（22函数、1位置结构、1活动表状态、2重要块），H文件30项（文件入口、guard、宏、类型、15成员及9声明）。46项有文档，9项保留既有TODO，guard无需重复说明；无未审查项，无新键、新问题家族或行为/API变更。
+
+Coverage在执行前登记函数树的可执行行作为分母，运行期间通过LINE事件合并命中。登记不执行函数，也不拥有函数树；函数及子数组、名称、来源和位置表在登记期有效稳定，函数身份须活到报告读取完毕。两次活动行查询依赖同一元数据计数上界；临时数组归登记函数，行快照数组归Coverage。递归要求有限无环函数树，不自带循环检测。普通失败可能留下先前记录，不能当成事务。
+
+宿主持有ZrDebugCoverage对象；Init只用于新对象或已Destroy对象，不能覆盖活动会话或已拥有数组。Reset清空逻辑前缀而保留容量，不停止hook；活动时后续LINE仍可填回，重新建立静态分母须再次登记。Destroy先Stop、再释放数组、最后Init，必须在VM/函数释放前完成，且宿主先结束读写与回调。空指针及已初始化空闲对象的普通早返不意味着任意未初始化内存可安全释放。
+
+进程级活动链表只借用会话。find_active按state指针匹配已入链节点，不另检查active；Start先注册节点，再置active，最后安装包装hook，保证派发可查到会话。每state只允许一个活动实例不能推出跨state线程安全；宿主必须使链表写入与所有hook遍历互斥，并协调同一会话行数组读写。这是已有同步TODO，不宣称已复现竞态。
+
+Start保存旧hook、mask和COUNT基础周期，安装旧mask加LINE的包装hook。包装层先处理自己的LINE，再按保存的订阅掩码转发旧回调；Core的allowDebugHook抑制普通包装层递归，不提供全局线程或非局部退出回滚保证。Stop恢复旧hook/mask/COUNT基值，SetHook重新开始计数；它不能恢复先前剩余tick相位，也不等待其他线程的活动回调。
+
+活动期间外部再次SetHook后，Stop仍恢复Start时快照，可能覆盖新配置；串行或栈式hook所有权策略仍由已有TODO追踪。普通登记或LINE扩容失败保留已采集前缀，LINE路径可静默跳过且不向报告暴露incomplete；容量倍增、计数加一及静态临时数组的可达宽度仍待核验。这些与同步、外部hook所有权共4个既有TODO家族，本批不将未验证风险升级BUG。
+
+会话复制有限长度函数名/来源文本，function指针仍借用VM。字符串helper用strlen、memcpy及显式NUL；匿名名/空来源只在外层函数或相应字段对象为NULL时回退，不额外保证非NULL对象内部native文本有效。GetLine只借用行记录：新增记录在realloc时可能使物理指针失效，重复登记或LINE可原位更新；Reset使旧记录逻辑失效并允许存储复用，Destroy释放整表。Stop后也须避免Register/Reset/Destroy，才能稳定遍历；不保证全表按源码排序或采集完整。
+
+C新增24段带适用Summary、Parameters、Returns或Fields/Invariants、References和生命周期的中文Doxygen；H保留14段既有系统Doxygen和15成员说明，仅修15条完整注释行，纠正实际CLI锚与COUNT边界。独审的31项严格标量修订可从原F正向重建effective，逐项逆转恢复原报告原字节；不全局改写不相关说明。
+
+C原421LF字节前缀完整保留，EOF增加452LF；H保持356LF及所有程序行。2440个有限正则程序atom和9个字符串/字符字面量的拼写、物理行、UTF8字节列相同；本批字面量绝对偏移亦一致。C移除精确后缀、H逆回15条列明注释行可还原原始777LF。该有限文字投影不是编译器lexer/AST证明。15个整文件、189个EOL锚、24定义跨度及所有可检索直接/回调入口支持合同，借用Core/CLI不获本批完整审查信用。
+
+修改前后复用E盘clang-cl构建目录，构建zr_vm_coverage_test并直接无argv顺序运行两项现有测试；两次build与test均退出0，2PASS/0FAIL/0IGNORE，stdout与stderr原字节一致，无归一化。第一例检查Core活动行的非零去重与特定行成员，第二例检查树登记、LINE执行/未执行标志及Stop后零mask。测试没有证明精确总行数、全表排序、任意旧hook转发或COUNT组合、Reset、多VM并发、OOM及CLI报告失败。
+
+测试源码通过内存sourceLabel编译；独占cwd起初不存在，两阶段实际无生成文件。空tearDown及普通释放尾部不保证Unity长跳转后清理。CTest coverage通过run_suite/shared-host约束，目标未显式TIMEOUT；900/120秒为本轮build/direct watchdog，直接顺序运行不声称验证CTest调度或WSL行为。
+
+C的inventory源项原已reviewed，H的一项pending更新reviewed；两项均记录实际hash及完整复核结果，全叶742行其余686行原字节保留，外来inventory48行85格及正常索引4个既有暂存路径保留；510叶43979完整键无重复、总量不增加。整叶与全局历史诊断仅核对本批已清及外部原文相同，不宣称全仓完成。问题本轮只记录，不做行为修复，也未新增重复实现的测试。
+
+配对证据：debug-coverage-current-native-pair-r1.json，SHA256 de55469d02c36cc3a82c6349817ee37772019e0dbcae1ff17e63ccea2bc8edd3；源码应用：debug-coverage-current-source-application-r1.json，SHA256 966090c9ed9a229ffd5165b32ceea90519d09b5ed6d12c7dafa9822d27e333dd。

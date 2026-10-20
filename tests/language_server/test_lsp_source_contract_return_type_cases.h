@@ -6,7 +6,7 @@ static void test_return_type_inference_uses_parser_diagnostic_projection(void) {
     char *symbols = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c");
     char *parserInference = read_repo_text_file_owned(
-        "zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_callable_return_inference.c");
+            "zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_callable_return_inference.c");
 
     if (symbols == NULL || parserInference == NULL) {
         printf("FAIL: could not read return inference diagnostic sources\n");

@@ -18,9 +18,41 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/**
+ * ## Summary
+ * 为旧本地 Task 执行链保存一次同步 TryRun 请求，使 void callback 能将
+ * ZrLib_CallValue 的结果值与 bool 状态交还创建者，异常状态仍由 TryRun 单独返回。
+ *
+ * ## Fields
+ * callable 借用 handle 中的值槽；result 保存调用者管理的输出值；
+ * completed 保存单次 CallValue bool，不代表 Task 终态、worker 退出或 TryRun 异常状态。
+ *
+ * ## Invariants and lifecycle
+ * zr_vm_task_execute_handle 在栈上创建请求并同步交给 zr_vm_task_execute_callable_body，
+ * 不得由 callback 保存供本次受保护调用结束后继续使用。创建者先将 result 置 null、
+ * completed 置 false，再分别检查 TryRun 状态、completed 和 VM threadStatus。
+ * TODO: 旧 create/pump/wait 链目前未找到公开 descriptor 到它的入口；
+ * 沿 zr_vm_task_create_async_handle、zr_vm_task_scheduler_pump_internal、
+ * zr_vm_task_wait_for_handle 核对保留意图，不将它当作 canonical Job 调度路径。
+ * TODO: callable 从 handle 字段借用后先经历状态字段写入，才进入 CallValue；
+ * 核对这段期间字段存储地址与对象保活的保证。CallValue 在其入口已复制 callable，
+ * 不能把更晚的 VM 栈复制当作首次取值。
+ * TODO: 若此旧链预期可达且 CallValue 产出带 ownership metadata 的值，
+ * 核对结果复制到 handle 或 fault fallback 后，临时 result 的释放与保活责任；
+ * 当前未证明这些未知边界为 BUG。
+ *
+ * ## References
+ * zr_vm_task_execute_handle 创建请求并调用 ZrCore_Exception_TryRun；
+ * zr_vm_task_execute_callable_body 写入 CallValue 返回值；
+ * zr_vm_thread_scheduler_schedule 委派 canonical attached/isolated Job 后端，
+ * 不是本请求的公开执行入口。
+ */
 typedef struct ZrVmTaskExecuteRequest {
+    /** 从旧handle字段借用的输入槽；其稳定性待类型说明中的TODO核对，不取得独立所有权。 */
     const SZrTypeValue *callable;
+    /** 调用者管理的CallValue输出槽；生产者先置null，复制后的管理责任见类型TODO。 */
     SZrTypeValue result;
+    /** 单次CallValue的bool状态；TryRun异常状态与Task终态分别由外层处理。 */
     TZrBool completed;
 } ZrVmTaskExecuteRequest;
 
@@ -49,6 +81,7 @@ static const TZrChar *kThreadSchedulerConfiguredQuotaDepthField = "__zr_thread_s
 static const TZrChar *kThreadSchedulerIsolatedShutdownField = "__zr_thread_scheduler_isolated_shutdown";
 static const TZrUInt32 kTaskSchedulerExternalWaitMs = 1u;
 
+/* Self的标签筛选不替代包装类型校验；完整借用契约见runtime_internal.h同名声明。 */
 SZrObject *zr_vm_task_self_object(const ZrLibCallContext *context) {
     SZrTypeValue *selfValue = ZrLib_CallContext_Self(context);
     if (selfValue == ZR_NULL || (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY) ||
@@ -59,11 +92,33 @@ SZrObject *zr_vm_task_self_object(const ZrLibCallContext *context) {
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);
 }
 
+/**
+ * ## Summary
+ * 为 native callback 的对象结果选择 OBJECT 或 ARRAY 值标签，
+ * 使构造和包装回调遵守同一标签交接约定。
+ *
+ * ## Parameters
+ * @param[in] object 借用的 VM 对象；非空时必须仍是有效对象。
+ * 空指针只触发实现中的 OBJECT fallback，不表示对象已构造。
+ *
+ * ## Returns
+ * @return internalType 为 ARRAY 时返回 ARRAY 标签，其余情况返回 OBJECT 标签。
+ *
+ * ## Constraints and lifecycle
+ * 只选择标签，不验证对象原型、owner、业务类型或完整布局。
+ * 当前唯一调用者 zr_vm_task_finish_object 已在调用前拒绝空对象，
+ * 不会通过本 fallback 接受失败的构造。
+ *
+ * ## References
+ * zr_vm_task_finish_object 将标签交给 ZrLib_Value_SetObject；
+ * 对象是否可发布仍由构造或包装回调负责。
+ */
 static EZrValueType zr_vm_task_value_type_for_object(SZrObject *object) {
     return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY ? ZR_VALUE_TYPE_ARRAY
                                                                                        : ZR_VALUE_TYPE_OBJECT;
 }
 
+/* 结果交接前的对象保活留在调用链；完整返回约定见runtime_internal.h同名声明。 */
 TZrBool zr_vm_task_finish_object(SZrState *state, SZrTypeValue *result, SZrObject *object) {
     if (state == ZR_NULL || result == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
@@ -73,6 +128,7 @@ TZrBool zr_vm_task_finish_object(SZrState *state, SZrTypeValue *result, SZrObjec
     return ZR_TRUE;
 }
 
+/* void字段写API不保证字段已保存；完整失败与借用约定见runtime_internal.h同名声明。 */
 void zr_vm_task_set_value_field(SZrState *state,
                                 SZrObject *object,
                                 const TZrChar *fieldName,

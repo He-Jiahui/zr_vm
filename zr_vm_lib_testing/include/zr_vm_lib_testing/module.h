@@ -126,7 +126,7 @@ typedef struct SZrTestingValueSnapshot {
  * ## Invariants and lifecycle
  * 内联字符数组和整数可按值保存，不借用 Function、String 或 CallInfo；不会保持调试元数据可达。
  * TODO: endColumn 的包含/排除边界需沿执行位置记录生产者核对，宿主不要仅凭字段名推定切片规则。
- * 核查入口为 zr_vm_core/src/zr_vm_core/io/io_runtime.c:695 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439 的消费者。
+ * 核查入口为 zr_vm_core/src/zr_vm_core/io/io_runtime.c:701 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439 的消费者。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:399 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:440 投影最近 VM 帧；
@@ -291,7 +291,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionF
  *
  * ## Constraints and lifecycle
  * context/参数仅在 native 调用期间有效，异常须由正常 VM/宿主异常边界处理。
- * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243、zr_vm_core/src/zr_vm_core/exception/exception.c:407、zr_vm_core/src/zr_vm_core/exception/exception.c:684。
+ * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243、zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433、zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629。
  * 注册/物化仍遵循 Test phase，成功清理 TLS 不清理其它线程记录。
  *
  * ## References
@@ -345,7 +345,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZ
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:181 注册 native 两参回调；tests/testing/test_assertions.c:297、tests/testing/test_assertions.c:324 和 tests/testing/test_assertions.c:432 走正常 export 调用；
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619 和 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997 区分回调拒绝与宿主完成；tests/testing/test_assertions.c:337 核对非法 E 不执行 action 的 null 路径；
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619 和 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1910 区分回调拒绝与宿主完成；tests/testing/test_assertions.c:337 核对非法 E 不执行 action 的 null 路径；
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1007 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1080 实施同步捕获/类型重读/结果交付。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result);
@@ -364,7 +364,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, S
  * provider 必须保持加载到最后一个描述符/回调消费者结束。
  *
  * ## References
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:370 查找符号，zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:383 调用；
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:239 查找符号，zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:252 调用；
  * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:77 转交描述符查询。
  */
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVm_GetNativeModule_v1(void);

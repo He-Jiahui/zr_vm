@@ -10,8 +10,14 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/location.h"
+#include "zr_vm_parser/syntax_context.h"
 
 #include <stddef.h>
+
+/* Every parsed node retains its shared strings and native token/context owner. */
+typedef struct SZrTokenStream SZrTokenStream;
+typedef struct SZrAstOwnership SZrAstOwnership;
+typedef struct SZrParserComptimeBudget SZrParserComptimeBudget;
 
 // AST 节点类型枚举
 // 参考: zr/src/types/keywords.ts
@@ -315,6 +321,8 @@ typedef struct SZrUnaryOperator {
 typedef struct SZrIdentifier {
     SZrString *name;
     TZrBool isMoveBinding;
+    /* Value-copied hygiene identity; spelling remains the original source text. */
+    SZrSyntaxContext syntaxContext;
 } SZrIdentifier;
 
 // 类型定义
@@ -744,6 +752,7 @@ typedef struct SZrStructMetaFunction {
     EZrAccessModifier access;
     TZrBool isStatic;
     SZrIdentifier *meta; // MetaIdentifier
+    SZrFileRange nameLocation; // @ and identifier, excluding the signature and body
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
     SZrType *returnType; // 可选
@@ -846,6 +855,7 @@ typedef struct SZrClassMetaFunction {
     EZrMethodReceiverModifier receiverModifier;
     TZrUInt32 modifierFlags;
     SZrIdentifier *meta; // MetaIdentifier
+    SZrFileRange nameLocation; // @ and identifier, excluding the signature and body
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
     TZrBool hasSuperCall; // 是否显式声明了 super(...)
@@ -1040,6 +1050,8 @@ typedef struct SZrMetaIdentifier {
 typedef struct SZrScript {
     SZrAstNode *moduleName; // ModuleDeclaration（可选）
     SZrAstNodeArray *statements; // TopLevelStatement 数组
+    SZrTokenStream *tokenStream; // retained by parser-owned script roots when present
+    SZrSyntaxContextTable *syntaxContextTable; // retained owner for identifier contexts
 } SZrScript;
 
 // AST 节点联合体
@@ -1047,6 +1059,7 @@ typedef struct SZrScript {
 typedef struct SZrAstNode {
     EZrAstNodeType type;
     SZrFileRange location;
+    SZrAstOwnership *ownership;
 
     union {
         // 顶层
@@ -1180,11 +1193,21 @@ typedef struct SZrAstNode {
  * @brief 在收集语法节点或构造借用视图前建立空列表。
  * @pre state/global 分配器存活，并与后续 Add/Free 使用的分配器一致。
  * @return initialCapacity 非零时使用该初始容量，零时使用 SMALL 默认值；
- * 任一原生分配失败返回 NULL，不在此入口发布解析诊断或触发 GC 分配重试。
+ * 任一原生分配失败或尺寸溢出返回 NULL，不在此入口发布解析诊断或触发
+ * GC 分配重试。此兼容入口委托给 NewBudget 的未计费事务实现。
  * @note 调用方须检查 NULL，清理尚未交接的节点并决定解析失败如何传播。
- * TODO: 当前容量乘法及后续翻倍未检查溢出；核查外部 API 请求容量与超长列表的边界。
  */
 ZR_PARSER_API SZrAstNodeArray *ZrParser_AstNodeArray_New(SZrState *state, TZrSize initialCapacity);
+/**
+ * @brief Create an AST node array with optional transactional heap metering.
+ * @param budget NULL disables accounting for compatibility callers.
+ * @note Container and backing storage are reserved and committed together;
+ *       allocation failure leaves the budget unchanged.
+ */
+ZR_PARSER_API SZrAstNodeArray *ZrParser_AstNodeArray_NewBudget(
+        SZrState *state,
+        TZrSize initialCapacity,
+        SZrParserComptimeBudget *budget);
 /**
  * @brief 按调用顺序登记已构造节点，供后续 AST 遍历或参数重排消费。
  * @pre 非空 array 使用与 New 相同的分配器；同一容器的 Add/Free 由调用方串行协调。
@@ -1193,6 +1216,18 @@ ZR_PARSER_API SZrAstNodeArray *ZrParser_AstNodeArray_New(SZrState *state, TZrSiz
  * 列表只保存指针，节点归属由拥有型 AST 或借用视图的调用链决定。
  */
 ZR_PARSER_API void ZrParser_AstNodeArray_Add(SZrState *state, SZrAstNodeArray *array, SZrAstNode *node);
+/**
+ * @brief Append one node, returning false when growth or validation fails.
+ * @param budget NULL disables accounting for compatibility callers.
+ * @note The node is borrowed/adopted only on success and is never destroyed
+ *       by this function. A failed growth leaves pointer, capacity, and count
+ *       unchanged.
+ */
+ZR_PARSER_API TZrBool ZrParser_AstNodeArray_TryAddBudget(
+        SZrState *state,
+        SZrAstNodeArray *array,
+        SZrAstNode *node,
+        SZrParserComptimeBudget *budget);
 /**
  * @brief 结束节点列表或借用重排视图的容器生命周期。
  * @pre 非空 array 使用与 New 相同且仍存活的 state/global 分配器。

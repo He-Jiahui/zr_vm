@@ -82,7 +82,10 @@ TZrBool ZrCore_Utf8_EncodeCodePoint(TZrUInt32 codePoint,
         return ZR_FALSE;
     }
 
-    /* BUG: utf8proc_encode_char 接受 U+D800..U+DFFF；这里未先验证标量，成功返回却生成无效 UTF-8。 */
+    if (codePoint > 0x10ffffu || (codePoint >= 0xd800u && codePoint <= 0xdfffu)) {
+        return ZR_FALSE;
+    }
+
     status = utf8proc_encode_char((utf8proc_int32_t)codePoint, (utf8proc_uint8_t *)buffer);
     if (status <= 0) {
         return ZR_FALSE;

@@ -18,10 +18,11 @@ SZrAstNode *parse_await_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    awaitNode = create_ast_node(ps,
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, operand->location, &mergedLocation) ||
+        (awaitNode = create_ast_node(ps,
                                 ZR_AST_AWAIT_EXPRESSION,
-                                ZrParser_FileRange_Merge(startLoc, operand->location));
-    if (awaitNode == ZR_NULL) {
+                                mergedLocation)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, operand);
         return ZR_NULL;
     }
@@ -59,8 +60,13 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
         return functionNode;
     }
 
+    SZrFileRange functionLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, functionNode->location, &functionLocation)) {
+        ZrParser_Ast_Free(ps->state, functionNode);
+        return ZR_NULL;
+    }
     declaration = &functionNode->data.functionDeclaration;
     declaration->isAsync = ZR_TRUE;
-    functionNode->location = ZrParser_FileRange_Merge(startLoc, functionNode->location);
+    functionNode->location = functionLocation;
     return functionNode;
 }

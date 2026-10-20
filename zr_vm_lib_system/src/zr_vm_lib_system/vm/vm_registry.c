@@ -58,7 +58,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             {"state", 0, 0, ZrSystem_Vm_State, "SystemVmState", "Return a snapshot of VM execution state.", ZR_NULL, 0},
             {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module.", ZR_NULL, 0},
     };
-    /* 编辑器/语言服务消费的签名提示；导出名和类型名需与上方 runtime descriptor 一致。 */
+    /* 供模块元信息与工具消费的签名提示；导出名和类型名须与 runtime descriptor 一致，不能替代 callback 参数检查。 */
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"loadedModules", "function", "loadedModules(): SystemLoadedModuleInfo[]", "Return metadata for all loaded modules."},
             {"state", "function", "state(): SystemVmState", "Return a snapshot of VM execution state."},

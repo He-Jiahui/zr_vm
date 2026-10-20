@@ -67,6 +67,9 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/preprocess_libffi_asm.cmake
             ${ZR_VM_LIBFFI_VENDOR_ROOT}/include/ffi_cfi.h
             ${ZR_VM_LIBFFI_VENDOR_ROOT}/src/x86/asmnames.h
+            ${ZR_VM_LIBFFI_VENDOR_ROOT}/src/x86/ffitarget.h
+            ${ZR_VM_LIBFFI_GEN_DIR}/ffi.h
+            ${ZR_VM_LIBFFI_GEN_DIR}/fficonfig.h
             VERBATIM
     )
 

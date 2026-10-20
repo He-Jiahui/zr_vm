@@ -65,6 +65,7 @@ typedef struct SZrInferredType {
     TZrUInt64 protocolMask;          // canonical capability facts projected by type inference
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选
+    TZrUInt32 nominalDefinitionToken; // Snapshot-local nominal key; zero keeps name-based identity.
     EZrInferredGenericArgumentKind genericArgumentKind;
     TZrInt64 genericConstIntValue;
     
@@ -100,6 +101,8 @@ typedef struct SZrTypeBinding {
     EZrSemanticRuntimeRootKind runtimeRootKind;
     TZrUInt64 originToken;
     TZrUInt32 originIndex;
+    /* Original spelling remains in name; this value distinguishes hygienic bindings. */
+    SZrSyntaxContext syntaxContext;
 } SZrTypeBinding;
 
 // 函数类型信息
@@ -118,7 +121,17 @@ typedef struct SZrFunctionTypeInfo {
     TZrBool isExternalCallable;      // no source declaration/SymbolId is available
     TZrBool isCallableValueBinding;  // callable metadata bound to a lexical value
     TZrBool hasInferredReturnType;   // declaration return contract has been refined
+    /* Item identity for declarations; local identity for callable value bindings. */
+    SZrSyntaxContext syntaxContext;
 } SZrFunctionTypeInfo;
+
+typedef struct SZrNamedTypeBinding {
+    SZrString *name;
+    SZrSyntaxContext syntaxContext;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    SZrAstNode *declarationNode;
+} SZrNamedTypeBinding;
 
 // 类型环境结构体
 typedef struct SZrTypeEnvironment {
@@ -126,6 +139,7 @@ typedef struct SZrTypeEnvironment {
     SZrArray functionReturnTypes;    // 函数类型信息数组（SZrFunctionTypeInfo*）
     SZrArray externalCallableValues; // externally supplied callable contracts (SZrFunctionTypeInfo*)
     SZrArray typeNames;              // 类型名称数组（SZrString*），用于存储已定义的struct/class类型名称
+    SZrArray namedTypeBindings;      // SZrNamedTypeBinding; spelling plus item context
     struct SZrTypeEnvironment *parent; // 父类型环境（用于作用域）
     struct SZrSemanticContext *semanticContext; // 共享语义记录上下文（可选）
 } SZrTypeEnvironment;
@@ -231,12 +245,26 @@ ZR_PARSER_API void ZrParser_TypeEnvironment_Free(SZrState *state, SZrTypeEnviron
 
 // 注册变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *type);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariableWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        SZrSyntaxContext syntaxContext);
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
                                                                   SZrTypeEnvironment *env,
                                                                   SZrString *name,
                                                                   const SZrInferredType *type,
                                                                   SZrAstNode *declarationNode,
                                                                   SZrFileRange declarationRange);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariableExWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        SZrAstNode *declarationNode,
+        SZrFileRange declarationRange,
+        SZrSyntaxContext syntaxContext);
 
 /*
  * Registers a binding whose identity belongs to an already compiled canonical
@@ -284,8 +312,18 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterClosureCapture(
 
 // 查找变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrInferredType *result);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariableWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrInferredType *result);
 ZR_PARSER_API const SZrTypeBinding *ZrParser_TypeEnvironment_FindVariableBinding(SZrTypeEnvironment *env,
                                                                                  SZrString *name);
+ZR_PARSER_API const SZrTypeBinding *ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext);
 
 // 注册函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *returnType, SZrArray *paramTypes);
@@ -307,6 +345,16 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCallableValueFunction(
         SZrArray *genericParameters,
         SZrArray *parameterPassingModes,
         SZrAstNode *declarationNode);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCallableValueFunctionWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        SZrArray *paramTypes,
+        SZrArray *genericParameters,
+        SZrArray *parameterPassingModes,
+        SZrAstNode *declarationNode,
+        SZrSyntaxContext syntaxContext);
 /* Registers an externally verified callable without allocating replacement identities. */
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
         SZrState *state,
@@ -336,15 +384,36 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
         SZrString *name,
         TZrTypeId typeId,
         SZrString *signatureDisplay);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterExternalCallableAliasWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay,
+        SZrSyntaxContext syntaxContext);
 
 // 查找函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunctionWithContext(
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrFunctionTypeInfo **result);
 
 // 查找同名函数候选集，results 为输出数组（元素类型为 SZrFunctionTypeInfo*）
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrArray *results);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunctionsWithContext(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrArray *results);
 
 // 注册类型名称
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterTypeWithContext(
+        SZrState *state, SZrTypeEnvironment *env, SZrString *typeName,
+        SZrAstNode *declarationNode, SZrSyntaxContext syntaxContext);
 
 // 注册携带 source declaration identity 的类型名称。
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterTypeDeclaration(
@@ -355,5 +424,9 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterTypeDeclaration(
 
 // 查找类型名称
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupType(SZrTypeEnvironment *env, SZrString *typeName);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupTypeWithContext(
+        SZrTypeEnvironment *env, SZrString *typeName, SZrSyntaxContext syntaxContext);
+ZR_PARSER_API const SZrNamedTypeBinding *ZrParser_TypeEnvironment_FindTypeBindingWithContext(
+        const SZrTypeEnvironment *env, SZrString *typeName, SZrSyntaxContext syntaxContext);
 
 #endif //ZR_VM_PARSER_TYPE_SYSTEM_H

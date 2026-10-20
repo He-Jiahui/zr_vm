@@ -16,7 +16,7 @@ TZrBool inferred_type_from_static_callable_member(SZrCompilerState *cs,
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
         result == ZR_NULL || memberInfo->declarationNode != ZR_NULL || !memberInfo->isStatic ||
         memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
-        !memberInfo->parameterTypes.isValid ||
+        (memberInfo->parameterCount > 0U && !memberInfo->parameterTypes.isValid) ||
         memberInfo->parameterTypes.length != memberInfo->parameterCount ||
         memberInfo->genericParameters.length != 0U) {
         return ZR_FALSE;

@@ -16,6 +16,7 @@
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/meta.h"
@@ -113,6 +114,7 @@ typedef struct SZrCompilerState {
     
     // 局部变量管理
     SZrArray localVars;                 // 局部变量数组（SZrFunctionLocalVariable）
+    SZrArray localBindingIdentities;    // 与 localVars 对齐的 compiler-only contexts
     TZrSize localVarCount;              // 局部变量数量
     TZrSize stackSlotCount;             // 当前栈槽数量
     TZrSize maxStackSlotCount;          // 当前函数编译过程中的栈槽峰值
@@ -122,6 +124,7 @@ typedef struct SZrCompilerState {
     
     // 闭包管理
     SZrArray closureVars;               // 闭包变量数组（SZrFunctionClosureVariable）
+    SZrArray closureBindingIdentities;  // 与 closureVars 对齐的 compiler-only contexts
     TZrSize closureVarCount;             // 闭包变量数量
     const struct SZrParserSubmissionContext *submissionContext; // borrowed incremental submission input
     SZrFunction *submissionEntryFunction; // root function allowed to publish submission bindings
@@ -156,6 +159,7 @@ typedef struct SZrCompilerState {
     
     // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
     SZrArray childFunctionNameMap;      // 函数名映射数组（SZrChildFunctionNameMap）
+    SZrArray childFunctionBindingIdentities; // 与 childFunctionNameMap 对齐的 contexts
     
     // 顶层函数声明（如果脚本只有一个顶层函数声明，保存它以便返回）
     SZrFunction *topLevelFunction;      // 顶层函数对象（如果存在）
@@ -242,9 +246,14 @@ typedef struct SZrCompilerState {
 // 编译期变量信息
 typedef struct SZrCompileTimeVariable {
     SZrString *name;                       // 变量名
+    SZrSyntaxContext syntaxContext;        // hygiene identity for the item name
     SZrInferredType type;                  // 变量类型
     SZrAstNode *value;                     // 变量值（AST节点，用于编译期求值）
     SZrTypeValue evaluatedValue;           // 已求值的编译期结果
+    /* Cached aggregate values move during GC; keep the handle beside the raw
+     * cache and resolve it before every read. */
+    SZrGcRootHandle evaluatedValueRoot;
+    TZrBool hasEvaluatedValueRoot;
     TZrBool hasEvaluatedValue;               // 是否已经求值完成
     TZrBool isEvaluating;                    // 是否正在求值（用于循环依赖检测）
     SZrFileRange location;                  // 声明位置
@@ -253,6 +262,7 @@ typedef struct SZrCompileTimeVariable {
 // 编译期函数信息
 typedef struct SZrCompileTimeFunction {
     SZrString *name;                       // 函数名
+    SZrSyntaxContext syntaxContext;        // hygiene identity for the item name
     SZrAstNode *declaration;               // 函数声明 AST 节点
     SZrInferredType returnType;            // 返回类型
     SZrArray paramTypes;                   // 参数类型数组（SZrInferredType）
@@ -290,12 +300,19 @@ typedef struct SZrScopeCleanupRegistration {
     EZrOwnershipBuiltinKind ownershipBuiltinKind;
 } SZrScopeCleanupRegistration;
 
+/** Compiler-only hygiene identity; runtime function rows keep their wire layout. */
+typedef struct SZrCompilerBindingIdentity {
+    SZrSyntaxContext syntaxContext;
+} SZrCompilerBindingIdentity;
+
 // 作用域信息
 typedef struct SZrScope {
     TZrSize startVarIndex;              // 作用域开始的变量索引
     TZrSize varCount;                   // 作用域内的变量数量
     TZrSize cleanupRegistrationCount;   // 作用域内 using 注册的清理数量
     SZrArray cleanupRegistrations;      // SZrScopeCleanupRegistration
+    TZrSize typeValueAliasStartIndex;
+    TZrBool preserveTypeValueAliases;
     TZrUInt32 depth;                    // 作用域深度（用于逃逸分析）
     SZrCompilerState *parentCompiler;   // 父编译器（用于闭包）
 } SZrScope;
@@ -378,6 +395,8 @@ typedef struct SZrTypeGenericParameterInfo {
 typedef struct SZrTypePrototypeInfo {
     SZrString *name;                    // 类型名称
     SZrAstNode *declarationNode;         // source declaration identity; NULL for metadata-only types
+    TZrBool isDeclarationShell;         // incomplete preview; normal producers leave false
+    TZrTypeId genericInstanceTypeId;    // canonical instance key; zero for open and nongeneric types
     EZrObjectPrototypeType type;        // STRUCT 或 CLASS
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符
@@ -582,6 +601,11 @@ ZR_PARSER_API void ZrParser_Compiler_RegisterCallableValueBinding(
         SZrCompilerState *cs,
         SZrString *name,
         SZrAstNode *valueNode);
+ZR_PARSER_API void ZrParser_Compiler_RegisterCallableValueBindingWithContext(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrAstNode *valueNode,
+        SZrSyntaxContext syntaxContext);
 
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);

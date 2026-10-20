@@ -276,7 +276,11 @@ static void test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi(void
 
 #include "test_aot_c_method_info_return_projection_cases.h"
 #include "test_aot_c_direct_inline_return_layout_projection_cases.h"
+#include "test_aot_c_generic_struct_return_cases.h"
+#include "test_callable_parameter_place_cases.h"
+#include "test_aot_c_dynamic_return_representation_cases.h"
 #include "aot_c_ownership_call_result_projection_cases.h"
+#include "test_aot_c_scalar_call_result_proof_cases.h"
 
 /* 验证接收者先于显式参数进入签名表，且类型字段各自对齐。 */
 static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
@@ -585,10 +589,18 @@ static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(
 void setUp(void) {}
 
 /* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
-void tearDown(void) {}
+void tearDown(void) {
+    callable_parameter_place_cleanup();
+    dynamic_return_representation_cleanup();
+    aot_scalar_call_result_proof_cleanup();
+}
 
-int main(void) {
+int main(int argc, char **argv) {
     UNITY_BEGIN();
+    if (argc == 2 && strcmp(argv[1], "--generic-struct-return-only") == 0) {
+        RUN_TEST(test_aot_exec_ir_builds_cli_generic_struct_return_fixture);
+        return UNITY_END();
+    }
     RUN_TEST(test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures);
     RUN_TEST(test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types);
     RUN_TEST(test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi);
@@ -606,5 +618,13 @@ int main(void) {
     RUN_TEST(test_aot_exec_ir_projects_and_validates_direct_inline_return_layout);
     RUN_TEST(test_aot_c_value_semir_consumes_direct_inline_return_layout_sidecar);
 #endif
+    RUN_TEST(test_aot_exec_ir_builds_cli_generic_struct_return_fixture);
+    RUN_TEST(test_callable_parameter_place_preserves_unused_function_parameter);
+    RUN_TEST(test_callable_parameter_place_preserves_unused_generic_parameter);
+    RUN_TEST(test_callable_parameter_place_preserves_unused_member_and_receiver);
+    RUN_TEST(test_callable_parameter_place_preserves_unused_lambda_parameter);
+    RUN_TEST(test_aot_c_known_dynamic_i64_return_refines_only_c_signature);
+    RUN_TEST(test_aot_c_known_dynamic_return_preserves_unproven_semantics);
+    RUN_TEST(test_aot_c_plain_bool_call_result_preserves_scalar_proof);
     return UNITY_END();
 }

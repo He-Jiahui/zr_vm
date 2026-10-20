@@ -831,39 +831,6 @@ static const TZrChar *semantic_precise_inferred_type_text(SZrState *state,
     return semantic_exact_type_failure_text();
 }
 
-static TZrBool semantic_type_reference_range(const SZrType *typeNode, SZrFileRange *outRange) {
-    SZrGenericType *genericType;
-    TZrSize nameLength;
-
-    if (typeNode == ZR_NULL || typeNode->name == ZR_NULL || outRange == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *outRange = typeNode->name->location;
-    if (typeNode->name->type != ZR_AST_GENERIC_TYPE) {
-        return ZR_TRUE;
-    }
-
-    genericType = (SZrGenericType *)&typeNode->name->data.genericType;
-    if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nameLength = ZrCore_String_GetByteLength(genericType->name->name);
-    if (nameLength == 0u ||
-        outRange->start.offset < nameLength + 1u ||
-        outRange->start.column < (TZrInt32)(nameLength + 1u)) {
-        return ZR_FALSE;
-    }
-
-    outRange->end = outRange->start;
-    outRange->end.offset--;
-    outRange->end.column--;
-    outRange->start.offset -= nameLength + 1u;
-    outRange->start.column -= (TZrInt32)(nameLength + 1u);
-    return ZR_TRUE;
-}
-
 static void semantic_format_type_from_ast(SZrState *state,
                                           SZrCompilerState *compilerState,
                                           SZrSemanticAnalyzer *analyzer,
@@ -872,34 +839,36 @@ static void semantic_format_type_from_ast(SZrState *state,
                                           SZrType *typeNode,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
-    SZrParserSemanticTypeQuery query = {0};
-    SZrFileRange range;
+    const SZrSemanticReferenceFact *reference = ZR_NULL;
     SZrInferredType inferredType;
-    TZrBool hasCanonicalType = ZR_FALSE;
 
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
     }
 
     if (state != ZR_NULL && compilerState != ZR_NULL && compilerState->semanticContext != ZR_NULL &&
-        semantic_type_reference_range(typeNode, &range)) {
-        hasCanonicalType = ZrParser_SemanticQuery_CanonicalTypeAt(
-                compilerState->semanticContext, range, ZR_NULL, &query);
-        if (!hasCanonicalType && analyzer != ZR_NULL) {
+        typeNode != ZR_NULL && typeNode->name != ZR_NULL) {
+        reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                compilerState->semanticContext, typeNode->name, ZR_SEMANTIC_REFERENCE_TYPE);
+        if ((reference == ZR_NULL || !reference->isResolved ||
+             reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+             ZrParser_CanonicalType_Find(compilerState->semanticContext, reference->typeId) == ZR_NULL) &&
+            analyzer != ZR_NULL) {
+            reference = ZR_NULL;
             ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
             (void)ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
                     analyzer, ownerTypeNode, functionNode, typeNode, &inferredType);
             ZrParser_InferredType_Free(state, &inferredType);
-            hasCanonicalType = ZrParser_SemanticQuery_CanonicalTypeAt(
-                    compilerState->semanticContext, range, ZR_NULL, &query);
+            reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                    compilerState->semanticContext, typeNode->name, ZR_SEMANTIC_REFERENCE_TYPE);
         }
-    }
 
-    if (hasCanonicalType && query.typeId != ZR_SEMANTIC_ID_INVALID &&
-        query.reference != ZR_NULL && query.reference->kind == ZR_SEMANTIC_REFERENCE_TYPE &&
-        query.reference->isResolved &&
-        ZrParser_CanonicalType_Format(compilerState->semanticContext, query.typeId, buffer, bufferSize)) {
-        return;
+        if (reference != ZR_NULL && reference->isResolved &&
+            reference->typeId != ZR_SEMANTIC_ID_INVALID &&
+            ZrParser_CanonicalType_Format(
+                    compilerState->semanticContext, reference->typeId, buffer, bufferSize)) {
+            return;
+        }
     }
 
     snprintf(buffer, bufferSize, "%s", semantic_exact_type_failure_text());

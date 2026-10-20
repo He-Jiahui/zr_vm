@@ -12,6 +12,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_execution.c
+  - tests/compileTime/test_comptime_frame_lifetime.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_import.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.h
@@ -48,6 +50,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.h
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/zrm.c
@@ -61,6 +64,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
   - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_execution.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_import.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.h
@@ -98,6 +102,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.h
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2_lock.c
   - zr_vm_library/src/zr_vm_library/zrm.c
@@ -106,13 +111,17 @@ plan_sources:
   - user: 2026-08-02 continue Gate 11 testing, acceptance, review, and detailed commit
   - docs/plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md
   - docs/superpowers/plans/2026-07-29-syntax-upper-gates-completion.md
+  - docs/plans/syntax/2026-10-08-macro-tokenstream-structured-generation-design.md
 tests:
+  - tests/compileTime/test_comptime_frame_lifetime.c
   - tests/compileTime/test_attribute_contract.c
   - tests/compileTime/test_comptime_contract.c
   - tests/compileTime/test_comptime_runtime_contract.c
   - tests/compileTime/test_comptime_cache_snapshot_cases.h
   - tests/compileTime/test_compile_tool_artifact_resolution_cases.h
   - tests/compileTime/test_declaration_transform_contract.c
+  - tests/compileTime/test_syntax_expansion_contract.c
+  - tests/compileTime/test_comptime_budget_interleaving.c
   - tests/compileTime/test_compile_time_execution.c
   - tests/compileTime/test_compile_time_declaration_patch_transaction_cases.h
   - tests/compileTime/test_compile_time_declaration_patch_transaction_hash_cases.h
@@ -154,12 +163,27 @@ descriptors. Their callables carry a role, effect class, minimum phase,
 parameter contract, return contract, and deterministic public contract hash.
 Runtime code cannot bind these compile-only modules.
 
-`comptime_contract.*` validates phase transitions and typed effects.
-`comptime_runtime_contract.*` enforces fuel, depth, diagnostics, and cache
-limits for the evaluator. `compile_tool_evaluator.*` dispatches the public
+`comptime_contract.*` validates phase transitions and typed effects. The
+phase rank is explicit (`BuildFacts -> SyntaxExpansion -> Signature -> semantic
+Expansion -> Layout -> LateCheck`) while the legacy phase IDs remain stable;
+syntax construction is a separate effect/context gate. The runtime budget
+tracks the existing fuel, call-depth, heap, aggregate, generated-declaration,
+and diagnostic resources plus token, syntax-node, matcher, and expansion
+meters. Multi-resource reservations are shadowed until commit, so a failed
+syntax transaction cannot publish a partial budget or tree. `comptime_runtime_contract.*`
+enforces those limits and versioned cache identity for the evaluator.
+`compile_tool_evaluator.*` dispatches the public
 feature/assert/error/warning operations by descriptor role rather than by a
 second parser surface. Typed constructors validate every published field before
 allocating a result object.
+
+`syntax_context.c`, `syntax_context_hygiene.c`, and
+`syntax_context_import.c` keep expansion origins in a retained native table.
+Marks are append-only and budgeted with one transaction per operation; an
+invalid expansion/site or failed allocation returns a table-owned invalid mark
+(`UINT32_MAX`) rather than a valid parent fallback. Import walks expansion and
+mark chains iteratively, copies source/module names and origin contexts, and
+restores both table storage and uncommitted resource usage on failure.
 
 `attribute_contract.*` defines AttributeUsage targets, retention,
 repeatability, schema fields, and role identity. `compiler_attribute_binding.*`
@@ -183,6 +207,13 @@ attribute metadata off to the side, reserves every native array before
 publication, and owns the single commit/rollback boundary for generated
 members, semantic symbols, interface relations, decorator records, and
 copy-on-write attribute metadata.
+`compile_time_decorator_execution.c` owns decorator argument evaluation, target
+snapshots and controlled invocation. A caller-owned lifetime frame roots the
+returned Patch before the callee frame is freed and retains it until decoding
+and transaction completion. Struct, class, function and parameter decorators
+release that frame on success and failure. The frame-lifetime tests force GC
+between callee teardown and decoding, then verify parameter decorator metadata
+and exact root-count restoration after both successful and rejected transforms.
 `compiler_interface_contracts.*` keeps struct interface requirement checking
 out of the already oversized struct compiler.
 `writer_intermediate_generated_source_map.*` projects retained generated-field
@@ -193,6 +224,13 @@ opens an output file, so malformed packed metadata cannot reach the older debug
 printer or leave a partial artifact.
 
 ## Data Flow
+
+The M1 scheduler must set the syntax-expansion context only while it owns a
+detached expansion transaction. `SyntaxExpansion` may construct tokens and
+syntax nodes (and emit diagnostics), but it cannot access declaration/layout
+views. A transaction commits its reserved token/node/matching/expansion meters
+and detached tree only after validation; abort restores the prior published
+artifact and leaves committed usage unchanged.
 
 1. Parser output contains ordinary declarations and metadata applications.
 2. Signature collection registers compile-only descriptors and metadata roles,
@@ -371,6 +409,13 @@ exact roundtrip, full-integrity payload-bit detection,
 malformed/truncated/trailing rejection, and preservation of the previous cache
 after failed import. The CLI incremental suite separately proves the on-disk
 consumer, source-semantic invalidation, and reproducible restored-source output.
+The standalone `test_syntax_expansion_contract.c` locks the explicit phase rank,
+syntax-only effect/context access, the retained default limits (1,000,000 fuel,
+128 depth, 64 MiB heap, 100,000 aggregates, 10,000 declarations, 1,024
+diagnostics), and the token/node/matching/expansion meters. The budget
+interleaving contract proves that pending reservations merge with intervening
+consumption, reverse-order commits accumulate, tightened limits abort without
+publication, and counter overflow reports the concrete resource.
 `test_compile_tool_project_import.c` covers project canonicalization for root
 and package submodules, unknown-package rejection, runtime-graph isolation,
 missing-lock rejection, ordinary-function visibility retention, compiler-owned

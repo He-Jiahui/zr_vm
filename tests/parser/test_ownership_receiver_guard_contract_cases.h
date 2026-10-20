@@ -425,7 +425,6 @@ static void receiver_guard_contract_register_nullable_callback(
         SZrCompilerState *compiler) {
     SZrTypePrototypeInfo prototype;
     SZrTypeMemberInfo valueField;
-    SZrFunctionLocalVariable localVariable;
     SZrInferredType callableType;
     SZrInferredType returnType;
     SZrArray parameterTypes;
@@ -467,13 +466,8 @@ static void receiver_guard_contract_register_nullable_callback(
             compiler->typeEnv,
             callbackName,
             &callableType));
-    memset(&localVariable, 0, sizeof(localVariable));
-    localVariable.name = callbackName;
-    localVariable.stackSlot = 0u;
-    ZrCore_Array_Push(g_state, &compiler->localVars, &localVariable);
-    compiler->localVarCount = compiler->localVars.length;
-    compiler->stackSlotCount = 1u;
-    compiler->maxStackSlotCount = 1u;
+    TEST_ASSERT_EQUAL_UINT32(
+            0u, allocate_local_var(compiler, callbackName));
 
     ZrParser_InferredType_InitFull(
             g_state,

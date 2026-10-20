@@ -133,11 +133,9 @@ TZrBool ZrCore_GcCompact_Validate(
                         plan->schemaVersion);
         return ZR_FALSE;
     }
-    /* BUG: 有符号 enum 实现上，伪造的负 mode 不满足 >= COUNT，可能被误接受。 */
-    /* BUG: 单独检查两类计数不超过 regionCount，未验证互斥分区的计数和。 */
-    if (plan->mode >= ZR_GC_COMPACT_MODE_COUNT ||
+    if ((TZrUInt64)plan->mode >= ZR_GC_COMPACT_MODE_COUNT ||
         plan->candidateRegionCount > plan->regionCount ||
-        plan->pinnedRegionCount > plan->regionCount ||
+        plan->pinnedRegionCount > plan->regionCount - plan->candidateRegionCount ||
         plan->plannedBytes > plan->movableBytes ||
         (plan->deferred && plan->eligible == ZR_FALSE &&
          plan->candidateRegionCount == 0u)) {

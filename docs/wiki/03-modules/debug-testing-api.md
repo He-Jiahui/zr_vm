@@ -115,8 +115,7 @@ TZrSize count = ZrDebug_Profile_GetEntryCount(&profile);
 ZrDebug_Profile_Destroy(&profile);
 ~~~
 
-GetEntry/FindByName 返回调用次数、总时长和 function identity；GetSampleCount、
-GetTotalSampleCount、GetSample 返回采样帧。采样频率由 backend 解释，不能当精确 CPU 时间。
+GetEntry/FindByName 借用函数身份对应的调用次数与 clock() tick 换算时长；GetSampleCount 统计函数/行组合数，GetTotalSampleCount 统计成功记录的 COUNT 命中总数，GetSample 借用该组合的聚合项。采样周期是 VM COUNT 基础指令间隔，不是墙钟频率或行覆盖保证；Stop 恢复旧 callback/mask/基础周期，但 SetHook 会重置剩余计数相位。
 
 ## Testing module
 

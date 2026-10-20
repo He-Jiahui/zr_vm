@@ -900,7 +900,7 @@ ZR_PARSER_API void ZrParser_CanonicalType_Free(struct SZrSemanticContext *contex
 /**
  * @brief 初始化 canonical type 结构哈希索引；随 semantic context 一起创建。
  * @pre context 的 state 已有效，canonicalTypes 数组已初始化。
- * BUG: 桶数组构造使用不返回失败状态的 Array_Init/Push，分配失败可能导致 NULL 写入且调用方无从恢复。
+ * @note Array_Init/Push 分配失败会传播 MEMORY_ERROR；外层负责异常恢复及已初始化前缀的清理。
  */
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Init(struct SZrSemanticContext *context);
 /**
@@ -915,7 +915,7 @@ ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Free(struct SZrSemanticContext *c
  * @pre 每个 nodeIndex 只插入一次，且节点、桶和链数组均处于同一 context 生命周期。
  * @note 返回 false 表示上下文、索引或节点索引无效；true 不代表 hash 相等的节点结构相等。
  * TODO: 重复插入会形成自环；现有唯一调用路径保证单次插入，但该限制尚未由接口强制。
- * BUG: 数组扩容失败无法通过 void Array_Push 反馈，插入和桶重建不能提供 OOM 回滚保证。
+ * @note 数组扩容失败会传播 MEMORY_ERROR，不转为 false；本接口不回滚调用前已追加的节点。
  */
 ZR_PARSER_API TZrBool ZrParser_CanonicalTypeIndex_Insert(
         struct SZrSemanticContext *context,

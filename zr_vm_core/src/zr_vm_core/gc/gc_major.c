@@ -120,8 +120,7 @@ TZrBool ZrCore_GcMajor_Validate(
                       3u, ZR_GC_MAJOR_FLAG_KNOWN_MASK, state->flags);
         return ZR_FALSE;
     }
-    /* BUG: 有符号枚举实现下，负 phase 可作为外部快照通过校验，Begin/Cancel 还会接受它。 */
-    if (state->phase >= ZR_GC_MAJOR_PHASE_COUNT) {
+    if ((TZrUInt64)state->phase >= ZR_GC_MAJOR_PHASE_COUNT) {
         gc_major_diag(diagnostic, ZR_GC_MAJOR_DIAGNOSTIC_INVALID_PHASE,
                       4u, ZR_GC_MAJOR_PHASE_IDLE, state->phase);
         return ZR_FALSE;
@@ -195,9 +194,8 @@ TZrBool ZrCore_GcMajor_Advance(
     TZrBool allowed = ZR_FALSE;
 
     ZrCore_GcMajor_DiagnosticClear(diagnostic);
-    /* BUG: 负 nextPhase 在有符号枚举实现下未按 INVALID_PHASE 分类。 */
     if (!ZrCore_GcMajor_Validate(state, diagnostic) ||
-        nextPhase >= ZR_GC_MAJOR_PHASE_COUNT) {
+        (TZrUInt64)nextPhase >= ZR_GC_MAJOR_PHASE_COUNT) {
         if (diagnostic != ZR_NULL &&
             diagnostic->code == ZR_GC_MAJOR_DIAGNOSTIC_NONE) {
             gc_major_diag(diagnostic, ZR_GC_MAJOR_DIAGNOSTIC_INVALID_PHASE,
@@ -280,13 +278,14 @@ TZrBool ZrCore_GcMajor_Step(
         }
         return ZR_FALSE;
     }
-    /* BUG: 预算预检失败时 EvaluateStep 可不写 result，下面仍复制未初始化局部值给宿主。 */
     if (!ZrCore_GcBudget_EvaluateStep(
             budget, budgetPhase, state->cursor, workUnits, elapsedUs,
             bytes, objects, debtBytes, atomicPauseUs, &result,
             &budgetDiagnostic)) {
-        /* BUG: evaluator 的 cursor OVERFLOW 被统一归为 BUDGET_REJECTED，误导宿主恢复决策。 */
-        gc_major_diag(diagnostic, ZR_GC_MAJOR_DIAGNOSTIC_BUDGET_REJECTED,
+        gc_major_diag(diagnostic,
+                      budgetDiagnostic.code == ZR_GC_BUDGET_DIAGNOSTIC_OVERFLOW
+                          ? ZR_GC_MAJOR_DIAGNOSTIC_OVERFLOW
+                          : ZR_GC_MAJOR_DIAGNOSTIC_BUDGET_REJECTED,
                       budgetDiagnostic.field, budgetDiagnostic.expected,
                       budgetDiagnostic.actual);
         *outResult = result;

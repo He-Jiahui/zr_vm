@@ -11,6 +11,7 @@
 #include "function/function_call_spread_internal.h"
 #include "function/function_precall_internal.h"
 #include "function/function_bytecode_internal.h"
+#include "call/call_binding_inline_frame.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
 #include "gc/gc_temporary_roots.h"
@@ -1472,6 +1473,7 @@ static ZR_FORCE_INLINE TZrBool execution_try_resolve_known_vm_member_exact_singl
 
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
         SZrState *state,
+        SZrCallInfo *callerCallInfo,
         const TZrInstruction *programCounter,
         SZrFunction *currentFunction,
         TZrUInt16 cacheIndex,
@@ -1495,11 +1497,20 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
     callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
     receiverValue = ZrCore_Stack_GetValueNoProfile(stackPointer + 1);
     if (cacheEntry != ZR_NULL && cacheEntry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
-        if (!ZrCore_CallBinding_PrepareMember(state, currentFunction, cacheIndex, receiverValue,
-                                             callableValue, &state->lastCallBindingError)) {
+        TZrBool prepared;
+        if (execution_frame_slot_is_borrowed_receiver_argument(currentFunction, argumentSourceStartSlot)) {
+            prepared = zr_call_binding_prepare_inline_frame_member(
+                    state, callerCallInfo, cacheIndex, argumentSourceStartSlot,
+                    &stackPointer, &argumentSourceFrameBase, &returnDestination, &state->lastCallBindingError);
+            callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
+        } else {
+            prepared = ZrCore_CallBinding_PrepareMember(state, currentFunction, cacheIndex, receiverValue,
+                    callableValue, &state->lastCallBindingError);
+        }
+        if (!prepared) {
             ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x, instruction=%u)",
                     ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
-                    state->lastCallBindingError.targetMetadataToken, cacheEntry->instructionIndex);
+                    state->lastCallBindingError.targetMetadataToken, state->lastCallBindingError.instructionIndex);
         }
         resolvedFunction = ZR_CAST(SZrFunction *, callableValue->value.object);
         return execution_pre_call_prepared_resolved_vm_with_argument_source_fast(state,
@@ -3597,6 +3608,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         state->stackTop.valuePointer = callWindow__ + parametersCount__ + 1;                                          \
         argumentSourceStartSlot__ = (TZrUInt32)(resultSlot__ + 1u);                                                    \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 callInfo,                                            \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \
@@ -3646,6 +3658,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         state->stackTop.valuePointer = callWindow__ + 3u;                                                             \
         argumentSourceStartSlot__ = (TZrUInt32)(resultSlot__ + 1u);                                                    \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 callInfo,                                            \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \

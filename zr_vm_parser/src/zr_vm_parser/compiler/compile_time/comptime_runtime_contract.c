@@ -8,12 +8,17 @@
 #include "zr_vm_core/string.h"
 
 static const SZrParserComptimeBudgetLimits g_default_limits = {
-        .fuel = 1000000U,
-        .callDepth = 128U,
-        .heapBytes = 64U * 1024U * 1024U,
-        .aggregateCount = 100000U,
-        .generatedDeclarationCount = 10000U,
-        .diagnosticCount = 1024U,
+        .fuel = ZR_PARSER_COMPTIME_DEFAULT_FUEL,
+        .callDepth = ZR_PARSER_COMPTIME_DEFAULT_CALL_DEPTH,
+        .heapBytes = ZR_PARSER_COMPTIME_DEFAULT_HEAP_BYTES,
+        .aggregateCount = ZR_PARSER_COMPTIME_DEFAULT_AGGREGATE_COUNT,
+        .generatedDeclarationCount =
+                ZR_PARSER_COMPTIME_DEFAULT_GENERATED_DECLARATION_COUNT,
+        .diagnosticCount = ZR_PARSER_COMPTIME_DEFAULT_DIAGNOSTIC_COUNT,
+        .tokenCount = ZR_PARSER_COMPTIME_DEFAULT_TOKEN_COUNT,
+        .nodeCount = ZR_PARSER_COMPTIME_DEFAULT_NODE_COUNT,
+        .matchingCount = ZR_PARSER_COMPTIME_DEFAULT_MATCHING_COUNT,
+        .expansionCount = ZR_PARSER_COMPTIME_DEFAULT_EXPANSION_COUNT,
 };
 
 static const TZrChar *comptime_budget_resource_name(
@@ -31,6 +36,14 @@ static const TZrChar *comptime_budget_resource_name(
             return "generated_declaration_count";
         case ZR_PARSER_COMPTIME_BUDGET_DIAGNOSTIC_COUNT:
             return "diagnostic_count";
+        case ZR_PARSER_COMPTIME_BUDGET_TOKEN_COUNT:
+            return "token_count";
+        case ZR_PARSER_COMPTIME_BUDGET_NODE_COUNT:
+            return "node_count";
+        case ZR_PARSER_COMPTIME_BUDGET_MATCHING_COUNT:
+            return "matching_count";
+        case ZR_PARSER_COMPTIME_BUDGET_EXPANSION_COUNT:
+            return "expansion_count";
         case ZR_PARSER_COMPTIME_BUDGET_NONE:
         default:
             return "unknown";
@@ -132,8 +145,10 @@ TZrBool ZrParser_ComptimeRuntime_RequireEffect(
         SZrCompilerState *cs,
         EZrParserCompileToolEffect effect,
         SZrFileRange location) {
-    if (cs != ZR_NULL && ZrParser_ComptimeEffect_IsAllowed(
-                                 cs->comptimeContext, effect)) {
+    if (cs != ZR_NULL && ZrParser_ComptimeEffect_IsAllowedAtPhase(
+                                 cs->comptimeContext,
+                                 cs->compilePhase,
+                                 effect)) {
         return ZR_TRUE;
     }
     if (cs != ZR_NULL) {
@@ -290,7 +305,7 @@ TZrBool ZrParser_ComptimeCache_BeginKey(
         sourceName = ZrCore_String_GetNativeString(function->location.source);
     }
     return (TZrBool)(
-            comptime_cache_mix_text(outKey, "zr.comptime.cache/v5") &&
+            comptime_cache_mix_text(outKey, "zr.comptime.cache/v6") &&
             comptime_cache_mix_text(outKey, moduleName) &&
             comptime_cache_mix_text(outKey, functionName) &&
             comptime_cache_mix_u64(
@@ -301,6 +316,8 @@ TZrBool ZrParser_ComptimeCache_BeginKey(
                      cs->comptimeSourceDigest,
                      sizeof(cs->comptimeSourceDigest))) &&
             comptime_cache_mix_compile_tool_bindings(outKey, cs) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)cs->compilePhase) &&
             comptime_cache_mix_u64(
                     outKey, (TZrUInt64)cs->comptimeContext) &&
             comptime_cache_mix_u64(

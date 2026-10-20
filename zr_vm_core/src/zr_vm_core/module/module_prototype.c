@@ -214,16 +214,14 @@ static SZrString *module_prototype_get_string_constant(SZrState *state,
     return ZR_CAST_STRING(state, constantValue->value.object);
 }
 
-/* 编译期协议位在原型建立后安装，供迭代等运行时契约选择。
- * BUG: 编译器完整写入 protocolMask，但循环只恢复到 ARRAY_LIKE(6)；
- * TASK_HANDLE(7) 等更高协议位在物化后丢失，运行时协议查询会返回 false。 */
+/* 编译器写入的全部协议位须在原型建立后恢复，供运行时契约查询。 */
 static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
     if (prototype == ZR_NULL || protocolMask == 0) {
         return;
     }
 
     for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
-         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId <= ZR_PROTOCOL_ID_MAX;
          protocolId = (EZrProtocolId)(protocolId + 1)) {
         if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0) {
             ZrCore_ObjectPrototype_AddProtocol(prototype, protocolId);
@@ -474,6 +472,11 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
             descriptor.kind = descriptor.isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
                                                   : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
             descriptor.methodFunction = function;
+            descriptor.receiverEffect = member->isStatic
+                                                ? ZR_MEMBER_RECEIVER_EFFECT_NONE
+                                                : (member->isConst
+                                                           ? ZR_MEMBER_RECEIVER_EFFECT_READONLY
+                                                           : ZR_MEMBER_RECEIVER_EFFECT_MUTABLE);
             break;
         case ZR_AST_CONSTANT_PROPERTY_DECLARATION:
             descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;

@@ -498,6 +498,7 @@ static TZrBool type_inference_branch_assignment_store_replayed_binding(SZrCompil
     binding.runtimeRootKind = sourceBinding->runtimeRootKind;
     binding.originToken = sourceBinding->originToken;
     binding.originIndex = sourceBinding->originIndex;
+    binding.syntaxContext = sourceBinding->syntaxContext;
     ZrParser_InferredType_Copy(cs->state, &binding.type, type);
     ZrCore_Array_Push(cs->state, &cs->typeEnv->variableTypes, &binding);
     return ZR_TRUE;

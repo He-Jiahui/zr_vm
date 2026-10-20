@@ -1,4 +1,5 @@
 #include "parser_internal.h"
+#include "parser_source_projection.h"
 
 void parser_report_nesting_error(SZrParserState *ps) {
     if (ps->hasNestingError && !ps->nestingErrorReported &&
@@ -54,6 +55,7 @@ void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
         return;
     }
 
+    ZrParser_TokenSource_Save(ps->lexer, &cursor->tokenSource);
     cursor->currentPos = ps->lexer->currentPos;
     cursor->currentChar = ps->lexer->currentChar;
     cursor->lineNumber = ps->lexer->lineNumber;
@@ -79,10 +81,16 @@ void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
 }
 
 void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
+    TZrBool fatal;
+    const TZrChar *fatalMessage;
     if (ps == ZR_NULL || ps->lexer == ZR_NULL || cursor == ZR_NULL) {
         return;
     }
 
+    fatal = ps->hasFatalError || ps->hasNestingError || ps->lexer->hasSourceEvidenceError;
+    fatalMessage = ps->errorMessage;
+
+    ZrParser_TokenSource_Restore(ps->lexer, &cursor->tokenSource);
     ps->lexer->currentPos = cursor->currentPos;
     ps->lexer->currentChar = cursor->currentChar;
     ps->lexer->lineNumber = cursor->lineNumber;
@@ -101,10 +109,10 @@ void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
     ps->lexer->lookaheadTokenStartOffset = cursor->lookaheadTokenStartOffset;
     ps->lexer->lookaheadTokenStartLineStart = cursor->lookaheadTokenStartLineStart;
     ps->lexer->lookaheadTokenStartLine = cursor->lookaheadTokenStartLine;
-    /* Speculative syntax probes must not erase a resource-limit failure. */
-    ps->hasError = (TZrBool)(cursor->hasError || ps->hasNestingError);
-    ps->hasFatalError = (TZrBool)(cursor->hasFatalError || ps->hasNestingError);
-    if (!ps->hasNestingError) ps->errorMessage = cursor->errorMessage;
+    /* Speculative probes preserve both nesting and source-evidence failures. */
+    ps->hasError = fatal || cursor->hasError;
+    ps->hasFatalError = fatal || cursor->hasFatalError;
+    ps->errorMessage = fatal ? fatalMessage : cursor->errorMessage;
 }
 
 TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
@@ -218,6 +226,7 @@ TZrBool report_removed_percent_syntax(SZrParserState *ps) {
         ps->hasFatalError = ZR_TRUE;
     }
 
+    location = ZrParser_FileRange_WithoutEvidence(location);
     location.end.offset = end;
     location.end.column = location.start.column + (TZrInt32)(end - start);
     snprintf(message,
@@ -455,8 +464,12 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
         }
     }
 
+    SZrFileRange pathLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &pathLocation)) {
+        return ZR_NULL;
+    }
     buffer[length] = '\0';
-    pathString = ZrCore_String_Create(ps->state, buffer, length);
+    pathString = ZrParser_Lexer_CreateString(ps->lexer, buffer, length);
     if (pathString == ZR_NULL) {
         report_error(ps, "Failed to allocate module path string");
         return ZR_NULL;
@@ -467,7 +480,7 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
             pathString,
             ZR_FALSE,
             pathString,
-            ZrParser_FileRange_Merge(startLoc, endLoc));
+            pathLocation);
 }
 
 SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *directiveName) {
@@ -505,7 +518,7 @@ SZrAstNodeArray *parse_leading_decorators(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    decorators = ZrParser_AstNodeArray_New(ps->state, 2);
+    decorators = parser_ast_array_new(ps, 2);
     if (decorators == ZR_NULL) {
         return ZR_NULL;
     }
@@ -515,7 +528,11 @@ SZrAstNodeArray *parse_leading_decorators(SZrParserState *ps) {
         if (decorator == ZR_NULL) {
             break;
         }
-        ZrParser_AstNodeArray_Add(ps->state, decorators, decorator);
+        if (!parser_ast_array_add(ps, decorators, decorator)) {
+            ZrParser_Ast_Free(ps->state, decorator);
+            free_ast_node_array_with_elements(ps->state, decorators);
+            return ZR_NULL;
+        }
     }
 
     return decorators;
@@ -527,13 +544,12 @@ TZrBool consume_type_closing_angle(SZrParserState *ps) {
         return ZR_TRUE;
     }
 
-    /* 嵌套泛型中的 >> 先消费一个 >，把剩余字符交回 lexer。 */
+    /* 嵌套泛型中的 >> 先消费一个 >，把剩余字符交回 token source. */
     if (ps->lexer->t.token == ZR_TK_RIGHT_SHIFT) {
-        if (ps->lexer->currentPos > 0) {
-            ps->lexer->currentPos--;
+        if (!ZrParser_Lexer_SplitCurrentPunct(ps->lexer, '>')) {
+            return ZR_FALSE;
         }
-        ps->lexer->currentChar = '>';
-        ps->lexer->lookahead.token = ZR_TK_EOS;
+        /* Splitting leaves the first piece current; consume it here. */
         ZrParser_Lexer_Next(ps->lexer);
         return ZR_TRUE;
     }
@@ -544,22 +560,10 @@ TZrBool consume_type_closing_angle(SZrParserState *ps) {
 // 获取当前位置信息
 
 SZrFileRange get_current_location(SZrParserState *ps) {
-    // 计算列号（从当前行开始到当前位置的字符数）
-    TZrInt32 column = 1;
-    if (ps->lexer->source != ZR_NULL && ps->lexer->currentPos > 0) {
-        TZrSize pos = ps->lexer->currentPos - 1;
-        /* BUG: 首行从非零偏移回溯时循环在 pos==0 停止，未计入首字节；
-         * parse_script 等入口据此生成 AST 范围，结束列会比 1-based 列少一。 */
-        while (pos > 0 && ps->lexer->source[pos] != '\n' && ps->lexer->source[pos] != '\r') {
-            pos--;
-            column++;
-        }
-    }
-
-    SZrFilePosition start = ZrParser_FilePosition_Create(
-            ps->lexer->currentPos, ps->lexer->lastLine > 0 ? ps->lexer->lastLine : ps->lexer->lineNumber, column);
-    SZrFilePosition end = ZrParser_FilePosition_Create(ps->lexer->currentPos, ps->lexer->lineNumber, column);
-    return ZrParser_FileRange_Create(start, end, ps->lexer->sourceName);
+    /* Historical issue in the local projection replaced by the shared helper: */
+    /* BUG: 首行从非零偏移回溯时循环在 pos==0 停止，未计入首字节；
+     * parse_script 等入口据此生成 AST 范围，结束列会比 1-based 列少一。 */
+    return ZrParser_SourceProjection_CurrentLocation(ps);
 }
 
 void get_string_view_for_length(SZrString *value, const TZrChar **text, TZrSize *length) {
@@ -617,53 +621,6 @@ SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset
     return ZrParser_FilePosition_Create(offset, line, (TZrInt32) (offset - lineStart + 1));
 }
 
-static ZR_FORCE_INLINE SZrFilePosition file_position_create_from_cached_line(TZrSize offset,
-                                                                             TZrInt32 line,
-                                                                             TZrSize lineStart) {
-    TZrInt32 resolvedLine = line > 0 ? line : 1;
-    TZrSize resolvedLineStart = lineStart <= offset ? lineStart : offset;
-    return ZrParser_FilePosition_Create(offset,
-                                        resolvedLine,
-                                        (TZrInt32)(offset - resolvedLineStart + 1));
-}
-
-static SZrFilePosition file_position_advance_over_span(SZrLexState *lexer,
-                                                       TZrSize startOffset,
-                                                       TZrSize endOffset,
-                                                       TZrInt32 startLine,
-                                                       TZrSize startLineStart) {
-    TZrInt32 line = startLine > 0 ? startLine : 1;
-    TZrSize lineStart = startLineStart <= startOffset ? startLineStart : startOffset;
-
-    if (lexer == ZR_NULL || lexer->source == ZR_NULL) {
-        return file_position_create_from_cached_line(endOffset, line, lineStart);
-    }
-
-    if (startOffset > lexer->sourceLength) {
-        startOffset = lexer->sourceLength;
-    }
-    if (endOffset > lexer->sourceLength) {
-        endOffset = lexer->sourceLength;
-    }
-
-    /* 与 lexer 一致：CR 和 LF 各计一次换行，跨度内的 CRLF 合并为一次；
-     * 行首保留原始源字节偏移，不读取 token 终点之后的预读字符。 */
-    for (TZrSize index = startOffset; index < endOffset; index++) {
-        if (lexer->source[index] == '\r') {
-            line++;
-            if (index + 1 < endOffset && lexer->source[index + 1] == '\n') {
-                index++;
-            }
-            lineStart = index + 1;
-        } else if (lexer->source[index] == '\n') {
-            line++;
-            lineStart = index + 1;
-        }
-    }
-
-    return file_position_create_from_cached_line(endOffset, line, lineStart);
-}
-
 TZrSize get_current_token_length(SZrParserState *ps) {
     const TZrChar *text = ZR_NULL;
     TZrSize length = 0;
@@ -671,6 +628,9 @@ TZrSize get_current_token_length(SZrParserState *ps) {
 
     if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
         return 0;
+    }
+    if (ps->lexer->tokenSourceState != ZR_NULL) {
+        return ps->lexer->t.rawLength;
     }
 
     switch (ps->lexer->t.token) {
@@ -695,98 +655,30 @@ TZrSize get_current_token_length(SZrParserState *ps) {
     }
 }
 
-static TZrBool get_current_token_source_text(SZrParserState *ps, const TZrChar **text, TZrSize *length) {
-    static const TZrChar trueText[] = "true";
-    static const TZrChar falseText[] = "false";
-
-    if (text == ZR_NULL || length == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *text = ZR_NULL;
-    *length = 0;
-    if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (ps->lexer->t.token) {
-        case ZR_TK_IDENTIFIER:
-        case ZR_TK_INTEGER:
-        case ZR_TK_FLOAT:
-            get_string_view_for_length(ps->lexer->t.seminfo.stringValue, text, length);
-            return *text != ZR_NULL && *length > 0;
-
-        case ZR_TK_BOOLEAN:
-            *text = ps->lexer->t.seminfo.booleanValue ? trueText : falseText;
-            *length = ps->lexer->t.seminfo.booleanValue ? 4 : 5;
-            return ZR_TRUE;
-
-        default:
-            return ZR_FALSE;
-    }
-}
-
 SZrFileRange get_current_token_location(SZrParserState *ps) {
-    TZrSize endOffset;
-    TZrSize startOffset;
-    TZrSize tokenLength;
-    const TZrChar *tokenText = ZR_NULL;
-    SZrFilePosition start;
-    SZrFilePosition end;
-
-    if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
-        SZrFilePosition zero = ZrParser_FilePosition_Create(0, 1, 1);
-        return ZrParser_FileRange_Create(zero, zero, ZR_NULL);
-    }
-
-    endOffset = ps->lexer->currentChar == ZR_PARSER_LEXER_EOZ ? ps->lexer->currentPos
-                                                              : (ps->lexer->currentPos > 0
-                                                                         ? ps->lexer->currentPos - 1
-                                                                         : 0);
-    if (endOffset > ps->lexer->sourceLength) {
-        endOffset = ps->lexer->sourceLength;
-    }
-    /* lexer 将 CRLF 合并为一个预读字符；token 终点须排除这两个源字节。 */
-    if (ps->lexer->currentChar == '\n' && ps->lexer->source != ZR_NULL &&
-        endOffset > 0 && endOffset < ps->lexer->sourceLength &&
-        ps->lexer->source[endOffset - 1] == '\r' && ps->lexer->source[endOffset] == '\n') {
-        endOffset--;
-    }
-    startOffset = ps->lexer->tokenStartOffset;
-    if (startOffset > endOffset) {
-        startOffset = endOffset;
-    }
-    /* 语义 token 文本仅用于校准偏移；须与原始源片段相符才可替代 lexer 边界。 */
-    if (get_current_token_source_text(ps, &tokenText, &tokenLength) &&
-        ps->lexer->source != ZR_NULL &&
-        startOffset + tokenLength <= ps->lexer->sourceLength &&
-        memcmp(ps->lexer->source + startOffset, tokenText, tokenLength) == 0) {
-        endOffset = startOffset + tokenLength;
-    } else if (tokenText != ZR_NULL &&
-               tokenLength > 0 &&
-               ps->lexer->source != ZR_NULL &&
-               endOffset >= tokenLength &&
-               memcmp(ps->lexer->source + endOffset - tokenLength, tokenText, tokenLength) == 0) {
-        startOffset = endOffset - tokenLength;
-    }
-
-    start = file_position_create_from_cached_line(startOffset,
-                                                  ps->lexer->tokenStartLine,
-                                                  ps->lexer->tokenStartLineStart);
-    end = file_position_advance_over_span(ps->lexer,
-                                          startOffset,
-                                          endOffset,
-                                          ps->lexer->tokenStartLine,
-                                          ps->lexer->tokenStartLineStart);
-    return ZrParser_FileRange_Create(start, end, ps->lexer->sourceName);
+    return ZrParser_SourceProjection_CurrentLocation(ps);
 }
 
 // 获取当前行的代码片段（前后各20个字符）
 
 void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, TZrInt32 *errorColumn) {
-    if (ps->lexer == ZR_NULL || ps->lexer->source == ZR_NULL || bufferSize == 0) {
+    if (ps->lexer == ZR_NULL || bufferSize == 0) {
         buffer[0] = '\0';
         *errorColumn = 1;
+        return;
+    }
+    if (ps->lexer->source == ZR_NULL) {
+        TZrSize length = ps->lexer->t.rawLength;
+        if (length >= bufferSize) {
+            length = bufferSize - 1U;
+        }
+        if (length > 0U && ps->lexer->t.rawText != ZR_NULL) {
+            memcpy(buffer, ps->lexer->t.rawText, length);
+        }
+        buffer[length] = '\0';
+        *errorColumn = ps->lexer->t.span.startColumn > 0
+                                ? ps->lexer->t.span.startColumn
+                                : 1;
         return;
     }
 
@@ -897,7 +789,10 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
         // 计算列号（从当前行开始到当前位置的字符数）
         TZrInt32 column = 1;
-        if (ps->lexer->source != ZR_NULL && ps->lexer->currentPos > 0) {
+        if (ps->lexer->tokenSourceState != ZR_NULL &&
+            ps->lexer->t.span.startColumn > 0) {
+            column = ps->lexer->t.span.startColumn;
+        } else if (ps->lexer->source != ZR_NULL && ps->lexer->currentPos > 0) {
             TZrSize pos = ps->lexer->currentPos - 1;
             while (pos > 0 && ps->lexer->source[pos] != '\n') {
                 pos--;

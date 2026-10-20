@@ -1,46 +1,77 @@
 ---
 related_code:
+  - zr_vm_core/src/zr_vm_core/type/type_layout_initialization.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_struct.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_substitution.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/type_storage_layout.c
+  - tests/parser/test_reference_receiver_call_boundary.c
+  - tests/parser/test_reference_receiver_layout_contract_support.h
+  - tests/parser/test_compiler_storage_alignment_contract_cases.h
+  - tests/parser/test_compiler_features.c
+  - tests/parser/test_union.c
+  - tests/core/test_type_layout_inline_copy.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/call/call_binding_inline_frame.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_inline_frame.h
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_typed_metadata.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/include/zr_vm_core/io.h
-  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/include/zr_vm_parser/receiver_call.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/receiver_call.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/receiver_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/receiver_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_semantic_ir.c
+  - tests/parser/test_reference_receiver_frame_contract_cases.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/type/type_layout_initialization.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_struct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_substitution.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/type_storage_layout.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/function_frame_place.c
-  - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_core/src/zr_vm_core/function/function_frame_place.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_inline_frame.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_inline_frame.h
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/io/io_runtime.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c
   - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/include/zr_vm_parser/receiver_call.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/receiver_call.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/receiver_call.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/receiver_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
-  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_activation.c
-  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_conflicts.c
-  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
-  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir/semantic_ir_loan_activation.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir/semantic_ir_loan_conflicts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir/semantic_ir_loan_facts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir/semantic_ir_loan_liveness.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - .codex/plans/20261008-macro-tokenstream-structured-generation.md
 tests:
+  - tests/parser/test_compiler_storage_alignment_contract_cases.h
+  - tests/parser/test_reference_receiver_layout_contract_support.h
+  - tests/parser/test_union.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/parser/test_aot_llvm_symbol_stripping.c
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_reference_receiver_call_boundary.c
+  - tests/parser/test_reference_receiver_frame_contract_cases.h
   - tests/parser/test_canonical_consumers.c
   - tests/parser/test_compiler_features.c
   - tests/acceptance/2026-07-20-syntax-02-m4-receiver-readonly-call-boundary.md
@@ -48,6 +79,116 @@ doc_type: module-detail
 ---
 
 # Receiver Readonly And Call Boundary
+
+## Storage And Direct-Call Contract
+
+Alignment follows the actual loaded C representation: primitive fields use
+`_Alignof(T)`, pointer storage uses `_Alignof(TZrPtr)`, and reference, ownership
+and ordinary VALUE storage use `_Alignof(SZrTypeValue)`. Size is not alignment;
+`sizeof(max_align_t)` is not a substitute. Positive nominal layout contracts
+remain authoritative. Existing storage-size mappings, field ordering and
+offset/tail-padding algorithms remain. Correct natural alignment can change
+resulting struct/frame sizes and implicit extern offsets; explicit `@offset`
+and positive alignment contracts are preserved verbatim.
+
+The private `type_storage_layout.c` separates these shared helpers from
+`compiler_struct.c`. Typed metadata, generic-field and union producers retain
+their representation choices while deriving actual storage alignment.
+`ZrCore_TypeLayout_InitValue` uses its real `SZrTypeValue` alignment. The
+allocator, global alignment macro, receiver flags and strict address,
+owner/layout/descriptor/PIC and cache-invalidation guards are unchanged.
+Arbitrary explicitly over-aligned stack storage remains a separate contract.
+
+The existing int-only Snapshot case checks field/prototype size and alignment,
+the validated runtime STRUCT layout with one POD field, caller argument and
+callee receiver payload rows, aligned offsets and sufficient enclosing frame
+alignment. Expected values come from `sizeof(TZrInt64)`/`_Alignof(TZrInt64)`,
+not fabricated layouts. The public runtime resolver can lazily allocate its
+function-owned layout cache; this inspection is not allocation-free. Original
+31 names/order, no-copy/result assertions and rejection oracles remain intact.
+
+The completed GCC storage RED R2 has27 PASS/four FAIL and a deterministic
+expected8/actual32 alignment failure. The alignment-only attempt has28 PASS/
+three FAIL: case12 and its original runtime assertions pass, but the final
+three direct-call cases stop before execution because no
+`KNOWN_VM_MEMBER_CALL` is emitted. Those runs have stable source/HEAD/tools/
+cache/binary closure, but neither is an all31 GREEN or platform acceptance.
+
+The separate direct-call repair retains the original eligibility checks and
+reuses the existing readonly alias/result staging. It only avoids clearing an
+already eligible direct flag for NONE ownership, READONLY, non-meta, non-spread
+inline receivers. Mutable/ownership/meta/spread callable staging remains.
+Fresh GCC R2 passes all31 original cases with no ignored cases and native exit0.
+Its11 direct children terminate naturally; complete4883-source/HEAD/tools/
+environment/configuration/binary closure passes independently. This closes the
+focused receiver repair, not the [full acceptance gates](../testing-and-validation/macro-foundation-validation.md#receiver-storage-and-dispatch-gates).
+The separate adjacent gate adds actual closed-generic and implicit extern
+prototype layout snapshots to the original compiler127 layout case. Unpacked C
+mirrors provide platform size/alignment/field offsets; VM-owned metadata is
+copied and released before assertions. Fresh GCC adjacent R6 passes its seven
+suites193 cases and compiler127 companion:320 PASS/0 FAIL/0 IGNORE, eight
+native exits0 and all18 direct children naturally terminal. Strict4890-source/
+HEAD/support/environment/cache/ELF closure PASS; receipt SHA-256 is
+`511E8B48C1186187E73AAE413D7F52032EFB9D2CE49499331F4B711213F6F168`.
+This supplements the focused receiver proof; it does not replace the full matrix.
+Historical MSVC results below cover their frozen inputs.
+
+## Historical MSVC Runtime Diagnosis (2026-10-14)
+
+The historical MSVC receiver target passed31 tests/zero failures/zero ignored with
+natural exit0. The original29 cases remain; two new cases warm the real call
+cache, then corrupt the actual source layout or callee layout. Both require
+LAYOUT_MISMATCH at the real instruction/token and a fully invalidated cache,
+restore metadata, and free functions before asserting copied scalar results.
+The ordinary readonly in/ref case still returns14. All17 input pins and
+HEAD614c5776 stay stable during the nine-target run. The receiver log is
+`E:/cargo-targets/zr_vm/reports/m1-msvc-m1-lower-contracts-r2-zr_vm_reference_receiver_call_boundary_test.log`,
+SHA256 `E5E4E10D272973FA8B58FE211A33D9C202D0CBAD7F8A15D93857F02413AF4F7C`.
+M1-wide acceptance stays open; the29-case and pending-native notes below are historical.
+
+The fresh scalar result-slot repair now has a completed focused run: build0,
+receiver29 tests/one failure/zero ignored, natural exit1. The previous CRT
+assertion is gone. Direct inline and field-projected receiver cases pass; only
+the existing borrowed readonly in/ref case returns pointer payload instead of14.
+The Z7 task opt-in builds in the reused MSVC directory and links full PDB data.
+
+The subsequent borrowed alias repair is written and independently source-reviewed:
+copying the parent layout retains its flags, then adds the inline-receiver flag.
+The private call helper accepts only exact direct and borrowed receiver patterns
+and validates the borrowed binding's full storage size, offset and alignment.
+Owner/layout/descriptor/PIC identity and failure invalidation remain required.
+Native validation of this repair is pending. The observations below are the
+historical diagnosis, not the latest completed test count.
+
+The METHOD descriptor producer now projects its existing compiled `isStatic`
+and `isConst` contract to NONE, READONLY or MUTABLE, matching property projection.
+The five-line change passed independent whole-file inverse review and MSVC
+compilation. The following receiver execution is partial: it reached an integer
+assertion in the existing readonly reference-parameter test and its owned process
+was explicitly stopped. The 259-byte assertion log is not a completed29-case run.
+
+Owned LLDB launches with PDB source information establish the concrete data flow.
+At the CRT assertion, both outer ADD operands are NULL. The field loader had
+produced INT64, but `read()`'s result row still described INLINE_STRUCT/Snapshot.
+Inline return copying therefore reported success and left the scalar destination
+NULL; the inspect function then returned that NULL to the outer expression.
+The compiler had reused a nominal receiver temporary for its primitive member
+result. A source-reviewed one-condition repair allocates a separate result when
+the receiver is inline, preserving both storage lifetimes. Its first focused
+build failed at MSVC C1902 before execution; a Z7 retry is pending.
+
+The same native observation independently reads borrowed-binding pointer bytes
+instead of integer7. The compiler copies a borrowed parent row and replaces its
+storage flags19 with receiver flags9. Preserving that borrowed storage meaning
+and validating its full binding size/alignment is a separate pending repair;
+readonly descriptor, identity, PIC and call ABI gates remain required.
+
+Evidence under `E:/cargo-targets/zr_vm/reports` is the receiver-method-effect-r1
+logs, plus `m1-msvc-receiver-frame-r6-lldb-assertion.log` (16808B, D8740748) and
+`m1-msvc-receiver-frame-r8-lldb-return-values.log` (28356B, D395AFAF). The registered
+artifact manifest carries their full SHA256 and owned-process exit observations.
+These observations identify lower defects; they do not accept M1 or the receiver
+suite. The older29/4 replay below remains a separate historical result.
 
 Syntax plan 02 M4 makes method receiver effects part of the canonical member
 contract. Instance `fn` requires a writable receiver; `const fn` requires only a
@@ -209,6 +350,53 @@ newer. The loader rejects the exact borrowed flag combination on older patches,
 unknown frame flags, non-inline slot kinds, undersized/misaligned bindings and
 bindings outside frame storage. This prevents an older runtime or malformed
 artifact from interpreting inline payload bytes as a live caller-frame alias.
+
+## M1 Readonly Inline Receiver Probe
+
+The first MSVC receiver boundary probe reports 29 tests, five failures and zero
+ignored. Its new direct-call case observes opcode 213, result slot 2 and source
+slot 3. The caller source row is VALUE with flags 32, size 40, alignment 8 and
+no TypeLayout; the callee expects an inline alias with flags 19 and size 8.
+The frame contract gate prevents execution. The original top-level `const fn`
+parser failure and three readonly alias failures remain in this result.
+
+The complete log is `m1-msvc-receiver-frame-red-r1-zr_vm_reference_receiver_call_boundary_test.log`,
+SHA256 `F64B931092EB526717A32B6615A2FA9C90DA740201AEB004DE506F168ECBEAF7`,
+14940 bytes.
+
+Direct-member lowering now stages the readonly source through the existing
+layout-hint and alias producers, moving the result window when it overlaps the
+source. The next native run passes the new frame contract gate: the source is
+`INLINE_STRUCT`, flags 9, size 8, alignment 8 and TypeLayout 0; the callee keeps
+its borrowed inline parameter, flags 19. The three original readonly cases also
+pass their alias and zero-copy metadata gates.
+
+Execution still fails with `layout-mismatch` at token `0x03000001`, instruction
+9. Call-window staging leaves the readonly receiver unmaterialized, whereas
+member preparation requires an object receiver to check owner identity.
+The private runtime helper candidate consults the canonical struct prototype
+for identity validation while retaining the caller-frame payload and member
+binding guards. This is a source-level candidate, not evidence that the public
+runtime call works. At that review checkpoint native validation was pending and
+result 7 was not credited. The suite at that checkpoint was 29/5/0. Its log,
+`m1-msvc-receiver-placement-r1-zr_vm_reference_receiver_call_boundary_test.log`,
+has SHA256 `E57F803C04732C3EECAE01C9817C322FFA8D2F1E72F6F5BBC8B2AD118649A7AC`,
+15942 bytes. Module 11 and pipeline 18 companions pass. The top-level `const fn`
+rejection test is separately being aligned with the parser's null-AST fatal
+recovery contract; the language rejection rule remains unchanged.
+
+The fresh nine-target MSVC replay reports this target at 29 tests, four
+failures and zero ignored. The top-level `const fn` rejection now passes, while
+the three existing readonly alias assertions and the new direct-call assertion
+fail. The new probe reaches opcode 213 with `executed=1`; its caller row is
+`INLINE_STRUCT`, flags 9, size 8, alignment 8 and TypeLayout 0, while the callee
+alias has flags 19 and size 8. The test still fails its public-helper result
+assertion with `layout-mismatch` at token `0x03000001`, instruction 9. Passing
+the frame metadata gate and reaching dispatch do not establish a successful
+call. Evidence is `m1-msvc-m1-lower-contracts-r1-zr_vm_reference_receiver_call_boundary_test.log`,
+SHA256 `58E30471F028098EAA1E579A4F606F87F888741945351DAF8EFD0845701088`,
+15924 bytes. The candidate remains unaccepted; the original failures are not
+waived.
 
 ## Readonly aggregate parameters
 

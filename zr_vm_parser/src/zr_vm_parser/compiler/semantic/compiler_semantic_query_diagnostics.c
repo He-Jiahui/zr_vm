@@ -49,7 +49,8 @@ TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(SZrCompilerState *cs) {
     }
     location = cs->errorLocation;
     memset(&fact, 0, sizeof(fact));
-    fact.node = cs->currentAst;
+    /* Deferred publication can outlive the currentAst compilation scope. */
+    fact.node = cs->currentAst != ZR_NULL ? cs->currentAst : cs->scriptAst;
     if (cs->hasStructuredError &&
         cs->structuredError.code != ZR_NULL &&
         cs->structuredError.message != ZR_NULL) {

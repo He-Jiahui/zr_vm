@@ -152,7 +152,7 @@ static TZrLifetimeRegionId ownership_symbol_declaration_region(
     }
     return ZR_SEMANTIC_ID_INVALID;
 }
-/* TODO: RuntimeRoot 会清掉 source range，submission capture 在编译期先播种、随后被 SemanticContext_Reset 清掉本轮 declaration facts；identifier fact 仍保留 qualifier，MapBuild 可建槽和 region 后因无 declaration reference 跳过本 fact。确认非 source origin 是否要求合成 declaration/lifetime 锚点，当前未证明诊断或区域结果错误；证据入口见 zr_vm_parser/src/zr_vm_parser/type_system.c:1223-1255,1261-1301、zr_vm_parser/src/zr_vm_parser/compiler/compiler_submission.c:157-219、zr_vm_parser/src/zr_vm_parser/compiler.c:1051,720、zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_identifier_facts.c:29-60。 */
+/* TODO: RuntimeRoot 会清掉 source range，submission capture 在编译期先播种、随后被 SemanticContext_Reset 清掉本轮 declaration facts；identifier fact 仍保留 qualifier，MapBuild 可建槽和 region 后因无 declaration reference 跳过本 fact。确认非 source origin 是否要求合成 declaration/lifetime 锚点，当前未证明诊断或区域结果错误；证据入口见 zr_vm_parser/src/zr_vm_parser/types/type_system.c:1223-1255,1261-1301、zr_vm_parser/src/zr_vm_parser/compiler/compiler_submission.c:157-219、zr_vm_parser/src/zr_vm_parser/compiler/compiler.c:1051,720、zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_identifier_facts.c:29-60。 */
 static TZrBool ownership_symbol_append_declaration_fact(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -216,7 +216,7 @@ void ZrParser_DataflowOwnership_SymbolMapConstruct(SZrSemanticOwnershipSymbolMap
         ZrCore_Array_Construct(&map->entries);
     }
 }
-/* BUG: 合法 Unique 槽表建成后，OwnerSetPoolInit 的单次 RawMalloc 失败使 resolver/publisher 在违规筛选前返回 false；compile_script 丢弃状态并继续，导致 VALUE 移后重读未被拒绝（链见 zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c:734-738、zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c:112-121、zr_vm_parser/src/zr_vm_parser/compiler.c:824-828,1090-1111）。TODO: LSP 的相同失败由 zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_query_diagnostics.c:165-175 忽略，而 zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_analysis.c:224-235 按 best-effort 返回成功；其诊断完整性契约仍待确认。 */
+/* BUG: 合法 Unique 槽表建成后，OwnerSetPoolInit 的单次 RawMalloc 失败使 resolver/publisher 在违规筛选前返回 false；compile_script 丢弃状态并继续，导致 VALUE 移后重读未被拒绝（链见 zr_vm_parser/src/zr_vm_parser/type_inference/dataflow/dataflow_ownership.c:734-738、zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_semantic_query_diagnostics.c:112-121、zr_vm_parser/src/zr_vm_parser/compiler/compiler.c:824-828,1090-1111）。TODO: LSP 的相同失败由 zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_query_diagnostics.c:165-175 忽略，而 zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_analysis.c:224-235 按 best-effort 返回成功；其诊断完整性契约仍待确认。 */
 TZrBool ZrParser_DataflowOwnership_SymbolMapBuild(
         SZrSemanticContext *context,
         SZrSemanticOwnershipSymbolMap *map) {

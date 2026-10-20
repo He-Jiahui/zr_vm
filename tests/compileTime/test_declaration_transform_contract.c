@@ -118,10 +118,30 @@ static void test_patch_enforces_phase_and_ten_thousand_addition_limit(void) {
                     ZR_PARSER_COMPILE_PHASE_EXPANSION,
                     ZR_PARSER_COMPILE_PHASE_LAYOUT));
     TEST_ASSERT_EQUAL(
+            ZR_PARSER_DECLARATION_PATCH_ERROR_PHASE_CYCLE,
+            ZrParser_DeclarationView_ValidatePhaseAccess(
+                    ZR_PARSER_COMPILE_PHASE_SYNTAX_EXPANSION,
+                    ZR_PARSER_COMPILE_PHASE_SIGNATURE));
+    TEST_ASSERT_EQUAL(
+            ZR_PARSER_DECLARATION_PATCH_VALID,
+            ZrParser_DeclarationView_ValidatePhaseAccess(
+                    ZR_PARSER_COMPILE_PHASE_SIGNATURE,
+                    ZR_PARSER_COMPILE_PHASE_SYNTAX_EXPANSION));
+    TEST_ASSERT_EQUAL(
+            ZR_PARSER_DECLARATION_PATCH_VALID,
+            ZrParser_DeclarationView_ValidatePhaseAccess(
+                    ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION,
+                    ZR_PARSER_COMPILE_PHASE_SIGNATURE));
+    TEST_ASSERT_EQUAL(
             ZR_PARSER_DECLARATION_PATCH_VALID,
             ZrParser_DeclarationView_ValidatePhaseAccess(
                     ZR_PARSER_COMPILE_PHASE_LATE_CHECK,
                     ZR_PARSER_COMPILE_PHASE_LAYOUT));
+    TEST_ASSERT_EQUAL(
+            ZR_PARSER_DECLARATION_PATCH_ERROR_ARGUMENT,
+            ZrParser_DeclarationView_ValidatePhaseAccess(
+                    (EZrParserCompilePhase)255,
+                    ZR_PARSER_COMPILE_PHASE_BUILD_FACTS));
 
     free(names);
     free(additions);

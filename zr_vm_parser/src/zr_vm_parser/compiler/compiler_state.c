@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_type_prototype_lifecycle.h"
 
 #include "zr_vm_library/native_registry.h"
 #include "compiler/tool/compile_tool_project_provider.h"
@@ -53,6 +54,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
 
     // 初始化局部变量数组
     ZrCore_Array_Init(state, &cs->localVars, sizeof(SZrFunctionLocalVariable), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
+    ZrCore_Array_Init(state,
+                      &cs->localBindingIdentities,
+                      sizeof(SZrCompilerBindingIdentity),
+                      ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     cs->localVarCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
@@ -65,6 +70,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
 
     // 初始化闭包变量数组
     ZrCore_Array_Init(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->closureBindingIdentities,
+                      sizeof(SZrCompilerBindingIdentity),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->closureVarCount = 0;
     cs->submissionContext = ZR_NULL;
     cs->submissionEntryFunction = ZR_NULL;
@@ -121,6 +130,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->childFunctionNameMap,
                       sizeof(SZrChildFunctionNameMap),
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->childFunctionBindingIdentities,
+                      sizeof(SZrCompilerBindingIdentity),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     // 初始化顶层函数声明
     cs->topLevelFunction = ZR_NULL;
@@ -134,10 +147,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->errorMessage = ZR_NULL;
     cs->errorMessageStorage = ZR_NULL;
     cs->errorMessageStorageCapacity = 0;
-    cs->errorLocation.start.line = 0;
-    cs->errorLocation.start.column = 0;
-    cs->errorLocation.end.line = 0;
-    cs->errorLocation.end.column = 0;
+    memset(&cs->errorLocation, 0, sizeof(cs->errorLocation));
     cs->hasStructuredError = ZR_FALSE;
     ZrParser_StructuredDiagnostic_Init(&cs->structuredError);
 
@@ -265,6 +275,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->localVars.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->localVars);
     }
+    if (cs->localBindingIdentities.isValid &&
+        cs->localBindingIdentities.head != ZR_NULL &&
+        cs->localBindingIdentities.capacity > 0 &&
+        cs->localBindingIdentities.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->localBindingIdentities);
+    }
 
     if (cs->stackSlotTypeHints.isValid && cs->stackSlotTypeHints.head != ZR_NULL &&
         cs->stackSlotTypeHints.capacity > 0 && cs->stackSlotTypeHints.elementSize > 0) {
@@ -276,6 +292,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->closureVars.isValid && cs->closureVars.head != ZR_NULL && cs->closureVars.capacity > 0 &&
         cs->closureVars.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->closureVars);
+    }
+    if (cs->closureBindingIdentities.isValid &&
+        cs->closureBindingIdentities.head != ZR_NULL &&
+        cs->closureBindingIdentities.capacity > 0 &&
+        cs->closureBindingIdentities.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->closureBindingIdentities);
     }
 
     if (cs->submissionDeclaredCaptureIndices.isValid &&
@@ -354,6 +376,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->childFunctionNameMap.capacity > 0 && cs->childFunctionNameMap.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->childFunctionNameMap);
     }
+    if (cs->childFunctionBindingIdentities.isValid &&
+        cs->childFunctionBindingIdentities.head != ZR_NULL &&
+        cs->childFunctionBindingIdentities.capacity > 0 &&
+        cs->childFunctionBindingIdentities.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->childFunctionBindingIdentities);
+    }
     compiler_test_free_entries(cs);
     
     // 释放外部变量引用数组（字符串本身由 GC 管理）
@@ -386,116 +414,7 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
             SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
             if (info != ZR_NULL) {
-                // 释放 inherits 数组（字符串本身由 GC 管理）
-                if (info->inherits.isValid && info->inherits.head != ZR_NULL &&
-                    info->inherits.capacity > 0 && info->inherits.elementSize > 0) {
-                    ZrCore_Array_Free(state, &info->inherits);
-                }
-                if (info->implements.isValid && info->implements.head != ZR_NULL &&
-                    info->implements.capacity > 0 && info->implements.elementSize > 0) {
-                    ZrCore_Array_Free(state, &info->implements);
-                }
-                if (info->genericParameters.isValid && info->genericParameters.head != ZR_NULL &&
-                    info->genericParameters.capacity > 0 && info->genericParameters.elementSize > 0) {
-                    for (TZrSize genericIndex = 0; genericIndex < info->genericParameters.length; genericIndex++) {
-                        SZrTypeGenericParameterInfo *genericInfo =
-                                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&info->genericParameters, genericIndex);
-                        if (genericInfo != ZR_NULL &&
-                            genericInfo->constraintTypeNames.isValid &&
-                            genericInfo->constraintTypeNames.head != ZR_NULL &&
-                            genericInfo->constraintTypeNames.capacity > 0 &&
-                            genericInfo->constraintTypeNames.elementSize > 0) {
-                            ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
-                        }
-                    }
-                    ZrCore_Array_Free(state, &info->genericParameters);
-                }
-                if (info->decorators.isValid && info->decorators.head != ZR_NULL &&
-                    info->decorators.capacity > 0 && info->decorators.elementSize > 0) {
-                    ZrCore_Array_Free(state, &info->decorators);
-                }
-                // 释放 members 数组
-                if (info->members.isValid && info->members.head != ZR_NULL &&
-                    info->members.capacity > 0 && info->members.elementSize > 0) {
-                    for (TZrSize memberIndex = 0; memberIndex < info->members.length; memberIndex++) {
-                        SZrTypeMemberInfo *memberInfo =
-                                 (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, memberIndex);
-                        if (memberInfo != ZR_NULL && memberInfo->hasStructuredReturnType) {
-                            ZrParser_InferredType_Free(state, &memberInfo->structuredReturnType);
-                            memberInfo->hasStructuredReturnType = ZR_FALSE;
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->parameterTypes.isValid &&
-                            memberInfo->parameterTypes.head != ZR_NULL &&
-                            memberInfo->parameterTypes.capacity > 0 &&
-                            memberInfo->parameterTypes.elementSize > 0) {
-                            for (TZrSize paramIndex = 0; paramIndex < memberInfo->parameterTypes.length; paramIndex++) {
-                                SZrInferredType *paramType =
-                                        (SZrInferredType *)ZrCore_Array_Get(&memberInfo->parameterTypes, paramIndex);
-                                if (paramType != ZR_NULL) {
-                                    ZrParser_InferredType_Free(state, paramType);
-                                }
-                            }
-                            ZrCore_Array_Free(state, &memberInfo->parameterTypes);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->parameterNames.isValid &&
-                            memberInfo->parameterNames.head != ZR_NULL &&
-                            memberInfo->parameterNames.capacity > 0 &&
-                            memberInfo->parameterNames.elementSize > 0) {
-                            ZrCore_Array_Free(state, &memberInfo->parameterNames);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->parameterHasDefaultValues.isValid &&
-                            memberInfo->parameterHasDefaultValues.head != ZR_NULL &&
-                            memberInfo->parameterHasDefaultValues.capacity > 0 &&
-                            memberInfo->parameterHasDefaultValues.elementSize > 0) {
-                            ZrCore_Array_Free(state, &memberInfo->parameterHasDefaultValues);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->parameterDefaultValues.isValid &&
-                            memberInfo->parameterDefaultValues.head != ZR_NULL &&
-                            memberInfo->parameterDefaultValues.capacity > 0 &&
-                            memberInfo->parameterDefaultValues.elementSize > 0) {
-                            ZrCore_Array_Free(state, &memberInfo->parameterDefaultValues);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->genericParameters.isValid &&
-                            memberInfo->genericParameters.head != ZR_NULL &&
-                            memberInfo->genericParameters.capacity > 0 &&
-                            memberInfo->genericParameters.elementSize > 0) {
-                            for (TZrSize genericIndex = 0; genericIndex < memberInfo->genericParameters.length;
-                                 genericIndex++) {
-                                SZrTypeGenericParameterInfo *genericInfo =
-                                        (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&memberInfo->genericParameters,
-                                                                                        genericIndex);
-                                if (genericInfo != ZR_NULL &&
-                                    genericInfo->constraintTypeNames.isValid &&
-                                    genericInfo->constraintTypeNames.head != ZR_NULL &&
-                                    genericInfo->constraintTypeNames.capacity > 0 &&
-                                    genericInfo->constraintTypeNames.elementSize > 0) {
-                                    ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
-                                }
-                            }
-                            ZrCore_Array_Free(state, &memberInfo->genericParameters);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->parameterPassingModes.isValid &&
-                            memberInfo->parameterPassingModes.head != ZR_NULL &&
-                            memberInfo->parameterPassingModes.capacity > 0 &&
-                            memberInfo->parameterPassingModes.elementSize > 0) {
-                            ZrCore_Array_Free(state, &memberInfo->parameterPassingModes);
-                        }
-                        if (memberInfo != ZR_NULL &&
-                            memberInfo->decorators.isValid &&
-                            memberInfo->decorators.head != ZR_NULL &&
-                            memberInfo->decorators.capacity > 0 &&
-                            memberInfo->decorators.elementSize > 0) {
-                            ZrCore_Array_Free(state, &memberInfo->decorators);
-                        }
-                    }
-                    ZrCore_Array_Free(state, &info->members);
-                }
+                compiler_type_prototype_free_owned_metadata(state, info);
             }
         }
         ZrCore_Array_Free(state, &cs->typePrototypes);
@@ -529,6 +448,11 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                 SZrCompileTimeVariable *var = *varPtr;
                 // 释放类型（包括嵌套的elementTypes）
                 ZrParser_InferredType_Free(state, &var->type);
+                if (var->hasEvaluatedValueRoot) {
+                    ZrCore_GcRootHandle_Release(
+                            state, &var->evaluatedValueRoot);
+                    var->hasEvaluatedValueRoot = ZR_FALSE;
+                }
                 // 释放变量结构体本身（字符串和AST节点由GC管理）
                 ZrCore_Memory_RawFreeWithType(state->global, var, sizeof(SZrCompileTimeVariable), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }

@@ -72,12 +72,15 @@ static TZrBool compiler_semantic_cfg_finally_call_is_resolved(
     target = node->data.primaryExpression.property;
     if (target == ZR_NULL || target->type != ZR_AST_IDENTIFIER_LITERAL ||
         target->data.identifier.name == ZR_NULL ||
-        ZrParser_TypeEnvironment_FindVariableBinding(
-                cs->typeEnv, target->data.identifier.name) != ZR_NULL) {
+        ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                cs->typeEnv,
+                target->data.identifier.name,
+                target->data.identifier.syntaxContext) != ZR_NULL) {
         return ZR_FALSE;
     }
-    return ZrParser_TypeEnvironment_LookupFunction(
-            cs->typeEnv, target->data.identifier.name, &functionInfo);
+    return ZrParser_TypeEnvironment_LookupFunctionWithContext(
+            cs->typeEnv, target->data.identifier.name,
+            target->data.identifier.syntaxContext, &functionInfo);
 }
 
 static TZrBool compiler_semantic_cfg_finally_calls_are_resolved(
@@ -911,6 +914,7 @@ TZrBool compiler_semantic_cfg_enter_try_finally_cleanup(
         return ZR_FALSE;
     }
     compiler_semantic_cfg_enter(cs, plan->cleanupBlock);
+    cs->preSemanticIrCfgTerminated = ZR_FALSE;
     plan->cleanupEntered = ZR_TRUE;
     return ZR_TRUE;
 }

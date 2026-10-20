@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "semantic/type_declaration_context.h"
 
 #include <stdarg.h>
 
@@ -290,6 +291,9 @@ TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrAstNode *declaration) {
     const SZrSemanticSymbolRecord *previous = ZR_NULL;
     const SZrFileRange *previousLocation = ZR_NULL;
+    const SZrNamedTypeBinding *binding;
+    SZrSyntaxContext syntaxContext;
+    SZrSyntaxContext normalizedContext;
     SZrString *previousName;
     SZrFileRange previousNameRange;
 
@@ -297,12 +301,40 @@ TZrBool ZrParser_Compiler_RegisterTypeBinding(
         cs->typeEnv == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (!ZrParser_TypeEnvironment_LookupType(cs->typeEnv, name)) {
-        return ZrParser_TypeEnvironment_RegisterType(
-                cs->state, cs->typeEnv, name);
+    if (declaration != ZR_NULL && declaration->type == ZR_AST_IDENTIFIER_LITERAL) {
+        /* Imported shorthand aliases retain their Root identifier owner. */
+        syntaxContext = declaration->data.identifier.syntaxContext;
+        if (!ZrParser_SyntaxContext_IsValid(syntaxContext) ||
+            !ZrParser_SyntaxContext_Equal(syntaxContext, ZrParser_SyntaxContext_Root())) {
+            return ZR_FALSE;
+        }
+    } else if (!type_declaration_raw_context(declaration, &syntaxContext)) {
+        return ZR_FALSE;
+    }
+    if (!type_declaration_normalize_context(syntaxContext, &normalizedContext)) {
+        return ZR_FALSE;
+    }
+    binding = ZrParser_TypeEnvironment_FindTypeBindingWithContext(
+            cs->typeEnv, name, syntaxContext);
+    if (binding != ZR_NULL && declaration != ZR_NULL &&
+        binding->declarationNode == declaration) {
+        return ZR_TRUE;
+    }
+    if (!ZrParser_TypeEnvironment_LookupTypeWithContext(cs->typeEnv, name, syntaxContext)) {
+        return ZrParser_TypeEnvironment_RegisterTypeWithContext(
+                cs->state, cs->typeEnv, name, declaration, syntaxContext);
+    }
+    if (binding != ZR_NULL && binding->declarationNode != ZR_NULL &&
+        binding->declarationNode != declaration) {
+        if (!compiler_duplicate_type_declaration_identity(
+                    binding->declarationNode, &previousName, &previousNameRange) ||
+            previousName == ZR_NULL || !ZrCore_String_Equal(previousName, name)) {
+            previousNameRange = binding->declarationNode->location;
+        }
+        previousLocation = &previousNameRange;
     }
 
-    if (cs->semanticContext != ZR_NULL &&
+    if (previousLocation == ZR_NULL && cs->semanticContext != ZR_NULL &&
         cs->semanticContext->symbols.isValid) {
         for (TZrSize index = 0U;
              index < cs->semanticContext->symbols.length;
@@ -311,11 +343,14 @@ TZrBool ZrParser_Compiler_RegisterTypeBinding(
                     (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
                             &cs->semanticContext->symbols,
                             index);
+            SZrSyntaxContext candidateContext;
 
             if (candidate == ZR_NULL ||
                 candidate->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
                 candidate->name == ZR_NULL ||
-                !ZrCore_String_Equal(candidate->name, name)) {
+                !ZrCore_String_Equal(candidate->name, name) ||
+                !type_declaration_normalize_context(candidate->syntaxContext, &candidateContext) ||
+                !ZrParser_SyntaxContext_Equal(candidateContext, normalizedContext)) {
                 continue;
             }
             if (previous == ZR_NULL) {

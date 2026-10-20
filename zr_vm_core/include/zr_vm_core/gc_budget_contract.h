@@ -161,7 +161,9 @@ ZR_CORE_API TZrBool ZrCore_GcBudget_Validate(
  * @brief 根据调用方已测得的单片工作量生成可持久化的阶段见证。
  * @pre budget 已按配置语义准备；phase 为活动阶段且 workUnits 非零。
  * @return 参数与计数合法时为真，是否接纳由 result.status 决定。
- * @note 失败时仅 diagnostic 可靠；预算预检失败可使 result 保持原内容。
+ * @note result 非空时始终写入确定结果；参数校验失败时为 REJECTED、IDLE、
+ * NONE，保留输入 cursor，其余计量归零且 consistentBoundary 为假。
+ * result 为空时仅可选 diagnostic 可写；预算拒绝工作仍返回真，由 status 表达。
  * 此函数不执行 GC，也不测量 elapsedUs 或 atomicPauseUs。
  */
 ZR_CORE_API TZrBool ZrCore_GcBudget_EvaluateStep(

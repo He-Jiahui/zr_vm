@@ -1,5 +1,6 @@
 #include "type_inference/dataflow/dataflow.h"
 #include "type_inference/dataflow/dataflow_definite_assignment.h"
+#include "type_inference/dataflow/semantic_da_ast.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -14,7 +15,6 @@
  */
 typedef struct SZrSemanticDaSymbolMap {
     SZrArray symbolIds;
-    SZrArray lambdas;
 } SZrSemanticDaSymbolMap;
 
 /**
@@ -24,10 +24,10 @@ typedef struct SZrSemanticDaSymbolMap {
 typedef struct SZrSemanticDaAnalysis {
     SZrSemanticContext *context;
     const SZrSemanticDaSymbolMap *symbols;
+    const SZrSemanticDaAstIndex *astIndex;
     EZrParserDefiniteAssignmentState *readStates;
     TZrBool *readStateSeen;
     TZrSize readStateCount;
-    SZrAstNode *root;
 } SZrSemanticDaAnalysis;
 
 /** @brief 以指针身份或字符串值比较两个 source 名称；两个空名称不匹配。 */
@@ -96,16 +96,19 @@ static TZrBool semantic_da_range_contains_range(const SZrFileRange *outer,
     return ZR_TRUE;
 }
 
-/** @brief 先用 AST 节点身份归属 fact；身份不同时以同 source 的范围覆盖作回退。 */
-static TZrBool semantic_da_node_contains_fact(SZrAstNode *node,
+/* Real AST identity decides ownership; only synthetic facts may use ranges. */
+static TZrBool semantic_da_node_contains_fact(const SZrSemanticDaAnalysis *analysis,
+                                              SZrAstNode *node,
                                               const SZrSemanticReferenceFact *fact) {
-    if (node == ZR_NULL || fact == ZR_NULL) {
+    EZrSemanticDaAstMatch match;
+
+    if (analysis == ZR_NULL || node == ZR_NULL || fact == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (fact->node == node) {
-        return ZR_TRUE;
-    }
-    return semantic_da_range_contains_range(&node->location, &fact->range);
+    match = ZrParser_SemanticDaAst_Match(analysis->astIndex, node, fact->node);
+    return match == ZR_SEMANTIC_DA_AST_INCLUDED ||
+           (match == ZR_SEMANTIC_DA_AST_LEGACY &&
+            semantic_da_range_contains_range(&node->location, &fact->range));
 }
 
 /** @brief 在线性去重槽表中查找有效 symbol ID，并可选返回其状态向量索引。 */
@@ -161,6 +164,7 @@ static TZrBool semantic_da_symbol_map_add(SZrState *state,
 /**
  * @brief 从整个 semantic context 的 resolved declaration/read/write facts 建立共享状态槽表。
  * @note 初始容量按事实总数预留，去重后槽数不超过事实数。
+ * BUG: Array_Init 分配失败仍留下 valid 且正 capacity；若有至少一个有效符号，后续 Push 会断言或向空缓冲写入。
  */
 static TZrBool semantic_da_build_symbol_map(SZrSemanticContext *context,
                                             SZrSemanticDaSymbolMap *map) {
@@ -177,24 +181,12 @@ static TZrBool semantic_da_build_symbol_map(SZrSemanticContext *context,
     capacity = context->referenceFacts.length > 0
                        ? context->referenceFacts.length
                        : ZR_PARSER_INITIAL_CAPACITY_TINY;
-    if (!ZrCore_Array_TryInit(context->state, &map->symbolIds,
-                             sizeof(TZrSymbolId), capacity)) return ZR_FALSE;
-
-    /* Expression facts retain lambda identity even when nested in a call,
-     * object literal, or initializer rather than a statement list. */
-    capacity = 0;
-    for (index = 0; index < context->expressionFacts.length; index++) {
-        const SZrSemanticExpressionFact *fact = ZrCore_Array_Get(&context->expressionFacts, index);
-        if (fact->node != ZR_NULL && fact->node->type == ZR_AST_LAMBDA_EXPRESSION) capacity++;
+    if (capacity > ZR_MAX_SIZE / sizeof(TZrSymbolId)) {
+        return ZR_FALSE;
     }
-    if (capacity != 0) {
-        if (!ZrCore_Array_TryInit(context->state, &map->lambdas,
-                                 sizeof(SZrAstNode *), capacity)) return ZR_FALSE;
-        for (index = 0; index < context->expressionFacts.length; index++) {
-            SZrSemanticExpressionFact *fact = ZrCore_Array_Get(&context->expressionFacts, index);
-            if (fact->node != ZR_NULL && fact->node->type == ZR_AST_LAMBDA_EXPRESSION)
-                ZrCore_Array_Push(context->state, &map->lambdas, &fact->node);
-        }
+    if (!ZrCore_Array_TryInit(context->state, &map->symbolIds,
+                             sizeof(TZrSymbolId), capacity)) {
+        return ZR_FALSE;
     }
 
     for (index = 0; index < context->referenceFacts.length; index++) {
@@ -224,62 +216,69 @@ static void semantic_da_free_symbol_map(SZrSemanticContext *context,
         return;
     }
     ZrCore_Array_Free(context->state, &map->symbolIds);
-    ZrCore_Array_Free(context->state, &map->lambdas);
 }
 
-/** @brief 比较用于变量声明槽回查的非空名称，优先利用相同字符串对象身份。 */
-static TZrBool semantic_da_names_equal(SZrString *left, SZrString *right) {
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (left == right) {
-        return ZR_TRUE;
-    }
-    return ZrCore_String_Equal(left, right);
+static TZrBool semantic_da_ranges_equal(const SZrFileRange *left,
+                                       const SZrFileRange *right) {
+    return semantic_da_range_is_known(left) && semantic_da_range_is_known(right) &&
+           semantic_da_same_source(left->source, right->source) &&
+           left->start.offset == right->start.offset &&
+           left->start.line == right->start.line &&
+           left->start.column == right->start.column &&
+           left->end.offset == right->end.offset &&
+           left->end.line == right->end.line &&
+           left->end.column == right->end.column;
 }
 
-/**
- * @brief 按事实数组顺序寻找第一个名称相同且已进入槽表的 resolved 符号。
- * BUG: 此查找扫描全 context facts 并取首个同名 resolved symbolId，不核对 declaration AST 身份或 callable scope；不同 callable scope 的同名变量 ID 不同，transfer 会重置并初始化错误槽，声明自身 READ 仍见 UNINIT，query 因而误报。
- */
-static TZrBool semantic_da_find_symbol_by_name(const SZrSemanticDaAnalysis *analysis,
-                                               SZrString *name,
-                                               TZrSymbolId *outSymbolId,
-                                               TZrSize *outSymbolIndex) {
+/** @brief Resolve a declaration by AST identity, or exact range for synthetic facts. */
+static TZrBool semantic_da_find_declaration_symbol(const SZrSemanticDaAnalysis *analysis,
+                                                  SZrAstNode *statement,
+                                                  SZrAstNode *pattern,
+                                                  TZrSize *outSymbolIndex) {
+    TZrSize pass;
     TZrSize index;
 
-    if (outSymbolId != ZR_NULL) {
-        *outSymbolId = ZR_SEMANTIC_ID_INVALID;
-    }
     if (outSymbolIndex != ZR_NULL) {
         *outSymbolIndex = 0;
     }
     if (analysis == ZR_NULL ||
         analysis->context == ZR_NULL ||
         !analysis->context->referenceFacts.isValid ||
-        name == ZR_NULL) {
+        statement == ZR_NULL || pattern == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (index = 0; index < analysis->context->referenceFacts.length; index++) {
-        SZrSemanticReferenceFact *fact =
-                (SZrSemanticReferenceFact *)ZrCore_Array_Get(&analysis->context->referenceFacts, index);
-        TZrSize symbolIndex;
-        if (fact == ZR_NULL ||
-            !fact->isResolved ||
-            fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
-            !semantic_da_names_equal(fact->name, name) ||
-            !semantic_da_symbol_map_find(analysis->symbols, fact->symbolId, &symbolIndex)) {
-            continue;
+    for (pass = 0; pass < 2; pass++) {
+        TZrSymbolId foundId = ZR_SEMANTIC_ID_INVALID;
+        TZrSize foundIndex = 0;
+        for (index = 0; index < analysis->context->referenceFacts.length; index++) {
+            SZrSemanticReferenceFact *fact =
+                    (SZrSemanticReferenceFact *)ZrCore_Array_Get(&analysis->context->referenceFacts, index);
+            TZrSize symbolIndex;
+            if (fact == ZR_NULL || !fact->isResolved ||
+                fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+                fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
+                !semantic_da_symbol_map_find(analysis->symbols, fact->symbolId, &symbolIndex)) {
+                continue;
+            }
+            if (pass == 0 ? (fact->node != statement && fact->node != pattern)
+                          : (ZrParser_SemanticDaAst_Match(analysis->astIndex, pattern, fact->node) !=
+                                     ZR_SEMANTIC_DA_AST_LEGACY ||
+                             !semantic_da_ranges_equal(&pattern->location, &fact->range))) {
+                continue;
+            }
+            if (foundId != ZR_SEMANTIC_ID_INVALID && foundId != fact->symbolId) {
+                return ZR_FALSE;
+            }
+            foundId = fact->symbolId;
+            foundIndex = symbolIndex;
         }
-
-        if (outSymbolId != ZR_NULL) {
-            *outSymbolId = fact->symbolId;
+        if (foundId != ZR_SEMANTIC_ID_INVALID) {
+            if (outSymbolIndex != ZR_NULL) {
+                *outSymbolIndex = foundIndex;
+            }
+            return ZR_TRUE;
         }
-        if (outSymbolIndex != ZR_NULL) {
-            *outSymbolIndex = symbolIndex;
-        }
-        return ZR_TRUE;
     }
 
     return ZR_FALSE;
@@ -444,96 +443,80 @@ static void semantic_da_apply_read_states(const SZrSemanticDaAnalysis *analysis)
     }
 }
 
-/** @brief 只从 identifier-pattern 的变量声明抽取名称；解构 pattern 不在此处映射。 */
-static SZrString *semantic_da_variable_declaration_name(SZrAstNode *statement) {
-    SZrAstNode *pattern;
-
-    if (statement == ZR_NULL || statement->type != ZR_AST_VARIABLE_DECLARATION) {
-        return ZR_NULL;
-    }
-
-    pattern = statement->data.variableDeclaration.pattern;
-    if (pattern == ZR_NULL || pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_NULL;
-    }
-
-    return pattern->data.identifier.name;
-}
-
-/** @brief 将当前简单变量声明名称转换为全局事实槽表中的一个状态索引。 */
+/** @brief Find only the current simple declaration's symbol slot. */
 static TZrBool semantic_da_variable_declaration_slot(SZrAstNode *statement,
                                                      const SZrSemanticDaAnalysis *analysis,
                                                      TZrSize *outSymbolIndex) {
-    SZrString *name = semantic_da_variable_declaration_name(statement);
-    TZrSymbolId symbolId;
+    SZrAstNode *pattern;
 
     if (outSymbolIndex != ZR_NULL) {
         *outSymbolIndex = 0;
     }
-    if (name == ZR_NULL) {
+    if (statement == ZR_NULL || statement->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+    pattern = statement->data.variableDeclaration.pattern;
+    if (pattern == ZR_NULL || pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
         return ZR_FALSE;
     }
 
-    return semantic_da_find_symbol_by_name(analysis, name, &symbolId, outSymbolIndex);
+    return semantic_da_find_declaration_symbol(analysis, statement, pattern, outSymbolIndex);
 }
 
 /**
  * @brief 按 statement 的已知表达式子节点或节点范围筛选本次 transfer 应消费的事实。
  * @note block、catch、switch-default 与 try 语句不直接归属事实；其他未列类型走节点/范围回退。
+ * TODO: parser 将 lambda body 保存在 initializer 内，compiler 会编译 block 并产生 READ facts；resolver 只为 SCRIPT/FUNCTION/BLOCK 建 CFG root 且 default 直接返回，range fallback 可能把嵌套 body fact 归入外层 statement。先定闭包创建/调用的 DA 语义，再用合法嵌套 lambda fixture 核对 fact/query 边界。
  */
+/* The AST index below replaces the historical range-only lambda fallback. */
 static TZrBool semantic_da_fact_in_statement(const SZrSemanticDaAnalysis *analysis,
                                              SZrAstNode *statement,
                                              const SZrSemanticReferenceFact *fact) {
-    if (statement == ZR_NULL || fact == ZR_NULL) {
+    if (analysis == ZR_NULL || statement == ZR_NULL || fact == ZR_NULL) {
         return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < analysis->symbols->lambdas.length; index++) {
-        SZrAstNode *lambda = *(SZrAstNode **)ZrCore_Array_Get(
-                (SZrArray *)&analysis->symbols->lambdas, index);
-        if (semantic_da_range_contains_range(&analysis->root->location, &lambda->location) &&
-            semantic_da_node_contains_fact(lambda, fact)) {
-            /* Creating a closure does not execute its body or declare its
-             * parameters in the enclosing CFG. */
-            return ZR_FALSE;
-        }
     }
 
     switch (statement->type) {
         case ZR_AST_VARIABLE_DECLARATION:
-            return semantic_da_node_contains_fact(statement->data.variableDeclaration.pattern, fact) ||
-                   semantic_da_node_contains_fact(statement->data.variableDeclaration.value, fact);
+            return (fact->kind == ZR_SEMANTIC_REFERENCE_DECLARATION && fact->node == statement) ||
+                   semantic_da_node_contains_fact(analysis, statement->data.variableDeclaration.pattern, fact) ||
+                   semantic_da_node_contains_fact(analysis, statement->data.variableDeclaration.value, fact);
         case ZR_AST_EXPRESSION_STATEMENT:
-            return semantic_da_node_contains_fact(statement->data.expressionStatement.expr, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.expressionStatement.expr, fact);
         case ZR_AST_RETURN_STATEMENT:
-            return semantic_da_node_contains_fact(statement->data.returnStatement.expr, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.returnStatement.expr, fact);
         case ZR_AST_THROW_STATEMENT:
-            return semantic_da_node_contains_fact(statement->data.throwStatement.expr, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.throwStatement.expr, fact);
         case ZR_AST_BREAK_CONTINUE_STATEMENT:
-            return semantic_da_node_contains_fact(statement->data.breakContinueStatement.expr, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.breakContinueStatement.expr, fact);
         case ZR_AST_IF_EXPRESSION:
-            return semantic_da_node_contains_fact(statement->data.ifExpression.condition, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.ifExpression.condition, fact);
         case ZR_AST_WHILE_LOOP:
-            return semantic_da_node_contains_fact(statement->data.whileLoop.cond, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.whileLoop.cond, fact);
         case ZR_AST_FOR_LOOP:
-            return semantic_da_node_contains_fact(statement->data.forLoop.cond, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.forLoop.cond, fact);
         case ZR_AST_FOREACH_LOOP:
-            return semantic_da_node_contains_fact(statement->data.foreachLoop.expr, fact) ||
-                   semantic_da_node_contains_fact(statement->data.foreachLoop.pattern, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.foreachLoop.expr, fact) ||
+                   semantic_da_node_contains_fact(analysis, statement->data.foreachLoop.pattern, fact);
         case ZR_AST_SWITCH_EXPRESSION:
-            return semantic_da_node_contains_fact(statement->data.switchExpression.expr, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.switchExpression.expr, fact);
         case ZR_AST_SWITCH_CASE:
-            return semantic_da_node_contains_fact(statement->data.switchCase.value, fact);
+            return semantic_da_node_contains_fact(analysis, statement->data.switchCase.value, fact);
         case ZR_AST_BLOCK:
         case ZR_AST_CATCH_CLAUSE:
         case ZR_AST_SWITCH_DEFAULT:
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
             return ZR_FALSE;
-        case ZR_AST_FUNCTION_DECLARATION:
-            return semantic_da_range_contains_range(&statement->data.functionDeclaration.nameLocation,
-                                                    &fact->range);
+        case ZR_AST_FUNCTION_DECLARATION: {
+            EZrSemanticDaAstMatch match =
+                    ZrParser_SemanticDaAst_Match(analysis->astIndex, statement, fact->node);
+            return match == ZR_SEMANTIC_DA_AST_INCLUDED ||
+                   (match == ZR_SEMANTIC_DA_AST_LEGACY &&
+                    semantic_da_range_contains_range(&statement->data.functionDeclaration.nameLocation,
+                                                     &fact->range));
+        }
         default:
-            return semantic_da_node_contains_fact(statement, fact);
+            return semantic_da_node_contains_fact(analysis, statement, fact);
     }
 }
 
@@ -640,6 +623,7 @@ static TZrBool semantic_da_join(void *dst, const void *src, void *userData) {
  */
 static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
                                             const SZrSemanticDaSymbolMap *symbols,
+                                            const SZrSemanticDaAstIndex *astIndex,
                                             SZrAstNode *root) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -657,10 +641,15 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
 
     semanticAnalysis.context = context;
     semanticAnalysis.symbols = symbols;
-    semanticAnalysis.root = root;
+    semanticAnalysis.astIndex = astIndex;
     semanticAnalysis.readStateCount = context->referenceFacts.length;
     semanticAnalysis.readStates = ZR_NULL;
     semanticAnalysis.readStateSeen = ZR_NULL;
+    if (semanticAnalysis.readStateCount > ZR_MAX_SIZE / sizeof(*semanticAnalysis.readStates) ||
+        semanticAnalysis.readStateCount > ZR_MAX_SIZE / sizeof(*semanticAnalysis.readStateSeen) ||
+        symbols->symbolIds.length > ZR_MAX_SIZE / sizeof(EZrParserDefiniteAssignmentState)) {
+        return ZR_FALSE;
+    }
 
 /** readStates/readStateSeen 按 referenceFacts 的同一 index 空间并行分配，seen 区分未访问与状态枚举值。 */
     if (semanticAnalysis.readStateCount > 0) {
@@ -738,80 +727,47 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
     return ok;
 }
 
-static TZrBool semantic_da_resolve_node(SZrSemanticContext *context,
-                                        const SZrSemanticDaSymbolMap *symbols,
-                                        SZrAstNode *node);
-
-/** @brief 只递归函数式 block 的直接语句；每个嵌套 function declaration 再建立自己的 CFG 根。 */
-static TZrBool semantic_da_resolve_function_like_body(SZrSemanticContext *context,
-                                                      const SZrSemanticDaSymbolMap *symbols,
-                                                      SZrAstNode *body) {
-    TZrSize index;
-
-    if (body == ZR_NULL || body->type != ZR_AST_BLOCK || body->data.block.body == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    for (index = 0; index < body->data.block.body->count; index++) {
-        if (!semantic_da_resolve_node(context, symbols, body->data.block.body->nodes[index])) {
-            return ZR_FALSE;
-        }
-    }
-    return ZR_TRUE;
-}
+typedef struct SZrSemanticDaRootAnalysis {
+    SZrSemanticContext *context;
+    const SZrSemanticDaSymbolMap *symbols;
+    const SZrSemanticDaAstIndex *astIndex;
+} SZrSemanticDaRootAnalysis;
 
 /**
  * @brief 仅为 script、function declaration 和 block 路径调度 CFG 根。
  * BUG: class/struct 本身落入 CFG 的普通 statement；范围回退可把成员方法局部声明和 READ 一并交给外层 transfer，而成员方法 body 没有独立 CFG 根。未初始化声明 fact 因外层 statement 类型而被标 INIT，query 因此不发应有诊断。合法方法体由 compiler_class/compiler_struct 编译，需补成员根遍历与端到端覆盖。
  */
-static TZrBool semantic_da_resolve_node(SZrSemanticContext *context,
-                                        const SZrSemanticDaSymbolMap *symbols,
-                                        SZrAstNode *node) {
-    TZrSize index;
+/* Indexed ownership now excludes member bodies; their independent CFGs remain separate work. */
+static TZrBool semantic_da_resolve_cfg_root(SZrAstNode *root, void *userData) {
+    SZrSemanticDaRootAnalysis *analysis = (SZrSemanticDaRootAnalysis *)userData;
 
-    if (node == ZR_NULL) {
-        return ZR_TRUE;
+    if (root->type != ZR_AST_SCRIPT && root->type != ZR_AST_FUNCTION_DECLARATION &&
+        root->type != ZR_AST_BLOCK) {
+        SZrAstNode wrapper = {0};
+        SZrAstNodeArray statements = {0};
+        statements.nodes = &root;
+        statements.count = 1;
+        wrapper.type = ZR_AST_SCRIPT;
+        wrapper.location = root->location;
+        wrapper.data.script.statements = &statements;
+        return semantic_da_run_cfg_for_root(analysis->context, analysis->symbols,
+                                            analysis->astIndex, &wrapper);
     }
-
-    switch (node->type) {
-        case ZR_AST_SCRIPT:
-            if (!semantic_da_run_cfg_for_root(context, symbols, node)) {
-                return ZR_FALSE;
-            }
-            if (node->data.script.statements == ZR_NULL) {
-                return ZR_TRUE;
-            }
-            for (index = 0; index < node->data.script.statements->count; index++) {
-                if (!semantic_da_resolve_node(context,
-                                              symbols,
-                                              node->data.script.statements->nodes[index])) {
-                    return ZR_FALSE;
-                }
-            }
-            return ZR_TRUE;
-        case ZR_AST_FUNCTION_DECLARATION:
-            if (!semantic_da_run_cfg_for_root(context, symbols, node)) {
-                return ZR_FALSE;
-            }
-            return semantic_da_resolve_function_like_body(context,
-                                                         symbols,
-                                                         node->data.functionDeclaration.body);
-        case ZR_AST_BLOCK:
-            return semantic_da_resolve_function_like_body(context, symbols, node);
-        default:
-            return ZR_TRUE;
-    }
+    return semantic_da_run_cfg_for_root(analysis->context, analysis->symbols,
+                                        analysis->astIndex, root);
 }
 
 /**
  * @brief 用 AST 的前向 CFG 合并 resolved reference facts 的 definite-assignment 状态。
  * @pre context、referenceFacts 与 root 在整个调用期间保持有效；函数借用它们，并会修改匹配 fact 的状态字段。
- * @return 输入无效或 helper/CFG/dataflow 失败时返回 FALSE。
+ * @return 输入无效或实现显式检测到的 helper/CFG/dataflow 失败时返回 FALSE；未检测的 Array_Init 分配失败不保证在此返回，见上文 BUG。
  */
 TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
         SZrSemanticContext *context,
         SZrAstNode *root) {
     SZrSemanticDaSymbolMap symbols;
+    SZrSemanticDaAstIndex astIndex;
+    SZrSemanticDaRootAnalysis analysis;
     TZrBool ok;
 
     if (context == ZR_NULL ||
@@ -821,31 +777,22 @@ TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
         return ZR_FALSE;
     }
 
+    ZrParser_SemanticDaAst_Init(&astIndex);
+    if (!ZrParser_SemanticDaAst_Build(context->state, root, &astIndex)) {
+        return ZR_FALSE;
+    }
     ZrCore_Array_Construct(&symbols.symbolIds);
-    ZrCore_Array_Construct(&symbols.lambdas);
     if (!semantic_da_build_symbol_map(context, &symbols)) {
         semantic_da_free_symbol_map(context, &symbols);
+        ZrParser_SemanticDaAst_Free(&astIndex);
         return ZR_FALSE;
     }
 
-    ok = semantic_da_resolve_node(context, &symbols, root);
-    for (TZrSize index = 0; ok && index < symbols.lambdas.length; index++) {
-        SZrAstNode *lambda = *(SZrAstNode **)ZrCore_Array_Get(&symbols.lambdas, index);
-        SZrAstNode *body = lambda->data.lambdaExpression.block;
-        if (body == ZR_NULL) continue;
-        if (body->type == ZR_AST_BLOCK) {
-            ok = semantic_da_run_cfg_for_root(context, &symbols, body);
-        } else {
-            SZrAstNode wrapper = {0};
-            SZrAstNodeArray statements = {0};
-            statements.nodes = &body;
-            statements.count = 1;
-            wrapper.type = ZR_AST_SCRIPT;
-            wrapper.location = body->location;
-            wrapper.data.script.statements = &statements;
-            ok = semantic_da_run_cfg_for_root(context, &symbols, &wrapper);
-        }
-    }
+    analysis.context = context;
+    analysis.symbols = &symbols;
+    analysis.astIndex = &astIndex;
+    ok = ZrParser_SemanticDaAst_VisitCfgRoots(&astIndex, semantic_da_resolve_cfg_root, &analysis);
     semantic_da_free_symbol_map(context, &symbols);
+    ZrParser_SemanticDaAst_Free(&astIndex);
     return ok;
 }

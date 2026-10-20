@@ -43,7 +43,7 @@ SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithContent(SZrLspRange lspRan
                                                               SZrString *uri,
                                                               const TZrChar *content,
                                                               TZrSize contentLength) {
-    SZrFileRange fileRange;
+    SZrFileRange fileRange = {0};
     fileRange.start = ZrLanguageServer_LspPosition_ToFilePositionWithContent(lspRange.start,
                                                                              content,
                                                                              contentLength);

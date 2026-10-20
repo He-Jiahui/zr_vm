@@ -2,12 +2,14 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_switch.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_control_flow.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_switch.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_control_flow.c
@@ -18,6 +20,7 @@ plan_sources:
   - docs/plans/syntax/02-reference-syntax-borrow-checker/m2-place-out-definite-assignment.md
   - docs/plans/syntax/13-iterator-enumerator-yield/m2-yield-syntax-semir.md
 tests:
+  - tests/parser/test_parser_primary_budget.c
   - tests/parser/test_cfg_typed_catch_flow.c
   - tests/parser/test_cfg_typed_catch_loop_flow.c
   - tests/parser/test_reference_place_out_flow.c
@@ -141,12 +144,12 @@ for (let {id: recordId, title} in records) {
 
 ## `switch` 与模式 case
 
-ZR 当前 switch 头和每个 case 均使用圆括号，default 用空括号：
+ZR 当前 switch 头和每个 case 均使用圆括号，default 用空括号。default 可出现在任意分支位置，
+但同一 switch 只能有一个；parser 在第二个 default 处报错并释放本次 switch 的临时树：
 
 ```ebnf
 switch-statement = "switch", "(", expression, ")", "{",
-                   { "(", case-pattern, ")", block },
-                   [ "(", ")", block ], "}" ;
+                   { "(", [ case-pattern ], ")", block }, "}" ;
 ```
 
 ```zr

@@ -248,6 +248,30 @@ static ZR_FORCE_INLINE void zr_vm_task_sync_sleep_ms(TZrUInt32 timeoutMs) {
 }
 #endif
 
+/**
+ * ## Summary
+ * 从 native callback 的 Self 值取得借用对象，供 ThreadScheduler、
+ * Channel 及包装类型回调继续核对其业务字段。
+ *
+ * ## Parameters
+ * @param[in] context 本次 callback 的上下文，借用至该 callback 结束；允许为空。
+ * 当 Self payload 非空时，上下文及其 state 必须有效，且对象属于适配的 VM 域。
+ *
+ * ## Returns
+ * @return context/Self 为空、值标签不是 OBJECT/ARRAY 或 payload 为空时返回 ZR_NULL；
+ * 否则返回 receiver 的借用 SZrObject 指针，不转移所有权、不建立独立根。
+ *
+ * ## Constraints and lifecycle
+ * 值标签筛选不验证包装类型、owner prototype 或业务字段。
+ * ZR_CAST_OBJECT 的 raw object 种类检查仅在调试构建断言；
+ * 调用者仍须提供合法动态对象。保活与所属域访问责任留在调用链，
+ * 跨回调或异步阶段使用须另建立相应根和访问约束，不保存 context。
+ *
+ * ## References
+ * ZrLib_CallContext_Self 刷新 callback 的 Self 栈视图；
+ * zr_vm_thread_scheduler_schedule、Thread transport 和 wrapper 回调消费该对象；
+ * ZR_CAST_OBJECT 负责对象/数组共用布局的转换。
+ */
 SZrObject *zr_vm_task_self_object(const ZrLibCallContext *context);
 SZrObject *zr_vm_task_root_object(SZrState *state);
 SZrObject *zr_vm_task_main_scheduler(SZrState *state);
@@ -278,7 +302,61 @@ void zr_vm_thread_isolated_scheduler_shutdown_all(SZrState *state);
 void zr_vm_task_record_last_worker_isolate(SZrState *state, TZrUInt64 isolateId);
 void zr_vm_task_record_last_worker_domain(SZrState *state, SZrGcDomainIdentity domain);
 TZrUInt64 zr_vm_task_next_worker_isolate_id(void);
+/**
+ * ## Summary
+ * 把已创建对象交给 native callback 的结果槽，
+ * 统一 Thread 构造和包装回调的对象/数组返回约定。
+ *
+ * ## Parameters
+ * @param[in] state 对象所属 VM 的有效当前 state；空值会返回 ZR_FALSE。
+ * @param[out] result callback 的可覆写结果槽；为空时不写入。
+ * 调用前不得遗留尚未处理的旧 ownership 值，重用槽须先处理旧值。
+ * @param[in] object 在适配 VM 域中仍存活的对象；为空时不写入，
+ * 本 helper 不接管其所有权。
+ *
+ * ## Returns
+ * @return 任一参数为空时返回 ZR_FALSE 且不写结果；有效非空输入写入
+ * raw object 和标签后返回 ZR_TRUE。true 不代表业务字段已初始化成功。
+ *
+ * ## Constraints and lifecycle
+ * ZrLib_Value_SetObject 直接初始化对象值，不 Copy、不 retain，
+ * 也不登记独立 GC root；不验证 domain、原型或完整业务类型。
+ * 调用链须保持对象存活至输出值槽按 native dispatcher 规则完成交接，
+ * 不能从本 helper 的 true 推导保活或字段发布成功。
+ *
+ * ## References
+ * zr_vm_task_value_type_for_object 选择标签，ZrLib_Value_SetObject 写入结果；
+ * ThreadScheduler、Channel、Shared/Mutex/Guard/Transfer 构造回调使用本约定。
+ * zr_vm_task_create_async_handle 是旧本地链的调用，不是 canonical Job 入口。
+ */
 TZrBool zr_vm_task_finish_object(SZrState *state, SZrTypeValue *result, SZrObject *object);
+/**
+ * ## Summary
+ * 按 C 字段名为 Thread 的 VM 对象保存字段值，
+ * 让 scheduler、transport 和包装类型共享 Native 字段 API 的写入约定。
+ *
+ * ## Parameters
+ * @param[in] state 有效当前 VM state，须与 object 的域适配；为空时不操作。
+ * @param[in] object 目标 VM 对象的借用指针；为空时不操作。
+ * @param[in] fieldName 本次调用可读、以 NUL 结尾的 C 字符串；为空时不操作。
+ * @param[in] value 本次调用借用的 VM 值槽；为空时不操作。
+ * 成功写入按 VM value-copy 规则存入对象，不转移调用者槽的管理责任。
+ *
+ * ## Returns
+ * 无返回值。空输入不写入；本 wrapper 不把底层失败转换成成功/失败状态。
+ * 正常返回不能证明字段已保存，也不替调用者处理异常状态。
+ *
+ * ## Constraints and lifecycle
+ * ZrLib_Object_SetFieldCString 临时固定对象、值和键并可能分配字符串键；
+ * pin 或建键失败可能提前返回，Core setter 也没有可供 wrapper 转交的返回状态。
+ * 多字段初始化不具有本 helper 提供的回滚；调用方须按其具体发布协议处理失败。
+ * 字段名和值只借用到本次调用结束，成功存储的对象边由 Core 管理。
+ *
+ * ## References
+ * ZrLib_Object_SetFieldCString 规定 void 写入接口，
+ * ZrCore_Object_SetValue 在成功存储路径执行 value copy 和 GC 边更新；
+ * Thread 的标量 setter、scheduler 状态、transport 与 wrapper 共同调用本 helper。
+ */
 void zr_vm_task_set_value_field(SZrState *state,
                                 SZrObject *object,
                                 const TZrChar *fieldName,

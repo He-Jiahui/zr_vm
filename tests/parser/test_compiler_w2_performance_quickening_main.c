@@ -27,6 +27,9 @@ void test_w2_get_stack_set_member_slot_value_forwards_source(void);
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void);
 void test_w2_late_forward_get_stack_after_member_call_specialization(void);
+void test_w2_public_four_array_zero_fill_loop_fuses(void);
+void test_w2_public_array_add_live_result_is_preserved(void);
+void test_w2_public_array_add_live_result_preserves_using_cleanup(void);
 
 /* TODO: 该独立目标由 tests/CMakeLists 构建但当前未见 CTest suite 注册；需核实其余用例的自动回归要求。 */
 int main(void) {
@@ -53,6 +56,9 @@ int main(void) {
     RUN_TEST(test_w2_left_constant_add_mul_fold_to_existing_const_opcodes);
     RUN_TEST(test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch);
     RUN_TEST(test_w2_late_forward_get_stack_after_member_call_specialization);
+    RUN_TEST(test_w2_public_four_array_zero_fill_loop_fuses);
+    RUN_TEST(test_w2_public_array_add_live_result_is_preserved);
+    RUN_TEST(test_w2_public_array_add_live_result_preserves_using_cleanup);
 
     RUN_TEST(test_w2_scalar_self_alias_stores_preserve_loop_results);
     RUN_TEST(test_w2_constant_loops_have_compact_bodies);

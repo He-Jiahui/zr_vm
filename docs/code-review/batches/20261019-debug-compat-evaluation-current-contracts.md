@@ -1,0 +1,50 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_internal.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval.c
+tests:
+  - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_evaluation_effect_policy_cases.h
+  - tests/cmake/debug-runtime-targets.cmake
+  - tests/cmake/debug-metadata-aot-registration.cmake
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 调试兼容求值合同
+
+本批完整审查debug_eval.c的36个既有单元：34函数及2重要语句块。34段中文Doxygen说明职责、使用时机、87个参数方向、返回结果、实际引用及失败和生命周期；2块随父合同审查。35项commented，1项镜像既有DED-BUG-001，无未审查项。36个旧扁平路径键一一迁至eval目录；不新增单元或问题家族，不改公开签名、可执行语句或程序行为。
+
+该文件是显式许可的兼容递归下降窗口。外层zr_debug_evaluate_expression_with_capabilities先调用正式求值；失败仅在allowLegacyCompatibility和实际formalParserFailure均为TRUE时继续，正式层未处理也须兼容许可。不是任意正式语义失败均回退。条件断点及logpoint传FALSE；内部索引窗口包装器传NONE能力并允许兼容，它不是新的公开ABI。公共暂停状态与有效帧由上层入口协调。
+
+词法帮助函数消费空白，匹配失败也可能已经移动cursor；标识符即使输出截断仍消费完整名称。引用摘要只供展示，有界追加可截断，不固定对象或延长暂停帧有效期。括号、成员、索引、一元及逐级二元运算的失败可能保留光标、诊断和部分输出，没有整体事务。
+
+skip_evaluation只抑制实现中明确守门的名称/成员/索引读取及当前层运算。双引号字符串字面量仍可能创建核心字符串，数字字面量仍会累积和转换；所以未选分支不是无分配的纯词法扫描，未选语法错误也会失败。字符串支持有限转义及文本容量，不是二进制入口。核心字符串创建可能非局部Throw，本层没有恢复点或新增GC根。
+
+八种整数标签分类与nativeInt64读取不构成受检无符号数值模型。数字统一经double，中间值可能失去精度或变为非有限值；写回int64没有独立范围或isfinite守门。模运算先转换double为int64，之后才检查整数标志与零除数，也没有INT64_MIN/-1守门；本轮只如实说明当前边界，不将未完整验证的可达范围推为新BUG或修复行为。字符串等值使用NUL文本strcmp，不能据此推断完整嵌入NUL字节序列相等；对象比较仍依赖有效VM/GC生命周期。
+
+一元及各二元层的零运算符路径直接返回下层产生的值，不保证输出一定为当前层的布尔/数值/NULL。只有实际消费本层算符，才按该算符和skip状态形成对应结果。条件运算符只有实际进入分支选择后才复制所选分支；下层已跳过的字符串字面量仍可能提供字符串值。8个outValue文档曾过度概括，独审I1的ACCEPT在源码/native GO之前明确撤回；I2要求42项严格标量修订，同时更新这8段文本、镜像、后缀和必要派生针。原F/I1/I2不可变；正向重建effective，逆向恢复原F原始字节，36行合同及决定不变。
+
+FZrDebugEvalParseValue只在当前调用栈同步派发，不保存回调。右操作数包装器只有正常C返回才恢复skip标志，不承诺Throw时恢复。值与对象继续借用VM，不通过复制自动增加GC根或发布为跨暂停状态句柄。
+
+唯一既有BUG镜像为DED-BUG-001。完整静态触发链是有效paused公共求值且允许兼容，正式解析1 +失败并报告parserFailure，调用方传非空但零容量、未NUL结尾的错误数组，容量零使入口不清空数组；兼容RHS主表达式失败后的诊断细化仍读取错误文本，strcmp可越过该数组。该事实沿当前debug_eval_internal.h解析状态及诊断帮助函数核实，不授本轮动态越界复现信用，不新建问题家族，也不修复行为。
+
+源码保留原40578字节、1076LF的完整前缀，EOF只新增42202字节、775LF完整注释。5643个程序atom及145个字符串/字符字面量的拼写、物理行、UTF8字节列和绝对偏移四元坐标一致，精确移除后缀恢复原raw；这是有限正则投影，不是编译器lexer/AST证明。34个完整函数跨度、2个独立原始块跨度、11个整文件原针及59个EOL锚支持合同。借用的Formal29 prepare文件由精确原22632字节前缀与17555字节完整EOF注释桥接；其程序和原调用锚保持，完整含注释的词法搜索stream不作不变声明。借用模块不获本批完整审查信用。
+
+在实际checkout复用E盘clang-cl构建目录，修改前后均构建zr_vm_debug_expression_diagnostics_test，并无argv直接运行全部56个有序既有用例。两次build退出0，两次test均55PASS/1FAIL/0IGNORE、退出1；stdout及stderr原始字节一致，无归一化。既有9个policy用例属于56的子集，不另增不同用例计数。formal-first可能先处理或拒绝表达式，所以56例不证明全部34个兼容解析函数分支、零容量BUG触发或完整兼容语义。
+
+唯一失败仍为test_debug_evaluation_effect_policy_marks_resolved_property_getter。Unity显示主C第484行，实际断言在included test_debug_evaluation_effect_policy_cases.h:484：policy.hasCanonicalFacts为false；485 isPure与486 getter能力断言未到达，根因未分配。本批保留修改前后相同的失败。
+
+输入经内存sourceLabel编译；独占cwd起初不存在，两阶段均无生成文件。空tearDown和普通VM/Hook释放不证明Unity长跳转、OOM、Throw清理或竞态安全。CTest使用既有run_suite/shared-host约束，目标未显式TIMEOUT；build900/direct120秒是任务watchdog，直接顺序运行不授CTest调度、WSL或全仓验收信用。
+
+本文件inventory从pending更新reviewed，记录实际after raw hash。全叶742行其余706行原字节保留；外来inventory48行85格、正常索引4个既有暂存路径均保留。510叶43979完整键不增。整叶及全局历史诊断只比较选中项与外部原文，不声称全仓完成。
+
+配对证据：debug-compat-evaluation-current-native-pair-r1.json，SHA256 f0a983a228cb4d336ac40dcfb2e1be12c15e4bf59bbe03263c983b478ba7acff；源码应用：debug-compat-evaluation-current-source-application-r1.json，SHA256 94b45c14d23ba2f0493a47113807dfd0337b1549fecedbe9cebeefdfdf0c6858。
+
+台账证据列补充34项纯格式修订：去除符号说明包装，保留全部path:decimal锚及范围两端；其余8列、2块及源码/native有效提案不变。原F/I1/I2、42项有效提案和初次检查失败证据保留。恢复检查用HEAD旧叶的内存视图调用既有check_batch函数，未另造修改前CLI退出码；修改后CLI核实36项均合法，其余706行的历史诊断逐条一致。

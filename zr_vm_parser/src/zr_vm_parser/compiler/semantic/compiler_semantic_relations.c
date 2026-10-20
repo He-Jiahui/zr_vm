@@ -1,6 +1,9 @@
 #include "compiler/compiler_internal.h"
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/declaration/compiler_interface_contracts.h"
+#include "compiler/compiler_type_prototype_lookup.h"
+#include "type_inference/type_inference_generic_prototype.h"
+#include "type_inference/type_inference_nominal_prototype.h"
 
 #include "zr_vm_parser/semantic_relations.h"
 
@@ -318,6 +321,186 @@ TZrBool compiler_publish_source_constructor_relations(SZrCompilerState *cs) {
     return ZR_TRUE;
 }
 
+static SZrType *compiler_semantic_relations_inherit_annotation(
+        SZrCompilerState *cs, const SZrTypePrototypeInfo *source, TZrSize ordinal) {
+    SZrAstNodeArray *inherits = ZR_NULL;
+    TZrSize filteredIndex = 0U;
+
+    if (source->declarationNode != ZR_NULL) {
+        if (source->declarationNode->type == ZR_AST_CLASS_DECLARATION) {
+            inherits = source->declarationNode->data.classDeclaration.inherits;
+        } else if (source->declarationNode->type == ZR_AST_STRUCT_DECLARATION) {
+            inherits = source->declarationNode->data.structDeclaration.inherits;
+        }
+    }
+    for (TZrSize index = 0U; inherits != ZR_NULL && index < inherits->count; index++) {
+        SZrAstNode *node = inherits->nodes[index];
+
+        if (node == ZR_NULL || node->type != ZR_AST_TYPE ||
+            extract_type_name_string(cs, &node->data.type) == ZR_NULL) {
+            continue;
+        }
+        if (filteredIndex++ == ordinal) {
+            return &node->data.type;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool compiler_semantic_relations_canonical_declaration(
+        SZrSemanticContext *context, TZrTypeId definitionTypeId, TZrSymbolId symbolId,
+        const SZrAstNode **outDeclaration) {
+    TZrSymbolId matchedSymbolId = ZR_SEMANTIC_ID_INVALID;
+
+    *outDeclaration = ZR_NULL;
+    if (symbolId != ZR_SEMANTIC_ID_INVALID) {
+        const SZrSemanticSymbolRecord *symbol = ZrParser_Semantic_FindSymbolById(context, symbolId);
+
+        if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+            symbol->typeId != definitionTypeId || symbol->astNode == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *outDeclaration = symbol->astNode;
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol = ZrCore_Array_Get(&context->symbols, index);
+
+        if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+            symbol->typeId != definitionTypeId || symbol->id == ZR_SEMANTIC_ID_INVALID ||
+            symbol->astNode == ZR_NULL) {
+            continue;
+        }
+        if (matchedSymbolId != ZR_SEMANTIC_ID_INVALID && matchedSymbolId != symbol->id) {
+            return ZR_FALSE;
+        }
+        matchedSymbolId = symbol->id;
+        *outDeclaration = symbol->astNode;
+    }
+    return ZR_TRUE;
+}
+
+static SZrTypePrototypeInfo *compiler_semantic_relations_find_instance_target(
+        SZrCompilerState *cs, TZrTypeId instanceTypeId) {
+    SZrTypePrototypeInfo *sourceMatch = ZR_NULL;
+    SZrTypePrototypeInfo *importMatch = ZR_NULL;
+
+    for (TZrSize index = 0U; index <= cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototype = index < cs->typePrototypes.length
+                ? ZrCore_Array_Get(&cs->typePrototypes, index) : cs->currentTypePrototypeInfo;
+
+        if (prototype == ZR_NULL || prototype->genericInstanceTypeId != instanceTypeId) {
+            continue;
+        }
+        if (type_inference_prototype_is_root_visible(prototype) &&
+            type_inference_generic_prototype_is_root_visible(cs, prototype)) {
+            return prototype;
+        }
+        if (!prototype->isImportedNative && sourceMatch == ZR_NULL) {
+            sourceMatch = prototype;
+        } else if (prototype->isImportedNative && importMatch == ZR_NULL) {
+            importMatch = prototype;
+        }
+    }
+    return sourceMatch != ZR_NULL ? sourceMatch : importMatch;
+}
+
+static TZrBool compiler_semantic_relations_resolve_type_fact(
+        SZrCompilerState *cs, SZrType *annotation, SZrString *legacyTypeName,
+        TZrTypeId typeId, TZrSymbolId symbolId, SZrTypePrototypeInfo **outPrototype) {
+    const SZrCanonicalTypeNode *canonical = ZrParser_CanonicalType_Find(cs->semanticContext, typeId);
+    const SZrAstNode *declaration;
+    TZrTypeId definitionTypeId;
+    TZrBool isInstance;
+
+    *outPrototype = ZR_NULL;
+    if (canonical == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    isInstance = canonical->kind == ZR_CANONICAL_TYPE_GENERIC_INSTANCE;
+    if (!isInstance && canonical->kind != ZR_CANONICAL_TYPE_NOMINAL) {
+        return ZR_TRUE;
+    }
+    definitionTypeId = isInstance ? canonical->data.genericInstance.definitionTypeId : typeId;
+    if (!compiler_semantic_relations_canonical_declaration(
+                cs->semanticContext, definitionTypeId, symbolId, &declaration)) {
+        return ZR_FALSE;
+    }
+    if (isInstance) {
+        *outPrototype = compiler_semantic_relations_find_instance_target(cs, typeId);
+        if (*outPrototype == ZR_NULL) {
+            /* A resolved forward use can predate the definition's prototype cache. */
+            if (!compiler_resolve_type_annotation_prototype(
+                        cs, annotation, legacyTypeName, outPrototype)) {
+                return ZR_FALSE;
+            }
+            if (*outPrototype != ZR_NULL && (*outPrototype)->genericInstanceTypeId != typeId) {
+                *outPrototype = ZR_NULL;
+                return ZR_FALSE;
+            }
+        }
+        if (*outPrototype != ZR_NULL && (*outPrototype)->declarationNode != ZR_NULL &&
+            (*outPrototype)->declarationNode != declaration) {
+            *outPrototype = ZR_NULL;
+            return ZR_FALSE;
+        }
+        return ZR_TRUE;
+    }
+    if (declaration == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0U; index <= cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototype = index < cs->typePrototypes.length
+                ? ZrCore_Array_Get(&cs->typePrototypes, index) : cs->currentTypePrototypeInfo;
+
+        if (prototype != ZR_NULL && prototype->declarationNode == declaration &&
+            prototype->genericInstanceTypeId == ZR_SEMANTIC_ID_INVALID) {
+            *outPrototype = prototype;
+            break;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_semantic_relations_resolve_inherit_target(
+        SZrCompilerState *cs, const SZrTypePrototypeInfo *source, SZrType *annotation,
+        SZrString *legacyTypeName, SZrTypePrototypeInfo **outPrototype) {
+    SZrAstNode *oldTypeNode = cs->currentTypeNode;
+    SZrString *oldTypeName = cs->currentTypeName;
+    SZrTypePrototypeInfo *oldPrototype = cs->currentTypePrototypeInfo;
+    TZrSize oldPrototypeIndex = ZR_MAX_SIZE;
+    const SZrSemanticReferenceFact *fact;
+    TZrBool resolved;
+
+    for (TZrSize index = 0U; index < cs->typePrototypes.length; index++) {
+        if (oldPrototype == ZrCore_Array_Get(&cs->typePrototypes, index)) {
+            oldPrototypeIndex = index;
+            break;
+        }
+    }
+    cs->currentTypeNode = (SZrAstNode *)source->declarationNode;
+    cs->currentTypeName = source->name;
+    cs->currentTypePrototypeInfo = (SZrTypePrototypeInfo *)source;
+    fact = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, annotation->name, ZR_SEMANTIC_REFERENCE_TYPE);
+    if (fact != ZR_NULL && fact->isResolved) {
+        TZrTypeId typeId = fact->typeId;
+        TZrSymbolId symbolId = fact->symbolId;
+
+        resolved = compiler_semantic_relations_resolve_type_fact(
+                cs, annotation, legacyTypeName, typeId, symbolId, outPrototype);
+    } else {
+        resolved = compiler_resolve_type_annotation_prototype(
+                cs, annotation, legacyTypeName, outPrototype);
+    }
+    cs->currentTypeNode = oldTypeNode;
+    cs->currentTypeName = oldTypeName;
+    /* Materialization may relocate the table containing the prior owner view. */
+    cs->currentTypePrototypeInfo = oldPrototypeIndex != ZR_MAX_SIZE
+            ? ZrCore_Array_Get(&cs->typePrototypes, oldPrototypeIndex) : oldPrototype;
+    return resolved;
+}
+
 TZrBool ZrParser_SemanticRelations_PublishCompilerContracts(
         SZrCompilerState *compilerState) {
     TZrSize sourceCount;
@@ -350,14 +533,24 @@ TZrBool ZrParser_SemanticRelations_PublishCompilerContracts(
                     (SZrString *const *)ZrCore_Array_Get(
                             &sourceSnapshot.inherits,
                             inheritIndex);
-            const SZrTypePrototypeInfo *targetPrototype =
-                    targetName != ZR_NULL && *targetName != ZR_NULL
-                            ? find_compiler_type_prototype(
-                                    compilerState, *targetName)
-                            : ZR_NULL;
+            SZrType *annotation = compiler_semantic_relations_inherit_annotation(
+                    compilerState, &sourceSnapshot, inheritIndex);
+            SZrTypePrototypeInfo *targetPrototype = ZR_NULL;
             SZrTypePrototypeInfo targetSnapshot;
 
-            if (targetPrototype == ZR_NULL) {
+            if (targetName == ZR_NULL || *targetName == ZR_NULL) {
+                continue;
+            }
+            if (annotation != ZR_NULL) {
+                if (!compiler_semantic_relations_resolve_inherit_target(
+                            compilerState, &sourceSnapshot, annotation, *targetName, &targetPrototype)) {
+                    return ZR_FALSE;
+                }
+            } else {
+                targetPrototype = find_compiler_type_prototype(compilerState, *targetName);
+            }
+            if (targetPrototype == ZR_NULL ||
+                (annotation != ZR_NULL && targetPrototype->declarationNode == ZR_NULL)) {
                 continue;
             }
             targetSnapshot = *targetPrototype;

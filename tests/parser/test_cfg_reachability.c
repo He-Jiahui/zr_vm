@@ -32,7 +32,7 @@ void tearDown(void) {
 
 /* 位置查询会重新创建同名 source；事实查找按字符串内容匹配来源，再用偏移定位。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

@@ -9,6 +9,9 @@
 #include "zr_vm_parser/interface_contract.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "parser/parser_range_evidence.h"
+
+#include <stddef.h>
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
@@ -1161,41 +1164,33 @@ static void register_union_variant_symbol(SZrState *state,
 }
 
 static SZrFileRange compute_extern_callable_name_range(SZrAstNode *node, SZrString *name) {
-    const TZrChar *nameText = semantic_string_native(name);
-    TZrSize nameLength = nameText != ZR_NULL ? strlen(nameText) : 0;
-    SZrFileRange range;
+    const SZrIdentifier *identifier = ZR_NULL;
+    const SZrAstNode *nameNode;
+    SZrFileRange range = {0};
 
-    if (node == ZR_NULL || nameLength == 0) {
-        return node != ZR_NULL
-                   ? node->location
-                   : ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
-                                               ZrParser_FilePosition_Create(0, 0, 0),
-                                               ZR_NULL);
+    if (node == ZR_NULL) {
+        return range;
     }
-
     range = node->location;
-    range.end = range.start;
-
+    if (name == ZR_NULL || node->ownership == ZR_NULL) {
+        return range;
+    }
     if (node->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
-        if (range.start.offset > nameLength + 1) {
-            range.start.offset -= nameLength + 1;
-        }
-        if (range.start.column > (TZrInt32)(nameLength + 1)) {
-            range.start.column -= (TZrInt32)(nameLength + 1);
-        }
+        identifier = node->data.externFunctionDeclaration.name;
+    } else if (node->type == ZR_AST_EXTERN_DELEGATE_DECLARATION) {
+        identifier = node->data.externDelegateDeclaration.name;
     }
-
-    if (range.start.offset > 0) {
-        range.end.offset = range.start.offset + nameLength;
+    if (identifier == ZR_NULL || identifier->name == ZR_NULL ||
+        !ZrCore_String_Equal(identifier->name, name)) {
+        return range;
     }
-    if (range.start.line > 0) {
-        range.end.line = range.start.line;
+    nameNode = (const SZrAstNode *)((const char *)identifier -
+            offsetof(SZrAstNode, data.identifier));
+    if (nameNode->type != ZR_AST_IDENTIFIER_LITERAL || nameNode->ownership != node->ownership ||
+        !ZrParser_RangeEvidence_Validate(nameNode->ownership, nameNode->location)) {
+        return range;
     }
-    if (range.start.column > 0) {
-        range.end.column = range.start.column + (TZrInt32)nameLength;
-    }
-
-    return range;
+    return nameNode->location;
 }
 
 static SZrString *get_inherited_type_name(SZrAstNode *classNode) {

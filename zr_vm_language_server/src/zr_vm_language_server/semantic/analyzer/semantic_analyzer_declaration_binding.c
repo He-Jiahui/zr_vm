@@ -1,6 +1,30 @@
 #include "semantic/analyzer/semantic_analyzer_internal.h"
+#include "semantic/semantic_type_publication.h"
+#include "semantic/type_declaration_context.h"
 #include "type_inference/type_environment_declaration_binding.h"
 #include "interface/lsp_interface_internal.h"
+
+static TZrBool semantic_analyzer_declaration_context(
+        const SZrAstNode *declaration, EZrSemanticSymbolKind kind,
+        SZrSyntaxContext *outContext) {
+    SZrSyntaxContext normalizedContext;
+    EZrSyntaxNamespace namespaceKind =
+            kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION
+                    ? ZR_SYNTAX_NAMESPACE_ITEM
+                    : ZR_SYNTAX_NAMESPACE_LOCAL;
+
+    if (kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE) {
+        return declaration != ZR_NULL &&
+               type_declaration_raw_context(declaration, outContext) &&
+               type_declaration_normalize_context(*outContext, &normalizedContext);
+    }
+    *outContext = type_environment_declaration_context(declaration);
+    if (!ZrParser_SyntaxContext_IsValid(*outContext)) {
+        return ZR_FALSE;
+    }
+    normalizedContext = ZrParser_SyntaxContext_Normalize(*outContext, namespaceKind);
+    return ZrParser_SyntaxContext_IsValid(normalizedContext);
+}
 
 /** 在符号收集后把声明的规范身份写入类型环境，供后续表达式推断按作用域查找。 */
 void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
@@ -8,6 +32,7 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
         const SZrInferredType *typeInfo, SZrAstNode *declarationNode) {
     const SZrSemanticSymbolRecord *record;
     SZrSymbol *symbol;
+    SZrSyntaxContext syntaxContext;
     EZrSemanticSymbolKind kind = declarationNode != ZR_NULL &&
                                         declarationNode->type == ZR_AST_PARAMETER
                                 ? ZR_SEMANTIC_SYMBOL_KIND_PARAMETER
@@ -21,11 +46,15 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterDeclarationTypeBinding(
     if (state == ZR_NULL || analyzer == ZR_NULL ||
         analyzer->compilerState == ZR_NULL ||
         analyzer->compilerState->typeEnv == ZR_NULL || name == ZR_NULL ||
-        declarationNode == ZR_NULL) {
+        declarationNode == ZR_NULL ||
+        !semantic_analyzer_declaration_context(declarationNode, kind, &syntaxContext)) {
         return;
     }
-    record = type_environment_find_declaration_symbol(
-            analyzer->semanticContext, declarationNode, name, kind);
+    if (!type_environment_find_declaration_symbol(
+            analyzer->semanticContext, declarationNode, name, kind,
+            syntaxContext, &record)) {
+        return;
+    }
     /* Exact callables already have the compiler's overload binding. */
     if (record != ZR_NULL && kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
         record->typeId != ZR_SEMANTIC_ID_INVALID) {
@@ -61,18 +90,40 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAna
     TZrTypeId typeId = 0;
     TZrOverloadSetId overloadSetId = 0;
     TZrSymbolId symbolId;
+    SZrSyntaxContext syntaxContext;
+    const SZrSemanticSymbolRecord *existing;
 
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL) {
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        symbol == ZR_NULL || symbol->name == ZR_NULL ||
+        !semantic_analyzer_declaration_context(symbol->astNode, semanticKind, &syntaxContext)) {
         return ZR_FALSE;
     }
 
     /* The compiler's pre-inference pass may already own this declaration.
      * In particular a function's canonical type is its full callable type,
      * whereas the presentation symbol's typeInfo is its return type. */
-    const SZrSemanticSymbolRecord *existing =
-            type_environment_find_declaration_symbol(
-                    analyzer->semanticContext, symbol->astNode,
-                    symbol->name, semanticKind);
+    if (!type_environment_find_declaration_symbol(
+            analyzer->semanticContext, symbol->astNode,
+            symbol->name, semanticKind, syntaxContext, &existing)) {
+        return ZR_FALSE;
+    }
+    if (existing == ZR_NULL && semanticKind == ZR_SEMANTIC_SYMBOL_KIND_TYPE) {
+        if (analyzer->state == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+            analyzer->compilerState->typeEnv == ZR_NULL ||
+            analyzer->compilerState->semanticContext != analyzer->semanticContext ||
+            analyzer->compilerState->typeEnv->semanticContext != analyzer->semanticContext ||
+            !ZrParser_TypeEnvironment_RegisterTypeDeclarationWithKind(
+                    analyzer->state, analyzer->compilerState->typeEnv,
+                    symbol->name, symbol->astNode, typeKind)) {
+            return ZR_FALSE;
+        }
+        if (!type_environment_find_declaration_symbol(
+                analyzer->semanticContext, symbol->astNode,
+                symbol->name, semanticKind, syntaxContext, &existing) ||
+            existing == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
     if (existing != ZR_NULL) {
         symbol->semanticId = existing->id;
         symbol->semanticTypeId = existing->typeId;
@@ -80,16 +131,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAna
         return ZR_TRUE;
     }
 
-    if (semanticKind == ZR_SEMANTIC_SYMBOL_KIND_TYPE && typeInfo == ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterNamedType(analyzer->semanticContext,
-                                             symbol->name,
-                                             typeKind,
-                                             symbol->astNode);
-    } else if (typeInfo != ZR_NULL &&
-               !(semanticKind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
-                 symbol->astNode != ZR_NULL &&
-                 (symbol->astNode->type == ZR_AST_FUNCTION_DECLARATION ||
-                  symbol->astNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION))) {
+    if (typeInfo != ZR_NULL &&
+        !(semanticKind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+          symbol->astNode != ZR_NULL &&
+          (symbol->astNode->type == ZR_AST_FUNCTION_DECLARATION ||
+           symbol->astNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION))) {
         typeId = ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
                                                 typeInfo,
                                                 typeKind,
@@ -101,13 +147,14 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAna
         overloadSetId = ZrParser_Semantic_GetOrCreateOverloadSet(analyzer->semanticContext, symbol->name);
     }
 
-    symbolId = ZrParser_Semantic_RegisterSymbol(analyzer->semanticContext,
+    symbolId = ZrParser_Semantic_RegisterSymbolWithContext(analyzer->semanticContext,
                                         symbol->name,
                                         semanticKind,
                                         typeId,
                                         overloadSetId,
                                         symbol->astNode,
-                                        symbol->location);
+                                        symbol->location,
+                                        syntaxContext);
     if (overloadSetId != 0) {
         ZrParser_Semantic_AddOverloadMember(analyzer->semanticContext, overloadSetId, symbolId);
     }

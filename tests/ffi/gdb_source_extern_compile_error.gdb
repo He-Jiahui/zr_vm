@@ -10,7 +10,7 @@ break test_zr_ffi_source_extern_can_bind_and_call_symbol
 run
 
 # TODO: 使用前按当前 compiler.c 的错误报告入口重定位旧绝对路径与行号。
-break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_parser/src/zr_vm_parser/compiler.c:524
+break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_parser/src/zr_vm_parser/compiler/compiler.c:524
 continue
 
 printf "compiler error: %s\n", msg

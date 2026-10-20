@@ -34,7 +34,7 @@ void tearDown(void) {
 /* TODO: 文件名字面量为 26 字节，传入的 27 将结尾 NUL 计入 SZrString；
  * 当前节点与查询都复用此工厂而仍可比较，需用真实解析位置核对外部来源匹配。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

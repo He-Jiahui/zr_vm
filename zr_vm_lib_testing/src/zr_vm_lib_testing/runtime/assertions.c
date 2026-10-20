@@ -77,7 +77,7 @@ static ZR_TESTING_THREAD_LOCAL TZrBool g_has_last_failure = ZR_FALSE;
  * CallValue 先把 callable 移入 scratch，正常完成才交付 result；此局部 result 不作为 TLS 诊断或托管根。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1015、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1016 构造；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:910 派发；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1023 判断未抛路径；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1781 是宿主 CallValue 边界；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1813 稳定复制，zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1861 预留scratch，zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1909 复制入栈；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1018 是实际callback传入点。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1015、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1016 构造；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:910 派发；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1023 判断未抛路径；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1714 是宿主 CallValue 边界；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1746 稳定复制，zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1794 预留scratch，zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1827 复制入栈；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1018 是实际callback传入点。
  */
 typedef struct SZrTestingCallRequest {
     /**
@@ -136,7 +136,7 @@ typedef struct SZrTestingFormatRequest {
  * 外层 CallInfo 须仍有效；不修复回调自行破坏的资源协议，不保存/恢复测试 TLS 或当前异常。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:358;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_core/src/zr_vm_core/exception/exception_try_run.c:30;zr_vm_core/src/zr_vm_core/function/function.c:1831;zr_vm_core/src/zr_vm_core/function/function.c:1840
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:358;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_core/src/zr_vm_core/exception/exception_try_run.c:52;zr_vm_core/src/zr_vm_core/function/function.c:1862;zr_vm_core/src/zr_vm_core/function/function.c:1871
  */
 static EZrThreadStatus testing_try_run_preserving_frame(
         SZrState *state,
@@ -266,7 +266,7 @@ static void testing_format_try(SZrState *state, TZrPtr arguments) {
 
 /**
  * ## Summary
- * 在失败已经确定后生成独立有界诊断视图；格式化故障与相等性/异常匹配结论分开解释。
+ * 在失败已经确定后生成独立有界诊断视图；视图标志不代替断言结果，异常匹配所受副作用见下文。
  *
  * ## Parameters
  * @param[in,out] state 当前VM，可NULL；与value缺失一样生成未填写null视图。
@@ -285,7 +285,7 @@ static void testing_format_try(SZrState *state, TZrPtr arguments) {
  * TODO: 元方法分配/GC期间obj、pair裸地址稳定性仍需对应core模块强制GC复核；本批未修复core，也未运行长字段fixture。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:882;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:883;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:358;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:365;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:370;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052;zr_vm_core/src/zr_vm_core/value/value.c:329;zr_vm_core/src/zr_vm_core/value/value.c:335;zr_vm_core/src/zr_vm_core/value/value.c:600;zr_vm_core/src/zr_vm_core/value/value.c:604;zr_vm_core/src/zr_vm_core/value/value.c:628;zr_vm_core/src/zr_vm_core/value/value.c:695;zr_vm_core/src/zr_vm_core/exception/exception.c:407;zr_vm_core/src/zr_vm_core/exception/exception.c:684;tests/testing/test_assertions.c:395;tests/testing/test_assertions.c:432;zr_vm_core/src/zr_vm_core/object/object.c:2208
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:882;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:883;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:358;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:365;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:370;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052;zr_vm_core/src/zr_vm_core/value/value.c:329;zr_vm_core/src/zr_vm_core/value/value.c:335;zr_vm_core/src/zr_vm_core/value/value.c:600;zr_vm_core/src/zr_vm_core/value/value.c:604;zr_vm_core/src/zr_vm_core/value/value.c:628;zr_vm_core/src/zr_vm_core/value/value.c:695;zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433;zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629;tests/testing/test_assertions.c:395;tests/testing/test_assertions.c:432;zr_vm_core/src/zr_vm_core/object/object.c:2022
  */
 static void testing_snapshot(SZrState *state,
                              const SZrTypeValue *value,
@@ -387,7 +387,7 @@ static void testing_snapshot(SZrState *state,
  * TODO: endColumn包含/排除边界及畸形metadata防御，沿io_runtime位置生产者/编译finalize与边界fixture核查。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:749;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:405;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:419;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:423;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439;zr_vm_core/src/zr_vm_core/io/io_runtime.c:695;tests/testing/test_assertions.c:503;tests/testing/test_assertions.c:506
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:749;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:405;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:419;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:423;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439;zr_vm_core/src/zr_vm_core/io/io_runtime.c:701;tests/testing/test_assertions.c:503;tests/testing/test_assertions.c:506
  */
 static void testing_source_span(const ZrLibCallContext *context,
                                 SZrTestingSourceSpan *outSpan) {
@@ -446,18 +446,18 @@ static void testing_source_span(const ZrLibCallContext *context,
  *
  * ## Parameters
  * @param[in,out] state 有效同域VM状态，调用期间借用。
- * @param[in] object 同域有效对象借用，调用期间保持有效。
+ * @param[in,out] object 同域有效对象借用，字段写入可修改其成员；调用期间须保持有效。
  * @param[in] field 有效NUL字段名，仅调用期读取。
  * @param[in] value 按值传入的整数，通常为分类或源码坐标。
  *
  * ## Returns
- * 无返回值；字段setter为void，失败可能缺字段，不能由调用结束证明写入成功。
+ * 无返回值；有效输入的字段写入失败会经void wrapper抛错，不能把异常退出当作正常完成或整条投影回滚。
  *
  * ## Constraints and lifecycle
- * 整数封装不分配且标量不需要value pin；SetFieldCString按需pin owner/key，写屏障后仅撤销本调用新增pin，不转移C所有权。
+ * 整数封装不分配；底层单次写入以RootLease保护owner/value/key并执行写屏障，退出释放自身租约，不提供跨多个setter的事务。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:617;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:618;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:619;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:620;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:693;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1289;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1388;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1408;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:44;zr_vm_core/include/zr_vm_core/value.h:311
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:617；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:693；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1297；zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:12；zr_vm_core/src/zr_vm_core/object/object_write.c:123。
  */
 static void testing_set_object_int(SZrState *state,
                                    SZrObject *object,
@@ -474,28 +474,28 @@ static void testing_set_object_int(SZrState *state,
  *
  * ## Parameters
  * @param[in,out] state 有效同域VM状态，调用期间借用。
- * @param[in] object 同域有效对象借用，调用期间保持有效。
+ * @param[in,out] object 同域有效对象借用，字段写入可修改其成员；调用期间须保持有效。
  * @param[in] field 有效NUL字段名，仅调用期读取。
  * @param[in] value 调用期有效的NUL文本；NULL按空字符串处理，不转移输入所有权。
  *
  * ## Returns
- * 无返回值；字符串创建和字段写入均不反馈成功码，不能承诺完整记录。
+ * 无返回值；有效state/output下SetString普通返回已初始化值，创建失败抛MEMORY_ERROR；字段写入失败也可抛错，后续语句不保证执行。
  *
  * ## Constraints and lifecycle
- * 字符串创建先于SetField入口的owner pin；裸record跨此分配窗口的GC稳定性见new_record TODO。
- * BUG: 有效StringTable的地址cache/content均miss，短串新对象创建成功且插入越过resizeThreshold；宿主分配器仅拒绝HASH_BUCKET扩容并保留旧桶时，
- * Rehash(false)→AddRawObject(NULL)→CreateTryHitCache(NULL)→SetStringObject不写fieldValue；随后pin读取未初始化值。
- * 完整静态链支持未定义读取标签；未执行fault-injection，不把它与普通GcMalloc抛错或后续cache-null BUG混同。
+ * 字符串创建早于SetField内部的RootLease；裸record跨这次分配的GC稳定性仍见new_record TODO。
+ * 当前SetString在字符串创建返回NULL时先Throw并return；不能沿旧短串表失败路径推断fieldValue随后被读取。
+ * 普通返回后才进入字段setter；异常边界可能longjmp/abort并跳过后续C语句，既有前置字段不整体回滚。
+ * 此helper不创建可跨调用持有的永久根；本批只更正旧注释前提，不宣称已做OOM或强制GC验证。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:649;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:694;zr_vm_core/include/zr_vm_core/memory.h:19;zr_vm_core/src/zr_vm_core/base/hash_set.c:171;zr_vm_core/src/zr_vm_core/base/hash_set.c:181;zr_vm_core/include/zr_vm_core/hash_set.h:535;zr_vm_core/src/zr_vm_core/string/string.c:802;zr_vm_core/src/zr_vm_core/string/string.c:973;zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:320;zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:324;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1307;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1312;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1373;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1388;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:44;zr_vm_core/include/zr_vm_core/value.h:311
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:694；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1311；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1317；zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:12；zr_vm_core/src/zr_vm_core/object/object_write.c:48。
  */
 static void testing_set_object_string(SZrState *state,
                                       SZrObject *object,
                                       const TZrChar *field,
                                       const TZrChar *value) {
 /**
- * BUG: SetString可因短串表扩容失败保持此局部值未初始化；下一字段setter的pin会读取它，完整链见函数契约。
+ * 字符串创建普通返回才使用fieldValue；失败先Throw并return，不沿用旧未初始化值BUG前提。
  */
     SZrTypeValue fieldValue;
     ZrLib_Value_SetString(state, &fieldValue, value != ZR_NULL ? value : "");
@@ -508,18 +508,18 @@ static void testing_set_object_string(SZrState *state,
  *
  * ## Parameters
  * @param[in,out] state 有效同域VM状态，调用期间借用。
- * @param[in] object 同域有效对象借用，调用期间保持有效。
+ * @param[in,out] object 同域有效对象借用，字段写入可修改其成员；调用期间须保持有效。
  * @param[in] field 有效NUL字段名，仅调用期读取。
  * @param[in] value 按值布尔标志，不持有对象或线程。
  *
  * ## Returns
- * 无返回值；底层void字段写入失败不会通过本helper报告。
+ * 无返回值；有效输入的字段写入失败可经wrapper抛错，不能仅因接口为void就推定静默缺字段。
  *
  * ## Constraints and lifecycle
- * Bool封装不分配且标量无需value pin；SetFieldCString按需pin owner/key并创建键/做写屏障，记录仍由VM可达性管理，可能留下缺字段。
+ * Bool封装不分配；底层以RootLease保护单次owner/value/key写入并维护屏障，多个投影步骤没有整体回滚保证。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:650;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:651;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:652;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1281;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1388;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1408;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:44;zr_vm_core/include/zr_vm_core/value.h:311
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:650；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:651；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:652；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1289；zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:12；zr_vm_core/src/zr_vm_core/object/object_write.c:123。
  */
 static void testing_set_object_bool(SZrState *state,
                                     SZrObject *object,
@@ -547,7 +547,7 @@ static void testing_set_object_bool(SZrState *state,
  * 当前代暂不判未引用不能证明跨代/移动安全，现有证据不足标UAF；调用者也不能把暂时pin当永久所有权。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:612;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:644;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1595;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1602;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1633;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1678;zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:884;zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:889;zr_vm_core/src/zr_vm_core/object/object.c:2097;zr_vm_core/src/zr_vm_core/object/object.c:2155;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1092;zr_vm_core/src/zr_vm_core/gc/gc_internal.h:54
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:612；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:644；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1600；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1646；zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:763；zr_vm_core/src/zr_vm_core/object/object.c:1449；zr_vm_core/src/zr_vm_core/gc/gc_object.c:1092。
  */
 static SZrObject *testing_new_record(SZrState *state, const TZrChar *typeName) {
     SZrObjectPrototype *prototype = ZrLib_Type_FindPrototype(state, typeName);
@@ -562,19 +562,19 @@ static SZrObject *testing_new_record(SZrState *state, const TZrChar *typeName) {
  *
  * ## Parameters
  * @param[in,out] state 有效同域VM状态，调用期间借用。
- * @param[in] object 同域有效对象借用，调用期间保持有效。
+ * @param[in,out] object 同域有效对象借用，字段写入可修改其成员；调用期间须保持有效。
  * @param[in] field 有效NUL字段名，仅调用期读取。
  * @param[in] record 同域有效嵌套对象借用，可NULL；调用前须已保持有效。
  *
  * ## Returns
- * 无返回值；void字段setter失败可保留缺字段，未建立调用者可持有的永久根。
+ * 无返回值；有效输入的字段写入失败可抛错；成功只建立VM字段引用，不向调用者交付永久根。
  *
  * ## Constraints and lifecycle
- * SetObject只构造tagged value，不pin；紧邻SetField先pin outer/value后分配键，成功后字段写屏障保留VM引用。
+ * SetObject只封装tagged value；SetField内部以RootLease覆盖outer/value和键构造，普通成功后由VM字段写屏障维持引用。
  * 不转移nested C所有权；builder在进入此helper前的raw对象分配窗口仍需独立GC核查。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:695;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:697;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:699;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1320;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1388;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1408;zr_vm_core/src/zr_vm_core/object/object.c:1873;zr_vm_core/src/zr_vm_core/object/object.c:1875
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:695；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:697；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:699；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1334；zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:12；zr_vm_core/src/zr_vm_core/object/object_write.c:48。
  */
 static void testing_set_object_record(SZrState *state,
                                       SZrObject *object,
@@ -601,7 +601,7 @@ static void testing_set_object_record(SZrState *state,
  * @return 新建raw SourceSpan或NULL；span为NULL时返回已创建的空record，不保证返回NULL。
  *
  * ## Constraints and lifecycle
- * 输入文本复制进VM字符串；四个坐标按值写入，不持有span。void setter失败可产生部分记录，无回滚。
+ * 输入文本复制进VM字符串，坐标按值写入，不持有span；某一步Throw可中断后续字段，先前写入无整体回滚保证。
  * TODO: 首个sourceFile分配前及后续setter间raw owner的GC稳定性沿new_record强制GC入口核查。
  *
  * ## References
@@ -633,8 +633,8 @@ static SZrObject *testing_build_source_span_object(SZrState *state,
  * @return 新建raw ValueSnapshot或NULL；snapshot为NULL时仍返回已创建的空record。
  *
  * ## Constraints and lifecycle
- * 两次字符串创建后写普通标志，输入C缓冲不转移；void写入失败可留下部分字段。
- * TODO: 首字符串及连续setter间的raw记录稳定性需强制GC验证；SetString NULL的未初始化BUG仍适用。
+ * 两次字符串创建后写普通标志，输入C缓冲不转移；某一步Throw会中断后续字段，先前写入不整体回滚。
+ * TODO: 首字符串及连续setter间的raw记录稳定性仍需强制GC验证；当前SetString的NULL检查不等于整个builder已具备跨分配根。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:698;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:700;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:702;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:303;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:433;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:649;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:650
@@ -664,7 +664,7 @@ static SZrObject *testing_build_snapshot_object(SZrState *state,
  * ZR_NO_RETURN：Normalize成功后Throw；可达fallback调用Debug_RunError，无state或意外返回最终Abort。
  *
  * ## Constraints and lifecycle
- * 原型查找/实例创建软返回NULL才进入fallback；GC分配OOM可直接Throw/longjmp而不到fallback。void字段失败未必被检测，仍可能发布部分记录，无回滚。
+ * 原型查找/实例创建普通返回NULL才进入fallback；GC分配或字段写入失败可先Throw/longjmp而不到fallback；先前构造不整体回滚。
  * Throw可longjmp，不能依赖本函数C局部清理；TLS仍是独立普通副本。
  * TODO: outer/nested raw记录和payload在字段、traceback分配到currentException发布前建立何种根，沿Exception normalize强制GC核查。
  * BUG: 本函数读取当前TLS；上游formatter失败Assert覆盖归因，成功Assert或显式ClearLastFailure清空记录，均不恢复外层失败。
@@ -673,7 +673,7 @@ static SZrObject *testing_build_snapshot_object(SZrState *state,
  * TODO: 独立核查保存恢复策略；不能把临时根风险与已证TLS破坏混为同一结论。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1031;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1071;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:455;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:460;zr_vm_core/src/zr_vm_core/exception/exception.c:666;zr_vm_core/src/zr_vm_core/exception/exception.c:684;zr_vm_core/src/zr_vm_core/exception/exception.c:691;zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570;zr_vm_core/src/zr_vm_core/base/memory.c:39;zr_vm_core/src/zr_vm_core/base/memory.c:46;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1069;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243;zr_vm_core/src/zr_vm_core/exception/exception.c:36;zr_vm_core/src/zr_vm_core/exception/exception.c:54;zr_vm_core/src/zr_vm_core/exception/exception.c:407;zr_vm_core/src/zr_vm_core/object/object.c:1846;zr_vm_core/src/zr_vm_core/object/object.c:1886;zr_vm_core/src/zr_vm_core/object/object.c:2393;zr_vm_core/src/zr_vm_core/object/object.c:2399
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1031；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1071；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:455；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243；zr_vm_core/src/zr_vm_core/exception/exception_errors.c:592；zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433；zr_vm_core/src/zr_vm_core/exception/exception.c:99；zr_vm_core/src/zr_vm_core/base/memory.c:39；zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570。
  */
 static ZR_NO_RETURN void testing_raise_failure(ZrLibCallContext *context) {
     SZrState *state = context != ZR_NULL ? context->state : ZR_NULL;
@@ -687,7 +687,7 @@ static ZR_NO_RETURN void testing_raise_failure(ZrLibCallContext *context) {
                  ? ZrLib_Type_NewInstanceWithPrototype(state, prototype)
                  : ZR_NULL;
 /**
- * TODO: outer record跨nested构造分配；字段setter临时pin不覆盖全投影窗口，沿forced moving GC核查。
+ * TODO: outer record跨nested构造分配；单次字段写入的RootLease不覆盖整个投影窗口，沿强制moving GC核查。
  */
         if (object != ZR_NULL) {
             testing_set_object_int(state, object, "assertionKind", g_last_failure.assertionKind);
@@ -812,7 +812,7 @@ TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionFailure *outFailure) {
  * Test phase由注册/物化层控制；callback FALSE且线程Fine可被host export解释为完成/null，不能混淆两层bool。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:821;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:831;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:837;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:821;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:831;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:837;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1910
  */
 TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrBool condition;
@@ -851,13 +851,13 @@ TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, SZrTypeValue *result) {
  * @return 相等正常TRUE并清TLS；参数缺失/形状拒绝可FALSE；不等开始失败、填快照并raise不返回。
  *
  * ## Constraints and lifecycle
- * 恰两个值；正常fixed-2 lane提供稳定C副本/托管pin，CompareDirectly/Value_Equal本身不执行TO_STRING或分配。
+ * 恰两个值；本descriptor未启用stack-root opt-in，普通派发按参数走标量快路或inline-pinned稳定C副本；CompareDirectly/Value_Equal不执行TO_STRING或分配。
  * 诊断formatter可执行用户代码；formatterFaulted不改变既定不等结论。
  * BUG: TO_STRING内失败Assert重开TLS并Throw，外层随后投影内层ASSERT；成功Assert或显式ClearLastFailure清空外层记录，raise也不恢复EQUAL归因。
  * TODO: 沿expected→actual→raise补嵌套回归及保存恢复设计；尚未运行该fixture。
  *
  * ## References
- * zr_vm_core/src/zr_vm_core/value/value.c:127;zr_vm_core/src/zr_vm_core/value/value.c:275;zr_vm_core/src/zr_vm_core/value/value.c:600;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:243;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:320;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:746;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:747;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:772;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:837;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:882;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:883;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884;tests/testing/test_assertions.c:387
+ * zr_vm_core/src/zr_vm_core/value/value.c:127;zr_vm_core/src/zr_vm_core/value/value.c:275;zr_vm_core/src/zr_vm_core/value/value.c:600;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:378;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:391;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:746;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:747;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:772;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:837;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:882;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:883;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884;tests/testing/test_assertions.c:387；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:541；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:552
  */
 TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *actual;
@@ -903,7 +903,7 @@ TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZrTypeValue *result) {
  * 无receiver/无参数，内部再把callable复制进scratch；不等待Task，不跨同步调用保存request。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1018;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:910;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1781;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1813;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1861;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1909
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1018;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:910;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1714;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1746;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1794;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1827
  */
 static void testing_call_try(SZrState *state, TZrPtr arguments) {
     SZrTestingCallRequest *request = (SZrTestingCallRequest *)arguments;
@@ -916,14 +916,14 @@ static void testing_call_try(SZrState *state, TZrPtr arguments) {
  * 认证编译器隐藏的E TypeId并核对Error继承链，避免在无合法预期异常类型时执行action。
  *
  * ## Parameters
- * @param[in] context 正常native context/state借用；arg1须为已认证object TypeId。
+ * @param[in,out] context 正常native context/state借用；arg1须为已认证object TypeId，原型查找可分配并改变VM状态。
  * @param[out] outTypeName 可写borrowed字符串槽；入口清NULL，认证成功后可在后续继承检查失败时仍非NULL。
  *
  * ## Returns
  * @return 仅TypeId认证、原型查找与Error继承匹配全部成功时TRUE；FALSE时调用者不得使用输出。
  *
  * ## Constraints and lifecycle
- * 正常fixed-2 lane pin TypeId，Throws仍在action后重读；prototype永久不等同canonical-name普通借用。
+ * 正常双参派发为TypeId建立稳定副本及必要pin，Throws仍在action后重读；prototype永久不等同canonical-name普通借用。
  * TODO: ReadTypeId返回name后FindPrototype可能分配，需沿reflection输出契约及type/string compaction核查地址稳定和重取。
  * Error原型缺失时按名称查找；FALSE不保证清除已有VM异常，不能承诺所有失败输出仍NULL。
  *
@@ -996,7 +996,7 @@ static TZrBool testing_read_expected_type_name(ZrLibCallContext *context,
  * TODO: canonical-name跨formatter分配和TLS重入稳定性沿read_expected_type_name/testing_snapshot核查。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1020;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1033;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1076;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997;zr_vm_core/src/zr_vm_core/exception/exception.c:407;zr_vm_core/src/zr_vm_core/exception/exception.c:684;zr_vm_core/src/zr_vm_core/exception/exception.c:691;zr_vm_core/src/zr_vm_core/value/value.c:329;zr_vm_core/src/zr_vm_core/value/value.c:600;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:460;tests/testing/test_assertions.c:250;tests/testing/test_assertions.c:432;tests/testing/test_assertions.c:433;zr_vm_core/include/zr_vm_core/object.h:525;zr_vm_core/src/zr_vm_core/object/object.c:2208
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1020；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1033；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1076；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1910；zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433；zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629；zr_vm_core/src/zr_vm_core/exception/exception_errors.c:675；zr_vm_core/src/zr_vm_core/value/value.c:600；zr_vm_core/src/zr_vm_core/object/object.c:2022；tests/testing/test_assertions.c:242；tests/testing/test_assertions.c:432。
  */
 TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *callable;

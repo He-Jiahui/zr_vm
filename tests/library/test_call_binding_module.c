@@ -144,6 +144,8 @@ static void test_provider_reload_rebinds_existing_calls(void) {
     TEST_ASSERT_TRUE(entry->binding.target.vm.function != oldFunction);
 }
 
+#include "test_call_binding_module_imported_meta.inc"
+#include "test_call_binding_module_imported_instance.inc"
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_source_module_function_is_token_bound);
@@ -152,5 +154,11 @@ int main(void) {
     RUN_TEST(test_module_function_keeps_captured_module_state);
     RUN_TEST(test_binary_provider_keeps_function_and_type_contracts);
     RUN_TEST(test_provider_reload_rebinds_existing_calls);
+    RUN_TEST(test_source_module_meta_call_is_token_bound);
+    RUN_TEST(test_imported_meta_rejects_missing_or_wrong_call_slot);
+    RUN_TEST(test_imported_meta_rejects_ambiguous_meta_function);
+    RUN_TEST(test_imported_meta_rejects_static_call_receiver_abi);
+    RUN_TEST(test_imported_meta_keeps_contract_layout_and_receiver_guards);
+    RUN_TEST(test_source_module_instance_method_uses_provider_dispatch);
     return UNITY_END();
 }

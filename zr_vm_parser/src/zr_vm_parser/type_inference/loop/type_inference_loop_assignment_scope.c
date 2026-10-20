@@ -96,6 +96,7 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_StoreBindingInCurrentScope(
     binding.runtimeRootKind = sourceBinding->runtimeRootKind;
     binding.originToken = sourceBinding->originToken;
     binding.originIndex = sourceBinding->originIndex;
+    binding.syntaxContext = sourceBinding->syntaxContext;
     ZrParser_InferredType_Copy(cs->state, &binding.type, type);
     // BUG: TypeEnvironment_New 不检查 variableTypes 的 Array_Init 分配结果，PushReplayScope 仍会切换到该环境；
     //      首次复制父绑定时会对空 head 执行 Array_Push（调试构建断言，非断言构建向空指针写入）。

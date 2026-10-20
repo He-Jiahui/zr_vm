@@ -84,7 +84,7 @@ TLS 以 OS 线程为单位，同一线程的多个 GlobalState 或重入用例�
 `truncated` 只报告正常 snapshot.text 的裁剪，message/sourceFile/typeName 没有独立标志。
 没有可用 VM 帧/调试元数据时 source span 清零；有源码名称但没有匹配位置记录时可以只有 sourceFile 非空。
 TODO: endColumn 的包含/排除语义仍须沿执行位置生产者核对，不能仅凭字段名推定字符串切片规则；
-具体从 `zr_vm_core/src/zr_vm_core/io_runtime.c:695` 的 instructionRanges 复制继续追踪。
+具体从 `zr_vm_core/src/zr_vm_core/io/io_runtime.c:701` 的 instructionRanges 复制继续追踪。
 
 原生回调 bool 与宿主 `ZrLib_CallModuleExport` 的 bool 含义不同：回调 false 且 threadStatus 正常时，
 派发层把结果置 null，宿主仍可返回 true。非法 E 的用例验证 action 未执行和 null 结果；
@@ -93,7 +93,7 @@ TODO: endColumn 的包含/排除语义仍须沿执行位置生产者核对，不
 当前证据为 `zr_vm_cli/src/zr_vm_cli/commands/test_command.c:551`、`zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570`、`zr_vm_cli/src/zr_vm_cli/commands/test_command.c:592` 的诊断窗口，
 `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:771`、`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:792`、`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:795` 的 TLS 边界，
 `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:304`、`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1026` 的 hasValue 生产者，
-`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619`、`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997` 的两层返回路径，
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619`、`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1910` 的两层返回路径，
 及 `tests/testing/test_assertions.c:337` 的非法 E 调用。
 本节描述公共头部契约；后续内部审查记录见下节，全模块及运行时验收仍需各自当前证据。
 
@@ -141,10 +141,10 @@ only by migration or negative fixtures, never by the production parser.
 
 ### 同步异常与诊断窗口
 
-`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:182` 的TryRun包装保存/恢复stackTop、CallInfo base/top/return anchors及handler深度，
+`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:141` 的TryRun包装保存/恢复stackTop、CallInfo base/top/return anchors及handler深度，
 使内部action或formatter结束后继续外层调用位置。它不保存/恢复currentException、threadStatus或TLS；
 TryRun返回状态、CallRequest.completed宿主完成状态、host export bool是各自不同的事实。
-正常Equal/Throws的fixed-2 dispatcher提供稳定C副本及托管pin，不能把公开参数借用误报为现行悬空BUG。
+本descriptor未启用stack-root opt-in；正常Equal/Throws按实参走标量快路或inline-pinned稳定副本及必要pin，不能把公开参数借用误报为现行悬空BUG。
 Throws在`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1012`先验证隐藏E TypeId，`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1020`动作后重读；非法E不执行动作。
 仅同一同步action受捕获，不等待Task；匹配成功在`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1076`先复制VM异常结果，再清VM异常和TLS。
 GetLastFailure交付的普通C内嵌副本无VM所有权，和这个result不能互换。
@@ -155,29 +155,23 @@ UTF-8按字节截断BUG及endColumn边界TODO仍保留，现有ASCII/line范围�
 
 ### 分配失败与GC边界
 
-BUG: `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:500` 的fieldValue未初始化。有效StringTable在增长阈值，短串cache/content miss且对象创建成功，
-宿主分配器只拒绝HASH_BUCKET realloc并保留旧桶时，Memory_Allocate不抛异常，Rehash返回false，
-AddRawObject和string_create_short返回NULL；CreateTryHitCache透传NULL，SetStringObject不写输出。
-随后`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:502`的void SetFieldCString在pin value时读取未初始化isGarbageCollectable/object。
-证据为 `zr_vm_core/include/zr_vm_core/memory.h:19`、`zr_vm_core/src/zr_vm_core/hash_set.c:171`、
-`zr_vm_core/include/zr_vm_core/hash_set.h:535`、`zr_vm_core/src/zr_vm_core/string.c:802`、
-`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1312`、
-`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:44`。
-本轮只标完整静态合法失败链，未运行一次性allocator故障注入，未改初始化或返回行为。
+当前 `SetString` 在字符串创建返回NULL时先Throw(MEMORY_ERROR)并return；有效state/output的普通返回已初始化fieldValue，不能继续沿旧短串表失败前提推断未初始化读取。
+这是当前callee对旧BUG前提的证伪，不归因于本批修复，未运行故障注入。字段写入的void wrapper在有效state失败时也可Throw，后续字段和普通清理不保证执行；先前写入不整体回滚。
+证据：`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1317`、`zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:12`。
 
 TODO: new_record返回的是未建立native root/pin的普通INITED/current-generation raw对象；
 注册原型虽永久，新record不是永久。`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616`/`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648`先创建字符串再进入字段setter的owner pin，
 后续setter间和outer对象跨nested构造也有裸地址窗口。强制full/compacting GC核查根及搬迁重取，
 不把当前代暂不判未引用写成已证跨代安全或UAF。
 TODO: `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:708`的NormalizeThrownValue在字段/traceback分配后才发布currentException根；
-核查outer/nested/payload的临时根。void字段setter本身可静默失败，构造不回滚，可能交付缺字段记录。
+核查outer/nested/payload的临时根。有效state下void字段wrapper失败可Throw并跳过后续投影；先前字段不整体回滚，不能据void接口推断静默完成。
 TODO: TypeId参数pin仅保证其对象根，canonical name仍为borrowed；沿`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:960`→`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:962`
 及FindPrototype内部字符串创建/限定名导入，核查跨分配地址稳定性。
 
 ### 脚本异常字段与宿主快照
 
 BUG: zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243将AssertionFailure.exception声明为ValueSnapshot；`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701`先投影该快照，
-随后Normalize已有Error把exception覆为self（exception.c:407、exception.c:684）。底层Object_SetValue
+随后Normalize已有Error把exception覆为self(zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433、zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629)。底层Object_SetValue
 不检查descriptor字段类型；object/object.c:2393、object/object.c:2399的成员读取优先返回own nodeMap，
 普通成功构造后的脚本failure.exception因此是AssertionFailure自身。宿主C TLS exception仍是普通快照，
 不受该VM字段覆写影响。TODO: 沿投影→Normalize→脚本成员读取补schema回归并核查Error规范化协议。
@@ -191,13 +185,13 @@ TODO: 补嵌套回归并核查保存恢复方案；本轮未执行该组合fixtu
 BUG: `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048`格式化currentException时，公开AssertionFailure原型可经ObjectPrototype_AddMeta安装抛错TO_STRING；
 合法throws<AssertionFailure>(assert(false))的Normalize将exception字段写为self，DebugString字段转换触发该元方法，
 snapshot ClearCurrent之后CatchMatches(null)为false，把原本匹配的异常判成错型。Fine+NULL文本也走同一清理分支。
-证据为 `zr_vm_core/include/zr_vm_core/object.h:525`、`zr_vm_core/src/zr_vm_core/object/object.c:2208`、
-`zr_vm_core/src/zr_vm_core/exception.c:407`、`zr_vm_core/src/zr_vm_core/exception.c:684`、
-`zr_vm_core/src/zr_vm_core/value.c:600`、`tests/testing/test_assertions.c:250`、`tests/testing/test_assertions.c:432`。
+证据为 `zr_vm_core/include/zr_vm_core/object.h:525`、`zr_vm_core/src/zr_vm_core/object/object.c:2022`、
+`zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433`、`zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629`、
+`zr_vm_core/src/zr_vm_core/value/value.c:600`、`tests/testing/test_assertions.c:250`、`tests/testing/test_assertions.c:432`。
 TODO: 补此正常公开入口组合回归及异常保存恢复；现有Equal fault测试不覆盖该Throws分支，本轮未执行。
 BUG: core Value_ToDebugString的合法对象若含超过buffer容量的字符串字段，snprintf所需长度直接累计offset，
-后续尾括号及终止NUL写越界；入口 `zr_vm_core/src/zr_vm_core/value.c:604`、
-`zr_vm_core/src/zr_vm_core/value.c:628`、`zr_vm_core/src/zr_vm_core/value.c:695`。
+后续尾括号及终止NUL写越界；入口 `zr_vm_core/src/zr_vm_core/value/value.c:604`、
+`zr_vm_core/src/zr_vm_core/value/value.c:628`、`zr_vm_core/src/zr_vm_core/value/value.c:695`。
 TODO: formatter元方法GC期间obj/pair裸遍历地址仍需对应core模块强制GC复核；
 本批只记录跨模块BUG，不修改活跃core实现，不授其运行时信用，未运行长字段或GC fixture.
 

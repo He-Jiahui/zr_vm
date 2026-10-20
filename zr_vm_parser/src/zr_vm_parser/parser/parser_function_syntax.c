@@ -12,15 +12,19 @@ static SZrAstNode *create_expression_body_block(SZrParserState *ps, SZrAstNode *
     returnNode = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, expression->location);
     if (returnNode == ZR_NULL) {
         /* BUG: 返回语句节点分配失败时 expression 尚未交接，调用方也未释放它。 */
+        ZrParser_Ast_Free(ps->state, expression);
         return ZR_NULL;
     }
     returnNode->data.returnStatement.expr = expression;
-    body = ZrParser_AstNodeArray_New(ps->state, 1u);
+    body = parser_ast_array_new(ps, 1u);
     if (body == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, returnNode);
         return ZR_NULL;
     }
-    ZrParser_AstNodeArray_Add(ps->state, body, returnNode);
+    if (!parser_ast_array_add(ps, body, returnNode)) {
+        ZrParser_Ast_Free(ps->state, returnNode);
+        return ZR_NULL;
+    }
     blockNode = create_ast_node(ps, ZR_AST_BLOCK, expression->location);
     if (blockNode == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, body);
@@ -56,7 +60,7 @@ SZrAstNode *parse_fn_expression(SZrParserState *ps) {
         /* TODO: 可变参数解析失败仍继续构造签名；核查 hasError 是否总能挡住
          * 带空 args 的 lambda 进入语义阶段。 */
         args = argsNode != ZR_NULL ? &argsNode->data.parameter : ZR_NULL;
-        params = ZrParser_AstNodeArray_New(ps->state, 0u);
+        params = parser_ast_array_new(ps, 0u);
     } else {
         params = parse_parameter_list(ps);
         /* TODO: parse_parameter_list 已消费连续逗号和 params 参数；
@@ -114,9 +118,9 @@ SZrAstNode *parse_fn_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    lambdaNode = create_ast_node(
-            ps, ZR_AST_LAMBDA_EXPRESSION, ZrParser_FileRange_Merge(startLoc, body->location));
-    if (lambdaNode == ZR_NULL) {
+    SZrFileRange lambdaLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, body->location, &lambdaLocation) ||
+        (lambdaNode = create_ast_node(ps, ZR_AST_LAMBDA_EXPRESSION, lambdaLocation)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, params);
         free_parameter_node_from_ptr(ps->state, args);
         free_owned_type(ps->state, returnType);

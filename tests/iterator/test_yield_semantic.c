@@ -130,6 +130,8 @@ static void destroy_compilation(SZrState *state,
     }
 }
 
+#include "yield_function_body_cases.inc"
+
 /* 显式 zr.iteration.Iterator<T> 返回载体使 yield 投影三阶段语义事实。 */
 static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(void) {
     static const TZrChar source[] =
@@ -138,51 +140,43 @@ static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(vo
             "    yield limit;\n"
             "}\n";
     SZrState *state = ZrContainerTests_CreateState();
-    SZrCompilerState *compiler;
-    SZrAstNode *ast;
-    const SZrFunction *compiledFunction;
-    const SZrSemanticIrInstruction *yieldValue;
-    const SZrSemanticIrInstruction *yieldSuspend;
-    const SZrSemanticIrInstruction *yieldResume;
-    const TZrChar *yieldSource;
+    SZrCompilerState *compiler = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrYieldFunctionBodyFacts facts;
+    TZrBool stateCreated = (state != ZR_NULL), compiled = ZR_FALSE, childExecBcEmpty = ZR_FALSE;
+    TZrSize childCount = 0U;
+    const TZrChar *yieldSource = strstr(source, "yield limit;");
 
-    TEST_ASSERT_NOT_NULL(state);
-    compiler = compile_source(state, source, &ast);
-    TEST_ASSERT_NOT_NULL(compiler);
-    TEST_ASSERT_FALSE(compiler->hasError);
-    TEST_ASSERT_TRUE(semantic_ir_has_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_VALUE));
-    TEST_ASSERT_TRUE(semantic_ir_has_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_SUSPEND));
-    TEST_ASSERT_TRUE(semantic_ir_has_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_RESUME));
-    TEST_ASSERT_EQUAL_UINT64(
-            1U,
-            semantic_ir_opcode_count(
-                    &compiler->preSemanticIr, ZR_SEMANTIC_IR_ITERATOR_COMPLETE));
-    TEST_ASSERT_EQUAL_UINT64(1U, compiler->childFunctions.length);
-    compiledFunction = compiled_child_function_at(compiler, 0U);
-    TEST_ASSERT_NOT_NULL(compiledFunction);
-    TEST_ASSERT_EQUAL_UINT32(0U, compiledFunction->instructionsLength);
-    yieldValue = semantic_ir_first_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_VALUE);
-    yieldSuspend = semantic_ir_first_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_SUSPEND);
-    yieldResume = semantic_ir_first_opcode(
-            &compiler->preSemanticIr, ZR_SEMANTIC_IR_YIELD_RESUME);
-    yieldSource = strstr(source, "yield limit;");
-    TEST_ASSERT_NOT_NULL(yieldValue);
-    TEST_ASSERT_NOT_NULL(yieldSuspend);
-    TEST_ASSERT_NOT_NULL(yieldResume);
-    TEST_ASSERT_NOT_NULL(yieldSource);
-    TEST_ASSERT_EQUAL_UINT32(
-            (TZrUInt32) (yieldSource - source), yieldValue->sourceRange.start.offset);
-    TEST_ASSERT_EQUAL_UINT32(
-            yieldValue->sourceRange.start.offset, yieldSuspend->sourceRange.start.offset);
-    TEST_ASSERT_EQUAL_UINT32(
-            yieldValue->sourceRange.start.offset, yieldResume->sourceRange.start.offset);
+    if (state != ZR_NULL) {
+        compiler = compile_source(state, source, &ast);
+    }
+    if (compiler != ZR_NULL) {
+        const SZrFunction *child = compiled_child_function_at(compiler, 0U);
+        compiled = !compiler->hasError;
+        childCount = compiler->childFunctions.length;
+        childExecBcEmpty = (child != ZR_NULL && child->instructionsLength == 0U &&
+                            child->instructionsList == ZR_NULL);
+    }
     destroy_compilation(state, compiler, ast);
     ZrContainerTests_DestroyState(state);
+    facts = observe_yield_function_body(source, ZR_FALSE);
+
+    TEST_ASSERT_TRUE(stateCreated);
+    TEST_ASSERT_TRUE(compiled);
+    TEST_ASSERT_EQUAL_UINT64(1U, childCount);
+    TEST_ASSERT_TRUE(childExecBcEmpty);
+    TEST_ASSERT_TRUE(facts.prepared);
+    TEST_ASSERT_TRUE(facts.compiled);
+    TEST_ASSERT_TRUE(facts.scopesRestored);
+    TEST_ASSERT_TRUE(facts.execBcEmpty);
+    TEST_ASSERT_TRUE(facts.rangesPresent);
+    for (TZrSize index = 0U; index < 4U; index++) {
+        TEST_ASSERT_EQUAL_UINT64(1U, facts.counts[index]);
+    }
+    TEST_ASSERT_NOT_NULL(yieldSource);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)(yieldSource - source), facts.offsets[0]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[1]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[2]);
 }
 
 /* Iterable<T> 不是同步 Iterator<T> 载体，元素类型亦须兼容。 */
@@ -225,18 +219,32 @@ static void test_yield_function_allows_only_empty_return_completion(void) {
     SZrState *state;
     SZrCompilerState *compiler;
     SZrAstNode *ast;
+    SZrYieldFunctionBodyFacts facts;
+    TZrBool stateCreated, compiled;
 
     state = ZrContainerTests_CreateState();
-    TEST_ASSERT_NOT_NULL(state);
-    compiler = compile_source(state, emptyReturnSource, &ast);
-    TEST_ASSERT_NOT_NULL(compiler);
-    TEST_ASSERT_FALSE(compiler->hasError);
-    TEST_ASSERT_EQUAL_UINT64(
-            1U,
-            semantic_ir_opcode_count(
-                    &compiler->preSemanticIr, ZR_SEMANTIC_IR_ITERATOR_COMPLETE));
+    stateCreated = (state != ZR_NULL);
+    ast = ZR_NULL;
+    compiler = state != ZR_NULL ? compile_source(state, emptyReturnSource, &ast) : ZR_NULL;
+    compiled = (compiler != ZR_NULL && !compiler->hasError);
     destroy_compilation(state, compiler, ast);
     ZrContainerTests_DestroyState(state);
+    facts = observe_yield_function_body(emptyReturnSource, ZR_FALSE);
+
+    TEST_ASSERT_TRUE(stateCreated);
+    TEST_ASSERT_TRUE(compiled);
+    TEST_ASSERT_TRUE(facts.prepared);
+    TEST_ASSERT_TRUE(facts.compiled);
+    TEST_ASSERT_TRUE(facts.scopesRestored);
+    TEST_ASSERT_TRUE(facts.execBcEmpty);
+    TEST_ASSERT_TRUE(facts.rangesPresent);
+    for (TZrSize index = 0U; index < 4U; index++) {
+        TEST_ASSERT_EQUAL_UINT64(1U, facts.counts[index]);
+    }
+    TEST_ASSERT_EQUAL_UINT32(
+            (TZrUInt32)(strstr(emptyReturnSource, "yield 1;") - emptyReturnSource), facts.offsets[0]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[1]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[2]);
 
     state = ZrContainerTests_CreateState();
     TEST_ASSERT_NOT_NULL(state);
@@ -288,22 +296,29 @@ static void test_nested_iterator_yield_does_not_reclassify_the_outer_function(vo
             "fn outer(): void {\n"
             "    fn inner(): zr.iteration.Iterator<int> { yield 1; }\n"
             "}\n";
-    SZrState *state = ZrContainerTests_CreateState();
-    SZrCompilerState *compiler;
-    SZrAstNode *ast;
+    SZrYieldFunctionBodyFacts facts = observe_yield_function_body(source, ZR_TRUE);
+    SZrYieldOuterGraphFacts outer = observe_public_outer_yield_graph(source);
 
-    TEST_ASSERT_NOT_NULL(state);
-    compiler = compile_source(state, source, &ast);
-    TEST_ASSERT_NOT_NULL(compiler);
-    TEST_ASSERT_FALSE(compiler->hasError);
-    TEST_ASSERT_EQUAL_UINT64(
-            1U,
-            semantic_ir_opcode_count(
-                    &compiler->preSemanticIr, ZR_SEMANTIC_IR_ITERATOR_COMPLETE));
-    destroy_compilation(state, compiler, ast);
-    ZrContainerTests_DestroyState(state);
+    TEST_ASSERT_TRUE(facts.prepared);
+    TEST_ASSERT_TRUE(facts.compiled);
+    TEST_ASSERT_TRUE(facts.scopesRestored);
+    TEST_ASSERT_TRUE(facts.execBcEmpty);
+    TEST_ASSERT_TRUE(facts.rangesPresent);
+    for (TZrSize index = 0U; index < 4U; index++) {
+        TEST_ASSERT_EQUAL_UINT64(1U, facts.counts[index]);
+    }
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)(strstr(source, "yield 1;") - source), facts.offsets[0]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[1]);
+    TEST_ASSERT_EQUAL_UINT32(facts.offsets[0], facts.offsets[2]);
+    TEST_ASSERT_TRUE(outer.compiled);
+    TEST_ASSERT_TRUE(outer.outerNamed);
+    TEST_ASSERT_TRUE(outer.innerNamed);
+    TEST_ASSERT_TRUE(outer.outerReturns);
+    TEST_ASSERT_TRUE(outer.innerExecBcEmpty);
+    TEST_ASSERT_TRUE(outer.graphValid);
 }
 
+#include "yield_public_compile_graph_cases.inc"
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -315,5 +330,6 @@ int main(void) {
     RUN_TEST(test_yield_rejects_top_level_statement);
     RUN_TEST(test_yield_rejects_property_accessor_context);
     RUN_TEST(test_nested_iterator_yield_does_not_reclassify_the_outer_function);
+    RUN_TEST(test_yield_public_compile_preserves_zero_execbc_child_graph);
     return UNITY_END();
 }

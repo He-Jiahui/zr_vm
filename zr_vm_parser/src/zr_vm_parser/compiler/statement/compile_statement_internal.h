@@ -17,6 +17,7 @@ void compile_statement_register_const_pattern_bindings(SZrCompilerState *cs,
                                                        SZrAstNode *pattern);
 TZrBool compile_statement_register_semantic_local(SZrCompilerState *cs,
                                                    SZrString *name,
+                                                   SZrSyntaxContext syntaxContext,
                                                    const SZrInferredType *resolvedType,
                                                    TZrUInt32 stackSlot,
                                                    SZrAstNode *declarationNode,
@@ -27,6 +28,12 @@ TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
                                                 SZrString *name,
                                                 TZrUInt32 stackSlot,
                                                 TZrUInt32 activateOffset);
+TZrUInt32 bind_existing_stack_slot_as_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        TZrUInt32 stackSlot,
+        TZrUInt32 activateOffset);
 void emit_jump_to_label(SZrCompilerState *cs, TZrSize labelId);
 
 #endif // ZR_VM_PARSER_COMPILE_STATEMENT_INTERNAL_H

@@ -7,6 +7,8 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/lexer.h"
+#include "zr_vm_parser/comptime_contract.h"
+#include "zr_vm_parser/token_stream.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/location.h"
@@ -52,6 +54,18 @@ typedef struct SZrParserState {
  * @note 预读发生在调用方安装回调及 suppressErrorOutput 之前。 */
 ZR_PARSER_API void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
+/** @brief Initialize parser state over a retained native TokenStream. */
+ZR_PARSER_API void ZrParser_State_InitWithTokenStream(
+        SZrParserState *ps,
+        SZrState *state,
+        const SZrTokenStream *stream,
+        SZrString *sourceName);
+/* Share the current expansion budget while parsing. The budget need only
+ * outlive the parser state; returned AST ownership detaches at State_Free. */
+ZR_PARSER_API void ZrParser_State_InitWithTokenStreamBudget(
+        SZrParserState *ps, SZrState *state, const SZrTokenStream *stream,
+        SZrString *sourceName, SZrParserComptimeBudget *budget);
+
 /** @brief 释放 lexer 游标及缓冲，可接受空指针；不释放源文本或已返回的 AST。 */
 ZR_PARSER_API void ZrParser_State_Free(SZrParserState *ps);
 
@@ -77,6 +91,12 @@ ZR_PARSER_API SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps);
 /** @brief 初始化临时状态、解析完整脚本并释放游标。
  * @return 返回的 AST 归调用方；函数不释放 source 或 sourceName。 */
 ZR_PARSER_API SZrAstNode *ZrParser_Parse(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
+
+/** @brief Parse an owned token stream directly without display/re-lex. */
+ZR_PARSER_API SZrAstNode *ZrParser_ParseTokenStream(
+        SZrState *state,
+        const SZrTokenStream *stream,
+        SZrString *sourceName);
 
 /** @brief 递归释放解析器构造的 AST 子树及节点数组，不释放 VM 字符串。 */
 ZR_PARSER_API void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node);

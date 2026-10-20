@@ -36,7 +36,7 @@ void tearDown(void) {
  * @note 查询会重建源字符串；事实匹配依赖字符串内容及偏移，而非指针身份。
  */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

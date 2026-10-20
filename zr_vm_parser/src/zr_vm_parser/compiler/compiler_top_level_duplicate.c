@@ -1,6 +1,7 @@
 #include "compiler_top_level_duplicate.h"
 
 #include "compiler_internal.h"
+#include "compiler_type_declaration.h"
 
 /**
  * @brief 从受支持的顶层类型声明提取统一名称，供跨声明种类的重名检查使用。
@@ -45,9 +46,15 @@ TZrBool compiler_report_duplicate_top_level_type(
         SZrCompilerState *cs,
         SZrAstNode *declaration) {
     SZrString *name = compiler_top_level_type_name(declaration);
+    SZrSyntaxContext declarationContext;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
+    }
+    if (!compiler_type_declaration_item_context(declaration, &declarationContext)) {
+        ZrParser_Compiler_Error(cs, "Cannot normalize type declaration syntax context",
+                declaration->location);
+        return ZR_TRUE;
     }
 
     for (TZrSize index = 0U; index < cs->typePrototypes.length; index++) {
@@ -60,6 +67,23 @@ TZrBool compiler_report_duplicate_top_level_type(
         if (prototype == ZR_NULL || prototype->name == ZR_NULL ||
             prototype->declarationNode == declaration ||
             !ZrCore_String_Equal(prototype->name, name)) {
+            continue;
+        }
+
+        if (prototype->declarationNode != ZR_NULL) {
+            SZrSyntaxContext previousContext;
+
+            if (!compiler_type_declaration_item_context(
+                        prototype->declarationNode, &previousContext)) {
+                ZrParser_Compiler_Error(cs, "Cannot normalize type declaration syntax context",
+                        prototype->declarationNode->location);
+                return ZR_TRUE;
+            }
+            if (!ZrParser_SyntaxContext_Equal(declarationContext, previousContext)) {
+                continue;
+            }
+        } else if (!ZrParser_SyntaxContext_Equal(
+                           declarationContext, ZrParser_SyntaxContext_Root())) {
             continue;
         }
 

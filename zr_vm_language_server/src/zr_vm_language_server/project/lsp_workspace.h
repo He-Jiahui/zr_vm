@@ -28,4 +28,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspWorkspace_RemoveFolder(SZrSta
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspWorkspace_CanProcessFileEvent(SZrLspContext *context,
                                                                                   SZrString *uri);
 
+/** @brief Compare two absolute filesystem paths after dot-segment and existing-link resolution. */
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspWorkspace_IsPathWithinRoot(const TZrChar *candidatePath,
+                                                                                const TZrChar *rootPath);
+
 #endif

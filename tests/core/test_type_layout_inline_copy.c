@@ -700,6 +700,7 @@ static void test_frame_layout_assigns_aligned_byte_offsets_for_inline_structs(vo
     TZrUInt32 expectedMaxAlign;
 
     ZrCore_TypeLayout_InitValue(&valueLayout);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)_Alignof(SZrTypeValue), valueLayout.byteAlign);
     ZrCore_TypeLayout_InitStruct(
             &structLayout,
             12u,

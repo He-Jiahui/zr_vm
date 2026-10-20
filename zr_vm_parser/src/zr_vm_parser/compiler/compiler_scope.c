@@ -4,6 +4,7 @@
 
 #include "compiler_internal.h"
 #include "compiler/expression/compile_expression_internal.h"
+#include "compiler_type_value_alias.h"
 
 void compiler_register_scope_cleanup_slot(
         SZrCompilerState *cs,
@@ -336,6 +337,9 @@ void enter_scope(SZrCompilerState *cs) {
     scope.startVarIndex = cs->localVarCount;
     scope.varCount = 0;
     scope.cleanupRegistrationCount = 0;
+    scope.typeValueAliasStartIndex = cs->typeValueAliases.length;
+    scope.preserveTypeValueAliases = (TZrBool)(cs->scopeStack.length == 0U &&
+                                             cs->currentFunctionNode == ZR_NULL);
     ZrCore_Array_Init(cs->state,
                       &scope.cleanupRegistrations,
                       sizeof(SZrScopeCleanupRegistration),
@@ -350,7 +354,7 @@ void enter_scope(SZrCompilerState *cs) {
 
 // 退出作用域
 void exit_scope(SZrCompilerState *cs) {
-    if (cs == ZR_NULL || cs->hasError) {
+    if (cs == ZR_NULL) {
         return;
     }
 
@@ -388,6 +392,9 @@ void exit_scope(SZrCompilerState *cs) {
         }
 
         ZrCore_Array_Free(cs->state, &scope->cleanupRegistrations);
+        if (!scope->preserveTypeValueAliases) {
+            compiler_truncate_type_value_aliases(cs, scope->typeValueAliasStartIndex);
+        }
     }
 }
 

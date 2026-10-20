@@ -13,7 +13,7 @@ SZrFilePosition ZrParser_FilePosition_Create(TZrSize offset, TZrInt32 line, TZrI
 }
 
 SZrFileRange ZrParser_FileRange_Create(SZrFilePosition start, SZrFilePosition end, SZrString *source) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
     range.start = start;
     range.end = end;
     range.source = source;
@@ -21,21 +21,33 @@ SZrFileRange ZrParser_FileRange_Create(SZrFilePosition start, SZrFilePosition en
 }
 
 SZrFileRange ZrParser_FileRange_Merge(SZrFileRange range1, SZrFileRange range2) {
-    SZrFileRange merged;
-    // 解析器和语义层传入同源范围；位置排序只看字节偏移，源名沿用第一个参数。
-    if (range1.start.offset < range2.start.offset) {
-        merged.start = range1.start;
-    } else {
-        merged.start = range2.start;
+    if (range1.originKey != 0U && range1.originKey == range2.originKey &&
+        range1.ownerKey != 0U && range1.ownerKey == range2.ownerKey &&
+        range1.flags == 0U && range2.flags == 0U) {
+        if (range1.evidenceIndex == 0U && range2.evidenceIndex == 0U) {
+            /* Ordinary text owners have one physical source and no ledger. */
+            SZrFileRange merged = range1;
+            merged.start = range1.start.offset < range2.start.offset ? range1.start : range2.start;
+            merged.end = range1.end.offset > range2.end.offset ? range1.end : range2.end;
+            return merged;
+        }
+        if (range1.evidenceIndex != 0U && range1.evidenceIndex == range2.evidenceIndex &&
+            range1.start.offset == range2.start.offset && range1.end.offset == range2.end.offset &&
+            range1.start.line == range2.start.line && range1.start.column == range2.start.column &&
+            range1.end.line == range2.end.line && range1.end.column == range2.end.column &&
+            range1.source == range2.source) {
+            return range1;
+        }
     }
-    // 选择更晚的结束位置
-    if (range1.end.offset > range2.end.offset) {
-        merged.end = range1.end;
-    } else {
-        merged.end = range2.end;
-    }
-    // 使用第一个范围的源文件名
-    merged.source = range1.source;
-    return merged;
+    range1 = ZrParser_FileRange_WithoutEvidence(range1);
+    range1.flags |= ZR_FILE_RANGE_FLAG_COMPOSITE;
+    return range1;
+}
+
+SZrFileRange ZrParser_FileRange_WithoutEvidence(SZrFileRange range) {
+    range.ownerKey = 0U;
+    range.evidenceIndex = 0U;
+    range.flags |= ZR_FILE_RANGE_FLAG_PARTIAL;
+    return range;
 }
 

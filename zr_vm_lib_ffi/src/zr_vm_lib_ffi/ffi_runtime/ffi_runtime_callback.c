@@ -351,12 +351,25 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
             *(uint32_t *) buffer = (uint32_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_I64:
+            if (effectiveValue != ZR_NULL && ZR_VALUE_IS_TYPE_SIGNED_INT(effectiveValue->type)) {
+                *(int64_t *) buffer = effectiveValue->value.nativeObject.nativeInt64;
+                return ZR_TRUE;
+            }
             if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(int64_t *) buffer = (int64_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_U64:
+            if (effectiveValue != ZR_NULL && ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveValue->type)) {
+                *(uint64_t *) buffer = effectiveValue->value.nativeObject.nativeUInt64;
+                return ZR_TRUE;
+            }
+            if (effectiveValue != ZR_NULL && ZR_VALUE_IS_TYPE_SIGNED_INT(effectiveValue->type) &&
+                effectiveValue->value.nativeObject.nativeInt64 >= 0) {
+                *(uint64_t *) buffer = (uint64_t) effectiveValue->value.nativeObject.nativeInt64;
+                return ZR_TRUE;
+            }
             if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }

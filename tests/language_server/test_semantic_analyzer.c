@@ -398,6 +398,8 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 #include "test_semantic_analyzer_ffi_wrapper_decorator_cases.h"
 #include "test_semantic_analyzer_extern_parameter_decorator_cases.h"
 #include "test_semantic_analyzer_local_binding_identity_cases.h"
+#include "test_semantic_analyzer_hygiene_binding_cases.h"
+#include "test_semantic_analyzer_declaration_context_cases.h"
 #include "test_semantic_analyzer_source_metadata_cases.h"
 
 /** 测试在借用的诊断字符串中寻找稳定语义片段，避免完整措辞变化影响契约检查。 */
@@ -2868,71 +2870,7 @@ static void test_semantic_analyzer_projects_interface_const_field_contract(SZrSt
 
 /** 以所属类和方法同时带泛型的成员签名作为分析烟测，避免该语法组合直接产生编译诊断。 */
 // TODO: 当前只检查无 compiler_error，尚未读取成员签名事实；后续应对 Box<T>.shape<const N> 的 T/N 绑定做直接断言。
-static void test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
-
-    TEST_INFO("Owner generic member signatures",
-              "Class member signatures should resolve owner and method generic parameters without emitting compiler diagnostics");
-
-    {
-        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode =
-            "class Matrix<T, const N: int> { }\n"
-            "class Box<T> {\n"
-            "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> {\n"
-            "        return value;\n"
-            "    }\n"
-            "}\n"
-            "fn use(): void {\n"
-            "    var box = new Box<int>();\n"
-            "    var value = new Matrix<int, 4>();\n"
-            "    box.shape(value);\n"
-            "}\n";
-        SZrString *sourceName =
-            ZrCore_String_Create(state, "owner_generic_member_signature_test.zr", 38);
-        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-
-        if (analyzer == ZR_NULL) {
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
-                      "Failed to create semantic analyzer");
-            return;
-        }
-
-        if (ast == ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
-                      "Failed to parse test code");
-            return;
-        }
-
-        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
-                      "Failed to analyze AST");
-            return;
-        }
-
-        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 ||
-            analyzer->diagnostics.length != 0) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
-                      "Owner/member generic signature analysis should not emit diagnostics");
-            return;
-        }
-
-        ZrParser_Ast_Free(state, ast);
-        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    }
-
-    TEST_PASS(timer, "Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
-}
+#include "test_semantic_analyzer_generic_member_signature_cases.h"
 
 /** 检查 return/throw 之后语句的共享可达性事实及原因，作为编辑器不可达提示的来源。 */
 static void test_semantic_analyzer_records_reachability_facts_for_unreachable_statements(SZrState *state) {
@@ -4611,6 +4549,9 @@ static void test_semantic_analyzer_releases_cache_storage(SZrState *state) {
 }
 
 /** 单独测试目标由 CMake/CTest 启动；这里建立共享 VM 状态与库注册，顺序执行语义分析场景并用累计失败数作为进程退出码。 */
+#include "test_semantic_analyzer_generic_signature_range_cases.h"
+#include "test_semantic_analyzer_lsp_native_range_consumer_cases.h"
+#include "test_semantic_analyzer_prototype_identity_cases.h"
 int main(void) {
     printf("==========\n");
     printf("Language Server - Semantic Analyzer Tests\n");
@@ -4705,6 +4646,17 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_local_binding_identity(state);
+    test_semantic_analyzer_marked_symbol_reuses_canonical_identity(state);
+    test_semantic_analyzer_marked_declaration_registers_canonical_binding(state);
+    test_semantic_analyzer_context_unowned_variable(state);
+    test_semantic_analyzer_context_unowned_parameter(state);
+    test_semantic_analyzer_context_preowned_callable(state);
+    test_semantic_analyzer_context_preowned_nominal(state);
+    test_semantic_analyzer_context_missing_nominal(state);
+    test_semantic_analyzer_context_nominal_collector(state);
+    test_semantic_analyzer_context_nominal_owner(state);
+    test_semantic_analyzer_context_invalid_no_publication(state);
+    test_semantic_analyzer_context_root_alias_owner(state);
     test_semantic_analyzer_unknown_local_preserves_identity(state);
     test_semantic_analyzer_unknown_parameter_preserves_identity(state);
     TEST_DIVIDER();
@@ -4849,6 +4801,27 @@ int main(void) {
 
     test_semantic_analyzer_releases_cache_storage(state);
     TEST_DIVIDER();
+    test_semantic_analyzer_generic_signature_query_uses_exact_type_reference_range(state);
+    TEST_DIVIDER();
+    test_lsp_signature_help_preserves_native_inner_call_close(state);
+    TEST_DIVIDER();
+    test_lsp_super_references_keep_foreign_native_anchor(state);
+    TEST_DIVIDER();
+    test_extern_delegate_selection_preserves_native_name_leaf(state);
+    TEST_DIVIDER();
+    test_extern_enum_member_use_publishes_canonical_fact(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_bootstrap_preserves_extern_prototype_identity(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_bootstrap_extern_enum_preserves_runtime_metadata(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_bootstrap_extern_struct_preserves_field_layout(state);
+    TEST_DIVIDER();
+    test_shared_extern_struct_producer_preserves_field_declaration_identity(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_failed_extern_completion_retains_bootstrap_metadata(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_bootstrap_ordinary_enum_completes_same_declaration(state);
     
     // 清理
     ZrCore_GlobalState_Free(global);

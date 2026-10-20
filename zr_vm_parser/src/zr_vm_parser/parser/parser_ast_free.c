@@ -91,6 +91,14 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 }
                 ZrParser_AstNodeArray_Free(state, script->statements);
             }
+            if (script->tokenStream != ZR_NULL) {
+                ZrParser_TokenStream_Release(script->tokenStream);
+                script->tokenStream = ZR_NULL;
+            }
+            if (script->syntaxContextTable != ZR_NULL) {
+                ZrParser_SyntaxContextTable_Release(script->syntaxContextTable);
+                script->syntaxContextTable = ZR_NULL;
+            }
             break;
         }
         case ZR_AST_MODULE_DECLARATION: {
@@ -880,6 +888,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             break;
     }
 
+    ZrParser_Ownership_Release(node->ownership);
     // 释放节点本身
     ZrCore_Memory_RawFreeWithType(state->global, node, sizeof(SZrAstNode), ZR_MEMORY_NATIVE_TYPE_ARRAY);
 }

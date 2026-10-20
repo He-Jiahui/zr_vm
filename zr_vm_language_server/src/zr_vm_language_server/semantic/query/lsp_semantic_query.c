@@ -274,7 +274,7 @@ static SZrFileRange semantic_query_range_from_offset(const TZrChar *content,
                                                      TZrSize startOffset,
                                                      TZrSize length,
                                                      SZrString *uri) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
     TZrSize offset = 0;
     TZrInt32 line = 1;
     TZrInt32 column = 1;

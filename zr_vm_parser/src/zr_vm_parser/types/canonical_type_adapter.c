@@ -35,7 +35,8 @@ static const SZrCanonicalGenericBinding *canonical_type_find_generic_binding(
 
 static TZrTypeId canonical_type_from_name_raw(
         SZrSemanticContext *context,
-        SZrString *qualifiedName) {
+        SZrString *qualifiedName,
+        TZrUInt32 definitionToken) {
     TZrNativeString text;
     TZrSize length;
     const TZrChar *separator;
@@ -59,13 +60,13 @@ static TZrTypeId canonical_type_from_name_raw(
         moduleIdentity = ZrCore_String_Create(context->state, text, moduleLength);
         name = ZrCore_String_Create(context->state, (TZrNativeString)(separator + 1), nameLength);
     }
-    return ZrParser_CanonicalType_InternNominal(context, moduleIdentity, name, 0U);
+    return ZrParser_CanonicalType_InternNominal(context, moduleIdentity, name, definitionToken);
 }
 
 TZrTypeId ZrParser_CanonicalType_FromName(
         SZrSemanticContext *context,
         SZrString *qualifiedName) {
-    TZrTypeId typeId = canonical_type_from_name_raw(context, qualifiedName);
+    TZrTypeId typeId = canonical_type_from_name_raw(context, qualifiedName, 0U);
 
     return typeId == ZR_SEMANTIC_ID_INVALID
                    ? typeId
@@ -96,7 +97,8 @@ static TZrTypeId canonical_type_from_generic_inferred(
         definitionName = parsedDefinitionName;
     }
 
-    definitionTypeId = canonical_type_from_name_raw(context, definitionName);
+    definitionTypeId = canonical_type_from_name_raw(
+            context, definitionName, type->nominalDefinitionToken);
     if (definitionTypeId == ZR_SEMANTIC_ID_INVALID) {
         if (parsedArgumentNames.isValid) {
             ZrCore_Array_Free(context->state, &parsedArgumentNames);
@@ -345,6 +347,8 @@ static TZrTypeId canonical_type_from_inferred_recursive(
     if (context == ZR_NULL ||
         type == ZR_NULL ||
         type->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_TYPE ||
+        (type->nominalDefinitionToken != 0U &&
+         (type->baseType != ZR_VALUE_TYPE_OBJECT || type->typeName == ZR_NULL)) ||
         depth > 256U) {
         return ZR_SEMANTIC_ID_INVALID;
     }
@@ -352,6 +356,7 @@ static TZrTypeId canonical_type_from_inferred_recursive(
     typeId = ZR_SEMANTIC_ID_INVALID;
     if (type->baseType == ZR_VALUE_TYPE_OBJECT &&
         type->typeName != ZR_NULL &&
+        type->nominalDefinitionToken == 0U &&
         type->elementTypes.length == 0U) {
         const SZrCanonicalGenericBinding *binding =
                 canonical_type_find_generic_binding(
@@ -392,7 +397,11 @@ static TZrTypeId canonical_type_from_inferred_recursive(
                 genericBindingCount,
                 depth);
     } else if (type->baseType == ZR_VALUE_TYPE_OBJECT && type->typeName != ZR_NULL) {
-        typeId = ZrParser_CanonicalType_FromName(context, type->typeName);
+        typeId = canonical_type_from_name_raw(
+                context, type->typeName, type->nominalDefinitionToken);
+        if (typeId != ZR_SEMANTIC_ID_INVALID) {
+            typeId = ZrParser_CanonicalType_ResolveProjection(context, typeId);
+        }
     } else {
         typeId = ZrParser_CanonicalType_InternPrimitive(context, type->baseType);
     }
