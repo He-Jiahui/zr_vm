@@ -80,7 +80,10 @@ an ordinary argument. This does not complete P19.
   paths retain successful fresh-process binary linking.
 * **Type identity arguments:** lowering emitted the correct type identity but
   did not publish its result slot. Ordinary argument lowering therefore copied
-  the preceding callable slot. The expression now publishes its own slot.
+  the preceding callable slot. The expression now publishes its own slot. The
+  regression checks the received identity marker and canonical name, so a
+  non-null callable cannot satisfy it. The strengthened fixture passes both
+  modes in all three configurations.
 
 No opcode or bytecode-version change was needed. The f32 helper identifier and
 native argument-source entry point are additive.
