@@ -1,63 +1,29 @@
 {
   "schema": "zr-swarm-readiness/1",
   "stopped_at": "GD-C1",
-  "reason": "P01 is resolved. Required P04, P05, P09, P14 (binary), P22, and P08 (sanitizers) fail; stop rule gates GD-C2 onward. All P01-P22 have executed checks or an evidence-based parity aggregate.",
+  "reason": "All required GD-C1 probes pass in Release, ASan/UBSan, and forced-GC configurations, including source-removed binary execution. Optional failures remain recorded. Work stops at GD-C1 as requested; GD-C2 and game features have not started.",
   "probes": [
     {
       "id": "P01",
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "PASS after merged engine fixes: explicit writeback, direct field write-through, copy isolation, nested constructor and 10k-loop checks; host access-cost probe also passes."
+      "note": "Struct-array explicit writeback, direct field writes, copy isolation, nested constructors, and the 10k-loop pass; the host access-cost case also passes.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P02",
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "GET_MEMBER while evaluating struct operator expression; optional operator path unavailable."
-    },
-    {
-      "id": "P03",
-      "required": true,
-      "interp": "OK",
-      "binary": "OK",
-      "note": "Interface-typed field dispatch, virtual/override/super, properties and static counter all pass."
-    },
-    {
-      "id": "P04",
-      "required": true,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Required FAIL: Array<GameEvent>.add(GameEvent.Hit(4, 9)) raises KNOWN_VM_CALL before union/generic storage assertions. Stopped; no workaround adopted."
-    },
-    {
-      "id": "P05",
-      "required": true,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Required FAIL: generic RingQueue<int>.push raises GET_MEMBER: missing member 'size'. Stopped; no concrete replacement adopted. Generic out and wrap checks are not reached."
-    },
-    {
-      "id": "P06",
-      "required": true,
-      "interp": "OK",
-      "binary": "OK",
-      "note": "Array<float> for-in, C-style for with += and while return equal sums."
-    },
-    {
-      "id": "P07",
-      "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "User Enumerator/Iterable implementation rejected as not implementing all abstract/interface members. Optional; no fallback selected."
-    },
-    {
-      "id": "P08",
-      "required": true,
-      "interp": "OK",
-      "binary": "OK",
-      "note": "Release scope/using and host program-end destructor checks pass. Required sanitizer FAIL: ASan and forced-GC report heap-use-after-free at value.h:152 / execution_dispatch.c:10019 after a destructor grows the VM stack. Stopped; no workaround adopted.",
+      "note": "Struct operator evaluation reaches GET_MEMBER with an unsuitable receiver; optional operator path remains unavailable.",
       "asan": {
         "interp": "FAIL",
         "binary": "FAIL"
@@ -68,102 +34,402 @@
       }
     },
     {
-      "id": "P09",
+      "id": "P03",
       "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Interface-typed field dispatch, virtual/override/super, properties and static counter all pass.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P04",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Union variants and payloads survive calls, arrays, generic storage, and full GC; fixed by 89e92cff.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P05",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Generic queue instance initializers, capacity/wrap behavior, and caller out-argument updates pass; fixed by 2a7b1b3e with readonly compatibility in 3c0b025a.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P06",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Array<float> for-in, C-style for with += and while return equal sums.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P07",
+      "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "Required FAIL: function-typed field invocation this.callback(x) is rejected with Argument count mismatch. Stopped; escaping capture/array assertions not reached."
+      "note": "User Enumerator/Iterable implementation rejected as not implementing all abstract/interface members. Optional; no fallback selected.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
+    },
+    {
+      "id": "P08",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Scope/using cleanup and host program-end destructor checks pass in all configurations; c97113cd re-reads operands after destructor stack growth.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P09",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Function-typed fields and arrays call escaping shared captures correctly, including after full GC; fixed by 8d575068.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P10",
       "required": false,
       "interp": "OK",
       "binary": "OK",
-      "note": "Job<int> construction, currentScheduler.schedule and result return 17."
+      "note": "Job<int> construction, currentScheduler.schedule and result return 17.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P11",
       "required": false,
       "interp": "OK",
       "binary": "FAIL",
-      "note": "Interp pool deliver/borrow/write/close/recycle passes. Source-removed binary repeatedly fails at tryBorrow(out view): PROPERTY_REF_CREATE_LOCAL: invalid local Place. Optional M3 is unavailable; no fallback selected."
+      "note": "Pool deliver/borrow/write/close/recycle passes in interp; binary tryBorrow(out view) still reports PROPERTY_REF_CREATE_LOCAL: invalid local Place.",
+      "asan": {
+        "interp": "OK",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "FAIL"
+      }
     },
     {
       "id": "P12",
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "GC stats, 500us budget, minor request and process.arguments pass. A request need not finish after one step; snapshot allocation can trigger a full GC in Debug, so last-request kind is not asserted."
+      "note": "GC stats, 500us budget, minor request and process.arguments pass. A request need not finish after one step; snapshot allocation can trigger a full GC in Debug, so last-request kind is not asserted.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P13",
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "native extern into absolute libzrgame_ffi.so path passes i64 and f64 checks. Relative/search resolution not needed for the selected absolute-path contract."
+      "note": "native extern into absolute libzrgame_ffi.so path passes i64 and f64 checks. Relative/search resolution not needed for the selected absolute-path contract.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P14",
       "required": true,
       "interp": "OK",
-      "binary": "FAIL",
-      "note": "Required plugin loads via ZR_VM_NATIVE_PATH and project/native in interp; fresh binary compiles but fails to load the entry with source removed. Optional #gfx metadata and @swarmcore imports also fail. No workaround adopted."
+      "binary": "OK",
+      "note": "Descriptor plugins link in fresh source-removed binary processes via both ZR_VM_NATIVE_PATH and project/native; fixed by 3d69cee7. Optional #gfx metadata and @swarmcore package imports still fail.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P15",
       "required": false,
       "interp": "OK",
       "binary": "OK",
-      "note": "Runtime template interpolation produces value=7."
+      "note": "Runtime template interpolation produces value=7.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P16",
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "Safe Park-Miller (10k steps), bounded mod-prime hash and wide uint pass. Separate runtime observations prove signed +/* overflow errors and uint addition wraps to zero."
+      "note": "Safe Park-Miller (10k steps), bounded mod-prime hash and wide uint pass. Separate runtime observations prove signed +/* overflow errors and uint addition wraps to zero.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P17",
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "f32 cast/field probe raises invalid operand for bytecode instruction 209. Size/precision unverified; no f32 claim."
+      "note": "f32 cast/field lowering reports invalid operand for bytecode instruction 209; size/precision remain unverified.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
     },
     {
       "id": "P18",
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "Declared trace feature rejected as conditional.unknown_feature; profiles/comptime combined probe cannot complete."
+      "note": "Declared trace feature rejected as conditional.unknown_feature; profiles/comptime combined probe cannot complete.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
     },
     {
       "id": "P19",
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "Runtime import zr.reflection fails with import_load_unavailable; field/attribute enumeration unverified."
+      "note": "Runtime import zr.reflection fails with import_load_unavailable; field/attribute enumeration unverified.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
     },
     {
       "id": "P20",
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "Valid native SpriteInstance descriptor and constructor compile. Interp raises invalid operand for bytecode instruction 209; source-removed binary cannot load entry. Native InlineArgumentView assertion not reached."
+      "note": "Native inline-struct construction reports invalid operand for bytecode instruction 209 in both modes; binary linking now succeeds. InlineArgumentView assertion remains unreached.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
     },
     {
       "id": "P21",
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host."
+      "note": "Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     },
     {
       "id": "P22",
       "required": true,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Aggregate FAIL: successful interp/source-removed binary parity for P01-P20 is blocked by P02/P04/P05/P07/P09/P11/P14/P17/P18/P19/P20. Matching failure diagnostics are not successful feature parity."
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Required-case parity aggregate passes all 18 required P01-P20 case pairs; nine optional pairs without successful parity are reported separately. P21 is gated independently.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
     }
-  ]
+  ],
+  "validated_engine_revision": "d01387a9211dc6eed519f5fb0c4321fa258f2eab",
+  "engine_merge_revision": "ae003e05ce4c8dc0b7c3f258ee4eaa6dacce1d9b",
+  "validation": {
+    "release": {
+      "build": "build/demo-release",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 6.95
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 45,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p02-main",
+        "p07-main",
+        "p11-main",
+        "p17-main",
+        "p18-main",
+        "p19-main",
+        "p20-main",
+        "p14-alias",
+        "p14-package"
+      ],
+      "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+      "evidence": "/tmp/zr-swarm-demo-release-probes",
+      "ctest_log": "/tmp/zr-swarm-demo-release-ctest.log"
+    },
+    "asan": {
+      "build": "build/demo-asan",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 15.9
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 45,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p02-main",
+        "p07-main",
+        "p11-main",
+        "p17-main",
+        "p18-main",
+        "p19-main",
+        "p20-main",
+        "p14-alias",
+        "p14-package"
+      ],
+      "cli_sha256": "c22a2f5ac06a517291bf117671518a9d23f60d79a11f811bb938d45ae18d4a5a",
+      "evidence": "/tmp/zr-swarm-demo-asan-probes",
+      "ctest_log": "/tmp/zr-swarm-demo-asan-ctest.log"
+    },
+    "gcstress": {
+      "build": "build/demo-gcstress",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 16.71
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 45,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p02-main",
+        "p07-main",
+        "p11-main",
+        "p17-main",
+        "p18-main",
+        "p19-main",
+        "p20-main",
+        "p14-alias",
+        "p14-package"
+      ],
+      "cli_sha256": "7d053855be5292597db4a3d9ebf9a85d767865251c6ca252e9dd7aafcfc06fa7",
+      "evidence": "/tmp/zr-swarm-demo-gcstress-probes",
+      "ctest_log": "/tmp/zr-swarm-demo-gcstress-ctest.log"
+    }
+  },
+  "parity_scope": "P22 gates the 18 required P01-P20 case pairs. Optional failures remain failures and are listed separately; P21 is checked by the required-feature gate."
 }

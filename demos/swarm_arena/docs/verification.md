@@ -1,5 +1,49 @@
 # Verification evidence
 
+## GD-C1 engine integration (2026-10-20)
+
+Engine `d01387a9211dc6eed519f5fb0c4321fa258f2eab` was merged as `ae003e05ce4c8dc0b7c3f258ee4eaa6dacce1d9b` without resetting the demo
+branch. All three existing demo build trees were rebuilt, including CLI,
+embedded host, FFI library, and both descriptor plugins.
+
+| Configuration | Demo CTests | Required mode checks | Successful mode checks | P22 required pairs |
+| --- | --- | --- | --- | --- |
+| Release | 64/64 | 38/38 | 45/62 | 18/18 |
+| ASan/UBSan | 64/64 | 38/38 | 45/62 | 18/18 |
+| Forced full GC + ASan/UBSan | 64/64 | 38/38 | 45/62 | 18/18 |
+
+The 17 optional failing mode checks retain FAIL status and exact expected-error
+checks. P22 explicitly gates required P01–P20 cases and reports optional parity
+separately. The feature gate also checks P21 and the current result files.
+Demo CTest wall times are 6.95 s (Release), 15.90 s (ASan/UBSan), and 16.71 s
+(forced GC). There are no detector findings in these final runs. Historical results below
+describe earlier revisions and are superseded by this section.
+
+```sh
+export PATH="/workspace/zr_vm-perf/build/local-tools/usr/bin:/workspace/zr_vm-perf/build/tools/bin:$PATH"
+export LD_LIBRARY_PATH="/workspace/zr_vm-perf/build/local-tools/usr/lib/x86_64-linux-gnu"
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+cmake --build build/demo-release -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+cmake --build build/demo-asan -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+cmake --build build/demo-gcstress -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+ctest --test-dir build/demo-release -L demo -j4 --output-on-failure
+ctest --test-dir build/demo-asan -L demo -j4 --output-on-failure
+ctest --test-dir build/demo-gcstress -L demo -j4 --output-on-failure
+```
+
+The existing Debug flags remain `-fsanitize=address,undefined
+-fno-omit-frame-pointer`; the GC tree additionally defines
+`ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST`. New raw build/CTest logs are
+`/tmp/zr-swarm-demo-{release,asan,gcstress}-{build,ctest}.log`. Per-case commands,
+CLI hashes, source-removal state, execution markers, and raw logs are under
+`/tmp/zr-swarm-demo-{release,asan,gcstress}-probes/`.
+
+The engine acceptance note records full Release 499/499, full ASan/UBSan
+499/499, forced-GC 112/112 selected, all 12 swarm regressions per tree, and the
+Release performance gate 1/1. The demo-enabled trees retain 499 core tests when
+excluding the `demo` label and `performance_report`; this is an inventory check,
+not a second full core-suite run. GD-C2 and game work remain unstarted.
+
 ## GD-C0 (2026-10-18)
 
 - Worktree: `/workspace/zr_vm-demo`, branch `demo/swarm-arena-20261018`,

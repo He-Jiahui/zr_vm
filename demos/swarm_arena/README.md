@@ -1,55 +1,59 @@
 # Swarm Arena
 
-A deterministic arena-survival demo for zr_vm, based on Claude's design report
-`/workspace/zr_vm-review/game-demo-design-20261018.md` (2026-10-18).
+A deterministic arena-survival demo for zr_vm, based on the design report
+`/workspace/zr_vm-review/game-demo-design-20261018.md`.
 
-Status: **GD-C0 complete; GD-C1 blocked by required P01**. Struct-array element
-writeback fails in both interp and binary. Implementation stopped under John's
-required-probe rule; see [feature readiness](docs/feature-readiness.md) for the
-reproducers and all 22 statuses. Gameplay has not started.
-The intended v1 has DOD, OOP, Hybrid and C lanes, CLI and embedded-host drivers,
-null and software renderers, deterministic hashes and frame/GC metrics.
+Status: **GD-C0 complete; all required GD-C1 probes pass** in Release,
+ASan/UBSan, and forced-GC configurations, in interpreter and source-removed
+binary modes. Work stops at GD-C1 as requested. Gameplay and GD-C2 have not
+started. See [feature readiness](docs/feature-readiness.md) for every probe,
+remaining optional failures, and P22's required-case parity scope.
 
-Builds and generated evidence belong to this worktree. Existing perf and review
-worktrees are read-only. Demos are disabled by default and use CTest label `demo`.
+Demos are disabled by default and use CTest label `demo`. Run from the repository
+root using the existing tools and dependency paths:
 
 ```sh
-/workspace/zr_vm-perf/build/tools/bin/cmake -S . -B build/demo-release -G Ninja \
+export PATH="/workspace/zr_vm-perf/build/local-tools/usr/bin:/workspace/zr_vm-perf/build/tools/bin:$PATH"
+export LD_LIBRARY_PATH="/workspace/zr_vm-perf/build/local-tools/usr/lib/x86_64-linux-gnu"
+cmake -S . -B build/demo-release -G Ninja \
   -DCMAKE_MAKE_PROGRAM=/workspace/zr_vm-perf/build/tools/bin/ninja \
   -DCMAKE_BUILD_TYPE=Release -DZR_VM_BUILD_DEMOS=ON \
   -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_RUST_BINDING=OFF -DBUILD_TESTS=ON \
+  -DPython3_EXECUTABLE=/workspace/zr_vm-perf/build/tools/bin/python3 \
   -DZR_VM_LIBFFI_INCLUDE_DIR=/workspace/zr_vm-perf/build/local-tools/usr/include/x86_64-linux-gnu \
   -DZR_VM_LIBFFI_LIBRARY=/workspace/zr_vm-perf/build/local-tools/usr/lib/x86_64-linux-gnu/libffi.so
-/workspace/zr_vm-perf/build/tools/bin/cmake --build build/demo-release -j6 --target zr_vm_cli
-/workspace/zr_vm-perf/build/tools/bin/ctest --test-dir build/demo-release -L demo --output-on-failure
+cmake --build build/demo-release -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+ctest --test-dir build/demo-release -L demo -j4 --output-on-failure
 ```
 
-The demo CTests currently return nonzero: six reproduction/control checks pass
-and `demo_feature_gate` fails. Four reproduction tests use `WILL_FAIL`; their
-passing CTest status records the known errors, not feature readiness. Binary
-probes remove the copied source directory after compilation to prevent fallback.
-Release, ASan/UBSan and forced-GC trees all reproduce these outcomes; sanitizer
-checks report no errors with leak detection disabled. These probe checks do not
-provide the game's still-missing v1 smoke/performance coverage.
+Each configuration passes 64/64 demo CTests: 38/38 required mode checks,
+45/62 successful mode checks overall, P22, and the feature gate. Seventeen
+optional mode checks reproduce their exact recorded errors through `WILL_FAIL`;
+their feature status remains FAIL. Successful binary cases compile fresh artifacts and
+remove source directories before execution. Detector reports cannot pass as
+expected feature failures.
+
+Local build `probe-results` and CTest temporary directories are symlinked to
+`/tmp/zr-swarm-*` so raw logs stay outside the repository. Preserve those links
+when rerunning detector checks. [Verification](docs/verification.md) records
+the three build configurations, commands, and evidence paths.
 
 ```sh
-python3 -I demos/swarm_arena/tools/run_probe.py --cli build/demo-release/bin/zr_vm_cli \
-  --mode binary --variant main --out out/p01-binary
+python3 -I demos/swarm_arena/tools/run_probe.py --case p04-main \
+  --cli build/demo-release/bin/zr_vm_cli --mode binary \
+  --native-dir build/demo-release/demos/swarm_arena/native --out /tmp/zr-swarm-p04-binary
 python3 -I demos/swarm_arena/tools/run_probe.py --gate
 ```
 
-Both commands correctly exit 1 until P01 is resolved. To inspect the unchanged
-core test inventory, use `ctest --test-dir build/demo-release -N -LE demo
--E '^performance_report$'`: 425 tests. `ZR_VM_TEST_TIER=core` selects fixture tiers
-inside the engine runners; standalone demo tests need the explicit `-LE demo`.
+The required-feature gate succeeds. To inspect the core inventory, use
+`ctest --test-dir build/demo-release -N -LE demo -E '^performance_report$'`:
+499 tests. The full core suites were validated in the engine worktree; the demo
+integration reruns the dedicated demo suite. `ZR_VM_TEST_TIER=core` selects
+engine fixture tiers; use `-LE demo` to exclude standalone demo CTests.
 
-Run commands from the repository root. The CLI executable target is
-`zr_vm_cli_executable` (its output name is `zr_vm_cli`); Ninja also accepts the
-output-name target above. Native plugins will be built under
-`build/demo-release/demos/swarm_arena/native`, selected with `ZR_VM_NATIVE_PATH`.
-The manifest's `nativeProviders` field is not used by the runtime.
-
-See [canonical rules](docs/rules.md) and [feature readiness](docs/feature-readiness.md).
-The phase order is C0–C5, H1–H6, then M-tier as time permits. A required C1 failure
-stops implementation and is escalated with its reproducer; engine fixes require
-separate review. v1 completion and perf claims require the checks in report §8.5.
+Native plugins are built under `build/demo-release/demos/swarm_arena/native`,
+selected with `ZR_VM_NATIVE_PATH` or the tested project/native search path.
+The manifest's `nativeProviders` field is not used by the runtime. No fallback,
+game lane, renderer, gameplay hash, or performance baseline has been selected.
+See [canonical rules](docs/rules.md) for future phases; this work completes GD-C1
+only.
