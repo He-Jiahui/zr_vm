@@ -43,6 +43,28 @@ static TZrBool compiler_strings_equal_or_both_null(SZrString *left, SZrString *r
     return ZrCore_String_Equal(left, right);
 }
 
+/* Imported members retain their provider-local spelling. Compare resolved
+ * nominal prototypes so a module alias does not change a contract signature. */
+static TZrBool compiler_member_type_names_match(SZrCompilerState *cs,
+                                                SZrString *left,
+                                                SZrString *right) {
+    SZrTypePrototypeInfo *leftPrototype;
+    SZrTypePrototypeInfo *rightPrototype;
+    if (compiler_strings_equal_or_both_null(left, right)) {
+        return ZR_TRUE;
+    }
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    leftPrototype = find_compiler_type_prototype(cs, left);
+    rightPrototype = find_compiler_type_prototype(cs, right);
+    return leftPrototype != ZR_NULL && rightPrototype != ZR_NULL &&
+           (leftPrototype == rightPrototype ||
+            (ZrCore_String_Equal(leftPrototype->name, rightPrototype->name) &&
+             compiler_strings_equal_or_both_null(leftPrototype->importModuleName,
+                                                  rightPrototype->importModuleName)));
+}
+
 static TZrBool compiler_member_is_field_kind(const SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -72,7 +94,7 @@ static TZrBool compiler_member_supports_virtual_chain(const SZrTypeMemberInfo *m
            memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION;
 }
 
-static TZrBool compiler_parameter_types_match(const SZrArray *leftTypes, const SZrArray *rightTypes) {
+static TZrBool compiler_parameter_types_match(SZrCompilerState *cs, const SZrArray *leftTypes, const SZrArray *rightTypes) {
     if (leftTypes == ZR_NULL || rightTypes == ZR_NULL) {
         return leftTypes == rightTypes;
     }
@@ -100,7 +122,7 @@ static TZrBool compiler_parameter_types_match(const SZrArray *leftTypes, const S
             if (leftType->typeName != rightType->typeName) {
                 return ZR_FALSE;
             }
-        } else if (!ZrCore_String_Equal(leftType->typeName, rightType->typeName)) {
+        } else if (!compiler_member_type_names_match(cs, leftType->typeName, rightType->typeName)) {
             return ZR_FALSE;
         }
     }
@@ -108,7 +130,7 @@ static TZrBool compiler_parameter_types_match(const SZrArray *leftTypes, const S
     return ZR_TRUE;
 }
 
-static TZrBool compiler_member_signatures_match(const SZrTypeMemberInfo *baseMember,
+static TZrBool compiler_member_signatures_match(SZrCompilerState *cs, const SZrTypeMemberInfo *baseMember,
                                                 const SZrTypeMemberInfo *currentMember) {
     if (baseMember == ZR_NULL || currentMember == ZR_NULL ||
         baseMember->name == ZR_NULL || currentMember->name == ZR_NULL) {
@@ -149,12 +171,12 @@ static TZrBool compiler_member_signatures_match(const SZrTypeMemberInfo *baseMem
         }
     }
 
-    if (!compiler_strings_equal_or_both_null(baseMember->fieldTypeName, currentMember->fieldTypeName) ||
-        !compiler_strings_equal_or_both_null(baseMember->returnTypeName, currentMember->returnTypeName)) {
+    if (!compiler_member_type_names_match(cs, baseMember->fieldTypeName, currentMember->fieldTypeName) ||
+        !compiler_member_type_names_match(cs, baseMember->returnTypeName, currentMember->returnTypeName)) {
         return ZR_FALSE;
     }
 
-    return compiler_parameter_types_match(&baseMember->parameterTypes, &currentMember->parameterTypes);
+    return compiler_parameter_types_match(cs, &baseMember->parameterTypes, &currentMember->parameterTypes);
 }
 
 static const SZrTypeMemberInfo *compiler_class_find_matching_member_in_class_chain_recursive(
@@ -177,7 +199,7 @@ static const SZrTypeMemberInfo *compiler_class_find_matching_member_in_class_cha
     for (TZrSize index = 0; index < prototype->members.length; index++) {
         const SZrTypeMemberInfo *candidate =
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
-        if (compiler_member_signatures_match(candidate, memberInfo)) {
+        if (compiler_member_signatures_match(cs, candidate, memberInfo)) {
             return candidate;
         }
     }
@@ -204,7 +226,7 @@ static const SZrTypeMemberInfo *compiler_class_find_base_override_target(SZrComp
 }
 
 static const SZrTypeMemberInfo *compiler_class_find_declared_member_by_signature(
-        const SZrTypePrototypeInfo *info,
+        SZrCompilerState *cs, const SZrTypePrototypeInfo *info,
         const SZrTypeMemberInfo *requiredMember) {
     if (info == ZR_NULL || requiredMember == ZR_NULL) {
         return ZR_NULL;
@@ -213,7 +235,7 @@ static const SZrTypeMemberInfo *compiler_class_find_declared_member_by_signature
     for (TZrSize index = 0; index < info->members.length; index++) {
         const SZrTypeMemberInfo *declaredMember =
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&info->members, index);
-        if (compiler_member_signatures_match(requiredMember, declaredMember)) {
+        if (compiler_member_signatures_match(cs, requiredMember, declaredMember)) {
             return declaredMember;
         }
     }
@@ -360,7 +382,7 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
             ZrParser_Compiler_Error(cs, "override must target an inherited base member", location);
             return ZR_FALSE;
         }
-        if (!compiler_member_signatures_match(baseMember, memberInfo)) {
+        if (!compiler_member_signatures_match(cs, baseMember, memberInfo)) {
             ZrParser_Compiler_Error(cs, "override target signature does not match the inherited base member", location);
             return ZR_FALSE;
         }
@@ -492,7 +514,7 @@ static const SZrTypeMemberInfo *compiler_class_find_effective_requirement_implem
         return ZR_NULL;
     }
 
-    declaredMember = compiler_class_find_declared_member_by_signature(info, requiredMember);
+    declaredMember = compiler_class_find_declared_member_by_signature(cs, info, requiredMember);
     if (declaredMember != ZR_NULL) {
         if (outDeclaredInCurrentClass != ZR_NULL) {
             *outDeclaredInCurrentClass = ZR_TRUE;
@@ -555,7 +577,7 @@ static TZrBool compiler_class_member_satisfies_requirement(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    if (!compiler_member_signatures_match(requiredMember, implementation) ||
+    if (!compiler_member_signatures_match(cs, requiredMember, implementation) ||
         !compiler_receiver_effect_can_implement(
                 requiredMember->receiverEffect,
                 implementation->receiverEffect) ||
@@ -1370,6 +1392,44 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
             }
         }
+        }
+    }
+    /* Classes without an explicit constructor also need an executable path for
+     * their instance initializers. Compile it in the class declaration scope. */
+    TZrBool hasConstructor = ZR_FALSE;
+    TZrBool hasInstanceInitializer = ZR_FALSE;
+    for (TZrSize index = 0u; index < info.members.length; index++) {
+        const SZrTypeMemberInfo *member = ZrCore_Array_Get(&info.members, index);
+        hasConstructor |= compiler_member_is_constructor_meta_method(member);
+        if (member->declarationNode != ZR_NULL &&
+            member->declarationNode->type == ZR_AST_CLASS_FIELD && !member->isStatic &&
+            member->declarationNode->data.classField.init != ZR_NULL) {
+            hasInstanceInitializer = ZR_TRUE;
+        }
+    }
+    if (!hasConstructor && hasInstanceInitializer && !cs->hasError) {
+        SZrTypeMemberInfo constructor;
+        SZrTypeValue functionValue;
+        memset(&constructor, 0, sizeof(constructor));
+        constructor.memberType = ZR_AST_CLASS_META_FUNCTION;
+        constructor.declarationOrder = (TZrUInt32)info.members.length;
+        constructor.name = ZrCore_String_CreateFromNative(cs->state, "constructor");
+        constructor.ownerTypeName = typeName;
+        constructor.baseDefinitionOwnerTypeName = typeName;
+        constructor.baseDefinitionName = constructor.name;
+        constructor.metaType = ZR_META_CONSTRUCTOR;
+        constructor.isMetaMethod = ZR_TRUE;
+        constructor.accessModifier = ZR_ACCESS_PUBLIC;
+        constructor.virtualSlotIndex = compiler_member_virtual_slot_none();
+        constructor.interfaceContractSlot = compiler_member_interface_contract_slot_none();
+        constructor.propertyIdentity = compiler_member_property_identity_none();
+        constructor.compiledFunction = compile_class_member_function(
+                cs, node, ZR_NULL, ZR_TRUE, ZR_NULL, ZR_NULL);
+        if (constructor.compiledFunction != ZR_NULL && !cs->hasError) {
+            ZrCore_Value_InitAsRawObject(cs->state, &functionValue,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(constructor.compiledFunction));
+            constructor.functionConstantIndex = add_constant(cs, &functionValue);
+            ZrCore_Array_Push(cs->state, &info.members, &constructor);
         }
     }
     compiler_type_members_restore_declaration_order(&info.members);

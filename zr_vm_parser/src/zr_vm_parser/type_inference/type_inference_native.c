@@ -1254,6 +1254,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1540,6 +1541,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1601,6 +1603,7 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
                                     ? ZR_AST_STRUCT_META_FUNCTION
