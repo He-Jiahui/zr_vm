@@ -1,4 +1,6 @@
 struct Point { pub var x: int; }
-fn accept(value: object): bool { return value != null; }
-if (!accept(typeid(Point))) { throw "typeid argument result"; }
+fn accept(value: object): bool {
+    return value.__zr_isTypeId == true && value.__zr_canonicalTypeName == "Point";
+}
+if (!accept(typeid(Point))) { throw "typeid argument identity"; }
 return 42;
