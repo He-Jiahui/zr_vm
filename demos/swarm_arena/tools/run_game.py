@@ -45,7 +45,7 @@ def main():
     def execute(name, command):
         started = time.monotonic()
         try:
-            proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=300)
+            proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
             output = proc.stdout + proc.stderr
         except subprocess.TimeoutExpired as exc:
             (out / (name + ".log")).write_bytes((exc.stdout or b"") + (exc.stderr or b""))

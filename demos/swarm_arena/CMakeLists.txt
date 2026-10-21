@@ -113,7 +113,7 @@ if (BUILD_TESTS)
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_game.py"
         --bad --cli $<TARGET_FILE:zr_vm_cli_executable>
         --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
-    set_tests_properties(demo_bad_scenario PROPERTIES LABELS "demo;game" TIMEOUT 600)
+    set_tests_properties(demo_bad_scenario PROPERTIES LABELS "demo;game" TIMEOUT 1800)
     foreach(check smoke parity)
         if (check STREQUAL "smoke")
             set(host_test demo_host_smoke_dod)
@@ -125,7 +125,7 @@ if (BUILD_TESTS)
             --check ${check} --host $<TARGET_FILE:zr_swarm>
             --cli $<TARGET_FILE:zr_vm_cli_executable>
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
-        set_tests_properties(${host_test} PROPERTIES LABELS "demo;host;game" TIMEOUT 900)
+        set_tests_properties(${host_test} PROPERTIES LABELS "demo;host;game" TIMEOUT 1800)
     endforeach()
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")

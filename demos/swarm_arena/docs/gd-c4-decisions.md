@@ -98,6 +98,24 @@ the compiler publishes moved children before detaching the original storage.
 The test extends `interpreter_gc`, so the core CTest inventory stays 515.
 The engine correction is committed separately and merged into the demo.
 
+The recreated engine memory-error-detector and forced-GC test caches add
+`-shared-libsan` to their existing compiler flags and put the system compiler's
+runtime directory on `LD_LIBRARY_PATH`. This permits the generated C shared
+library tests to link with their existing strict link checks. It changes local
+test configuration only. The original temporary forced-GC selection file was
+unavailable; the 129-test selection is recreated from the documented test
+families, including all 28 `swarm_*` checks and `interpreter_gc`. Verification
+records its exact selection expression. Demo build flags retain the GD-C3
+settings, and their memory-error-detector/forced-GC CTests run sequentially with
+`-j1`.
+
+Cold source imports in the memory-error-detector tree exceeded the inherited
+300-second process allowance; a host failure-path run also exceeded the
+900-second CTest allowance. Game/host runners now allow 600 seconds per process,
+with 1800 seconds for the bad-input and host CTests. The full gate is rerun with
+the same input, hash, schema and error expectations. These are functional
+deadlines, with no performance acceptance.
+
 ## Measurement contract
 
 [perf-summary.schema.json](perf-summary.schema.json) makes the design §7.4
