@@ -5,7 +5,7 @@ Linux C11 targets, enabled by `ZR_VM_BUILD_DEMOS=ON`:
 | Target | Output / purpose |
 | --- | --- |
 | `zrgame_runtime` | `native/libzrgame_runtime.so`: clock, zones, sinks, batch and null backend |
-| `zrgame_modules` | Static descriptor archive exposing `ZrGame_HostModule()` and `ZrGame_GfxModule()` for later embedding |
+| `zrgame_modules` | Static descriptor archive exposing `ZrGame_HostModule()` and `ZrGame_GfxModule()` for `zr_swarm` |
 | `zrgame_plugins` | Builds `native/zrvm_native_zrgame_host.so` and `native/zrvm_native_zrgame_gfx.so` |
 | `zrgame_ffi` | Existing `native/libzrgame_ffi.so` |
 | `zrgame_native_tests` | Standalone C runner; eight tests, registered as `demo_native_runtime` |
@@ -14,7 +14,8 @@ Linux C11 targets, enabled by `ZR_VM_BUILD_DEMOS=ON`:
 `ZR_VM_NATIVE_PATH` to that directory when using the stock CLI. The plugins
 both depend on the same `libzrgame_runtime.so`, so runtime state is shared.
 Each exports `ZrVm_GetNativeModule_v1()` and returns the descriptor also
-available for static registration. No host executable is added in GD-C2.
+available for static registration. GD-C4 adds the `zr_swarm` host using those
+same descriptors; see [host decisions](gd-c4-decisions.md).
 
 Descriptors use plugin ABI 6, minimum runtime ABI 4, runtime provider phase,
 module version `1.0.0`, and contract names `zrgame.host:v1` / `zrgame.gfx:v1`.
@@ -33,7 +34,7 @@ for void functions, and declares `RESULT_ALWAYS_WRITTEN`.
 | `writeSink(h: int, line: string): void` | Write all string bytes, append one newline, flush |
 | `closeSink(h: int): void` | Close a handle; repeated/stale closes are harmless |
 | `rssKb(): int` | Current resident pages from `/proc/self/statm`, in KiB; 0 if unavailable |
-| `isHostDriven(): bool` | False in stock CLI mode |
+| `isHostDriven(): bool` | False in stock CLI mode; true while `zr_swarm` owns the VM |
 
 Zone samples are process-wide and cumulative. Recursive uses of the same ID
 are counted independently. Mismatched ends leave the stack intact. The C API
@@ -88,8 +89,8 @@ not affect the content hash. The smoke's one-sprite/HUD golden is `299488900`,
 identical across modes A, B and C and across interpreter/binary execution.
 
 The runtime is a singleton for one owner thread. Per-VM worlds, concurrency,
-game content, software/GL backends, kernels, images and the `zr_swarm` host are
-later milestones.
+software/GL backends, kernels and images remain later milestones. GD-C3 game
+content and the GD-C4 host use this same runtime contract.
 
 ## Validation
 

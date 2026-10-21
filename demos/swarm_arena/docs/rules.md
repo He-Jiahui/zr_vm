@@ -1,9 +1,10 @@
 # Canonical Swarm Arena rules
 
 Rules revision **gd-c3-smoke/1** implements the GD-C3 subset of design §§4,
-6.1/6.3/6.8. Only `smoke`, DOD, CLI drive, the null backend and bulk submission
-are implemented. GD-C4 and later milestones have not started. A rule or hash
-ordering change needs a written reason before regenerating the golden.
+6.1/6.3/6.8. GD-C4 adds host drive with the same rules. Only `smoke`, DOD,
+the null backend and bulk submission are implemented. GD-C5 and later
+milestones remain deferred. A rule or hash ordering change needs a written
+reason before regenerating the golden.
 
 ## Implemented smoke
 
@@ -77,13 +78,14 @@ and switching remain inside the events module; consumers use scalar fields.
 11. Particles: integrate and expire; cosmetic state is excluded from hashing.
 12. Pickups: **no-op in GD-C3**.
 13. Hash: mix counters; every 60 frames also mix full positional state.
-14. Render: cull sprites, submit mode C to `zrgame.gfx`, consume with null backend.
+14. Render: cull sprites, submit mode C to `zrgame.gfx`, consume with null backend
+    (script in CLI drive, C after `game.render` in host drive).
 
 Submission order is player, dense enemies, dense bullets, dense particles.
 Sizes are 20,20,4,3. Colors are respectively 1717987071, 4284901119,
 4294967295, 4290773247. Bounding squares intersect the camera view inclusively.
 The preallocated render buffer has 969 slots. One `submitSoA` slice submits all
-visible sprites per frame. No image, host executable or software renderer exists.
+visible sprites per frame. The host adds no simulation or renderer rules.
 
 ## Determinism and exact hash order
 
@@ -118,13 +120,15 @@ The default golden is **224663030**, checkpoint 60 is **227689432**, and the
 last null-render content hash is **183257039**. [hashes.json](../goldens/hashes.json)
 also records exact final counters. CTests require three repetitions per mode
 and enforce both the simulation hash and those counters/render hash. This is
-repeatability and interpreter/binary parity on this toolchain, not a claim of
-cross-platform libm identity or CLI/host/lane equivalence.
+repeatability and interpreter/binary parity on this toolchain. GD-C4 also
+checks CLI/host parity for the same smoke inputs. Cross-platform libm identity
+and equivalence between different lanes remain unmeasured.
 
 ## Deferred rules
 
 GD-C5 owns separation, Runner/Tank kinds, dodge input, radial fire, pierce,
 pickups/magnet, XP/upgrades, multi-wave/boss behavior and scenarios `arena_2k`,
-`swarm_10k`, `bullet_storm`, `particle_burst`, `sweep`. GD-C4 owns host drive,
-slack/manual GC policies and file metrics. Other lanes, native kernels,
+`swarm_10k`, `bullet_storm`, `particle_burst`, `sweep`. GD-C4 implements host
+drive, slack/manual GC policies and file metrics; see [host decisions](gd-c4-decisions.md).
+Other lanes, native kernels,
 software/GL rendering, screenshots and performance budgets remain later work.
