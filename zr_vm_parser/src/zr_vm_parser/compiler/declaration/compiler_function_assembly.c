@@ -161,7 +161,7 @@ static TZrBool compiler_copy_function_closures(SZrCompilerState *cs, SZrFunction
 
 /* The move has an exact source-to-child map, including functions with no
  * bytecode. Publish those aliases before the source buffers are detached. */
-void compiler_rebind_moved_child_constants(SZrFunction *function,
+void compiler_rebind_moved_child_constants(SZrState *state, SZrFunction *function,
                                            SZrFunction *const *sourceChildren) {
     for (TZrUInt32 constantIndex = 0; constantIndex < function->constantValueLength; ++constantIndex) {
         SZrTypeValue *constant = &function->constantValueList[constantIndex];
@@ -178,6 +178,10 @@ void compiler_rebind_moved_child_constants(SZrFunction *function,
         }
     }
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    /* Publish the new embedded addresses before detaching queued sources.
+     * Imports can compile modules during an incremental mark. */
+    for (TZrUInt32 i = 0; i < function->childFunctionLength; ++i)
+        ZrCore_RawObject_Barrier(state, &function->super, &function->childFunctionList[i].super);
 }
 
 static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction *function) {
@@ -206,7 +210,7 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
     compiler_relocate_copied_child_constants(function, sourceChildren);
-    compiler_rebind_moved_child_constants(function, sourceChildren);
+    compiler_rebind_moved_child_constants(cs->state, function, sourceChildren);
     /* Embedded children must retain the allocation that owns their storage. */
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
         if (sourceChildren[index] != ZR_NULL) {

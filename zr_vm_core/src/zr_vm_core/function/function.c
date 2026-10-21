@@ -1330,6 +1330,11 @@ static void function_reset_to_tombstone(SZrFunction *function) {
 
 void ZrCore_Function_CopyToInline(SZrFunction *destination, const SZrFunction *source) {
     *destination = *source;
+    /* The moved function has a new address and must be queued independently
+     * of a source that may already be gray in an active collection. */
+    destination->super.garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+    destination->super.garbageCollectMark.minorScanEpoch = 0u;
+    destination->super.gcList = ZR_NULL;
     /* Registry slots and reference counts belong to the original allocation. */
     destination->super.garbageCollectMark.temporaryRootRefCount = 0;
     destination->super.garbageCollectMark.nativeCallPinRefCount = 0;
