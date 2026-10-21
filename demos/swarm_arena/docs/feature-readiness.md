@@ -1,10 +1,35 @@
-# Feature readiness — GD-C2 native runtime and null backend
+# Feature readiness — GD-C3 DOD CLI smoke
+
+**GD-C3 is complete**: the DOD `smoke` scenario follows all 14 canonical
+phases, with Park–Miller RNG/mod-prime hashing in the local swarmcore package,
+a counting-sort grid, fixed-capacity SoA storage, queued hits/deaths, a bot,
+mode C null rendering, CLI validation, and timing/GC metrics. Its default
+120-frame/seed-12345 golden is **224663030**. Three repetitions in each of
+interpreter and source-removed binary modes match, with checkpoint 60
+**227689432** and last render content hash **183257039**.
+
+The four GD-C3 CTests add smoke in both modes, ten stock `zr.testing` unit
+tests in the requested three files, and six bad-input/expected-hash cases per
+mode that require OS exit 2, a clear diagnostic and `finally` cleanup.
+All three final demo gates pass **71/71**, with zero detector findings. The
+final gate table is in [verification.md](verification.md). The core
+inventory remains 515; all 67 previous demo CTests are retained (71 total).
+
+The [implemented rules](rules.md) deliberately defer full gameplay to GD-C5.
+The game uses a **v1 `$swarmcore` dependency with `import("&swarmcore")`**.
+Its concrete union ring, cross-module metadata/native-call workarounds and
+private testSource staging are recorded in [decisions](gd-c3-decisions.md).
+No engine code changed. P19 runtime reflection and P14's v2 package case keep
+their existing deferred statuses. GD-C4 host drive and all later milestones
+remain unstarted; no host parity, other-lane equivalence, software image or
+performance-budget acceptance is claimed.
+
+## Retained GD-C1/GD-C2 readiness
 
 All required GD-C1 probes and seven corrected optional paths pass in Release,
 ASan/UBSan, and forced full GC with ASan/UBSan after merging engine
 `ed10137f`. Only P19 runtime reflection and P14's package import
-remain deferred. **GD-C2 is complete**, including mode B `spriteInst`. Game
-features and GD-C3+ remain deferred.
+remain deferred. **GD-C2 is complete**, including mode B `spriteInst`.
 
 The engine [optional-probe acceptance note](../../../tests/acceptance/2026-10-20-swarm-optional-probes.md)
 records causes, semantics, regression coverage, and final engine gates. The
@@ -25,7 +50,7 @@ See [native-runtime.md](native-runtime.md) for capacities, APIs and semantics.
 | --- | --- | --- | --- |
 | Native C runner | 8/8 | 8/8 | 8/8 |
 | Native plugin smokes, interp + source-removed binary | 2/2 | 2/2 | 2/2 |
-| All demo CTests (64 retained GD-C1 + 3 GD-C2) | 67/67 | 67/67 | 67/67 |
+| Retained GD-C1/GD-C2 CTests | 67/67 | 67/67 | 67/67 |
 | Null content golden, each of modes A/B/C | 299488900 | 299488900 | 299488900 |
 | Detector findings | — | 0 | 0 |
 
@@ -48,7 +73,8 @@ Current commands and engine regression results are in [verification.md](verifica
 [cases.json](../probes/cases.json) defines 31 cases and 62 mode checks.
 [status.json](../probes/status.json) records results, fix commits, CLI and runtime
 library hashes, and optional P14 variant statuses. Every configuration passes **38/38 required
-checks**, **58/62 successful checks overall**, and **64/64 demo CTests**.
+checks** and **58/62 successful checks overall**; the GD-C1-only inventory
+contains 64 CTests.
 The four remaining failing mode checks reproduce the exact P19/package
 diagnostics. CTest uses WILL_FAIL only for those checks; feature status stays
 FAIL. Detector reports, unexpected failures, and timeouts cannot satisfy them.
@@ -127,8 +153,9 @@ The previously recorded distinct callable signatures in multiple Array
 specializations and higher-order native nominal calls remain outside these
 regressions.
 
-No game lane or fallback is selected. DOD/OOP/Hybrid/C simulations, gameplay
-hashes, lane equivalence, game determinism, CLI/host gameplay parity, W0–W14
-baselines, capacity@60Hz, software/GL rendering, screenshots, and frame/GC distributions
-remain future work. P21 is an API spike. GD-C3–C5, GD-H1–H6, and M-tier
-implementation have not started.
+DOD CLI smoke determinism and its package/event/native-call fallbacks are
+implemented in GD-C3. Host drive, full v1 rules and other scenarios,
+OOP/Hybrid/C simulations, lane equivalence, CLI/host gameplay parity, W0–W14
+baselines, capacity@60Hz, software/GL rendering and screenshots remain future
+work. Current smoke timing/GC summaries establish no performance budget.
+P21 remains an API spike. GD-C4–C5, GD-H1–H6 and M-tier work have not started.

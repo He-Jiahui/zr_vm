@@ -4,6 +4,13 @@ GD-C3 implements only the CLI DOD smoke. GD-C4 host work and GD-C5 full gameplay
 remain separate milestones. The exact smoke rules and hash ordering are in
 [rules.md](rules.md); validation evidence is in [verification.md](verification.md).
 
+Smoke starts at its 200-enemy cap so the grid and collision path do useful
+work immediately. Its minimal director spawns on a square perimeter using
+integer RNG values; this keeps trigonometry confined to boot-time bot tables.
+Two bullets per fixed frame provide the scenario's 120 bullets/second. These
+are explicit smoke rules, not a claim to implement GD-C5's full wave/weapons
+behavior.
+
 The demo uses a **v1 manifest**, a `$swarmcore` local dependency and
 `import("&swarmcore")`. This uses the production legacy package resolver, rather
 than the deferred v2 `@swarmcore` dependency/export integration. RNG and hash
@@ -59,8 +66,10 @@ budget; that measurement belongs to the later performance milestones.
 
 The unit staging runner omits CLI/render/metrics/director modules that the unit
 files do not use. Discovery otherwise recompiles those untested modules in
-every child. The initial detector gate exceeded the original process wrappers
-under concurrent work; final timeouts allow 180 seconds per smoke process,
+every child. Concurrent detector gates exceeded the process wrappers when
+multiple ASan CLI/discovery workers exhausted available instance memory. The
+final demo gates run one configuration at a time with CTest `-j1`. Final
+timeouts allow 180 seconds per smoke process,
 60 seconds per unit isolate and 480 seconds for the unit command. Bad-argument
 CTest coverage uses six representative OS-exit cases per mode. Additional
 Release exploratory checks exercised all 16 original argument cases successfully.

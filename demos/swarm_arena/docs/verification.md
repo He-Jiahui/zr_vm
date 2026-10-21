@@ -1,6 +1,91 @@
 # Verification evidence
 
-## GD-C3 rebuilt GD-C2 baseline (2026-10-20)
+## GD-C3 DOD CLI smoke (2026-10-21)
+
+**GD-C3 is complete.** Engine `ed10137f` is unchanged. Implementation commits
+are `437f2dbc`, `a3fce261`, and `745052a3`; this section records their final
+validation. The acceptance note is
+[2026-10-21-swarm-gd-c3-dod-smoke.md](../../../tests/acceptance/2026-10-21-swarm-gd-c3-dod-smoke.md).
+
+| Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
+| --- | --- | --- | --- |
+| All demo CTests (67 retained + 4 new) | 71/71 | 71/71 | 71/71 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Native plugin smokes | 2/2 | 2/2 | 2/2 |
+| Smoke repetitions, interp + source-removed binary | 3 + 3 | 3 + 3 | 3 + 3 |
+| ZR unit tests | 10/10 | 10/10 | 10/10 |
+| Bad-input/expected-hash checks | 12/12 | 12/12 | 12/12 |
+| Required GD-C1 mode checks | 38/38 | 38/38 | 38/38 |
+| All successful GD-C1 mode checks | 58/62 | 58/62 | 58/62 |
+| P22 required parity pairs | 18/18 | 18/18 | 18/18 |
+| Core CTest inventory | 515 unchanged | 515 unchanged | 515 unchanged |
+| Final demo wall seconds | 35.38 | 717.65 | 703.46 |
+| Detector findings | — | 0 | 0 |
+
+The golden is **224663030** for smoke/DOD/CLI, seed 12345, 120 frames. The
+frame-60 checkpoint is **227689432**, and last null-render hash is
+**183257039**. All 18 gated runs match those values and the committed final
+counters in [hashes.json](../goldens/hashes.json). Binary runners compile fresh,
+remove every `.zr` including swarmcore/test sources, then require binary
+execution markers from new CLI processes. Ten unit tests exercise known RNG
+and hash values, grid boundaries/stable scatter/swap removal, FIFO/wrap/GC union
+storage and stable-ID queued damage after a swap. Six invalid-input/hash cases
+per mode require exit 2, a clear diagnostic and exactly one finally marker.
+An additional 24 Release CLI checks pass, including boundary seeds/budgets,
+partial-run parity, help, duplicate arguments and unsupported settings.
+
+The unchanged engine Release full core suite passes **515/515** in 63.63 s.
+Full engine detector and forced-GC suites were not rerun because no engine
+code changed; their recreated trees build the CLI. Final demo core inventories
+match baseline names, commands and properties exactly. No engine-root test
+registration changed. The four optional GD-C1 failures remain expected P19
+reflection/v2-package failures, not successful feature execution.
+
+Use system CMake 3.31.6, Ninja 1.12.1, Clang/LLVM 19.1.7, Python 3.13.5 and
+libffi 3.4.8-2. Configure flags and rebuilt baseline details follow below.
+Current commands (run one configuration at a time to avoid ASan memory pressure):
+
+```sh
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+export TMPDIR=/tmp/zr-swarm-gd-c3-runtime
+mkdir -p "$TMPDIR"
+for configuration in release asan gcstress; do
+  cmake --build "build/demo-${configuration}" -j3 --target \
+    zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe \
+    zrgame_inline_probe zrgame_plugins zrgame_native_tests \
+    > "/tmp/zr-swarm-gd-c3-${configuration}-build-final.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" -L demo -j1 --output-on-failure \
+    > "/tmp/zr-swarm-gd-c3-${configuration}-demo-final.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" --show-only=json-v1 \
+    -LE demo -E '^performance_report$' \
+    > "/tmp/zr-swarm-gd-c3-demo-${configuration}-core-inventory-final.json"
+done
+# From /workspace/zr_vm-perf, using the same environment:
+ctest --test-dir build/r2-merged-release -j3 -E '^performance_report$' --output-on-failure \
+  > /tmp/zr-swarm-gd-c3-engine-release-core-baseline.log 2>&1
+```
+
+Every raw log/evidence project is under `/tmp/zr-swarm-gd-c3-*`.
+CTest Temporary and probe-results remain symlinked there; the native smoke
+respects TMPDIR. `final-evidence.json` in that prefix aggregates CLI/runtime
+SHA-256 values, exact runner commands, source-removal evidence and final result
+paths. `gate-serial-results.jsonl` records final CTest commands/timings;
+`rebuild-results.jsonl` records baseline configure/build commands/timings.
+Concurrent detector attempts exhausted available memory and hit wrapper
+limits; their failed attempts are preserved and excluded from final results.
+Final gates run sequentially; Debug/forced-GC smoke still exceeds the design's
+aspirational five-second detector target. There is no performance-budget or
+leak-clean shutdown claim (leak detection remains disabled).
+
+The implemented rules, hash ordering and scope are in [rules.md](rules.md).
+[Decisions](gd-c3-decisions.md) documents the working v1 `$swarmcore` /
+`import("&swarmcore")` package path, concrete union ring, metadata/native-call
+workarounds and testSource staging. P19, the v2 package alias, GD-C4 and all
+later milestones remain deferred. A pre-push fetch confirms `origin/main`
+`291be0cb` is already an ancestor of perf `ed10137f`, already merged into demo;
+no engine merge or push is needed.
+
+## GD-C3 rebuilt GD-C2 baseline (2026-10-21)
 
 Before adding GD-C3 code, the fresh instance rebuilt all three demo trees and
 recreated the engine Release, detector and forced-GC trees. System CMake 3.31.6,
@@ -135,9 +220,10 @@ and `-engine-rerun.log`. The forced-GC selection is the same 129 test names in
 `/tmp/zr-swarm-opt-gc-tests.txt` used by the previous engine acceptance note.
 This is not a full forced-GC language-suite run.
 
-Only GD-C2 is implemented. Game content, GD-C3+, `zr_swarm`, kernels/hybrid,
-software/GL rendering, images, performance matrices, runtime reflection and
-package import integration remain deferred.
+At this historical GD-C2 checkpoint, game content was unimplemented. The
+GD-C3 section above supersedes that status; `zr_swarm`, later lanes/renderers,
+performance matrices, runtime reflection and v2 package integration remain
+deferred.
 
 ## GD-C1 optional probes integration (2026-10-20)
 

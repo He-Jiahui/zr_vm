@@ -1,7 +1,7 @@
 {
   "schema": "zr-swarm-readiness/1",
-  "stopped_at": "GD-C2",
-  "reason": "GD-C2 native runtime and host/gfx modules pass with the null backend, including mode B spriteInst. All required GD-C1 probes remain green. P19 runtime reflection and the P14 package case remain deferred; GD-C3+, gameplay and the zr_swarm host are not implemented.",
+  "stopped_at": "GD-C3",
+  "reason": "GD-C3 complete: DOD CLI smoke golden 224663030 matches three repetitions in interpreter and source-removed binary modes in Release, ASan/UBSan and forced full GC. All 71 demo CTests pass per tree; required GD-C1 probes remain green. The game uses a v1 $swarmcore dependency with import(\"&swarmcore\"). P19 runtime reflection, P14 v2 package integration, GD-C4 and later milestones remain deferred.",
   "probes": [
     {
       "id": "P01",
@@ -629,5 +629,148 @@
     },
     "evidence_prefix": "/tmp/zr-swarm-gd-c2-",
     "bulk_read_preparation_revision": "0e3c7965"
+  },
+  "gd_c3": {
+    "status": "OK",
+    "date": "2026-10-21",
+    "scope": "DOD lane, CLI smoke only",
+    "implementation_commits": [
+      "437f2dbc",
+      "a3fce261",
+      "745052a3"
+    ],
+    "engine_revision": "ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3",
+    "engine_changed": false,
+    "engine_release_core": {
+      "passed": 515,
+      "total": 515,
+      "seconds": 63.63
+    },
+    "golden": 224663030,
+    "checkpoint_60": 227689432,
+    "render_hash": 183257039,
+    "seed": 12345,
+    "frames": 120,
+    "package_import": "&swarmcore",
+    "manifest_version": 1,
+    "toolchain": {
+      "cmake": "cmake version 3.31.6",
+      "ninja": "1.12.1",
+      "clang": "Debian clang version 19.1.7 (3+b1)",
+      "llvm": "19.1.7",
+      "python": "Python 3.13.5",
+      "libffi": "3.4.8-2"
+    },
+    "configurations": {
+      "release": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 35.38,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "b9729468c8d211a7b4fca31de85db9f335a3a8030fdfe84d85f36bb08425b4df",
+        "runtime_sha256": "6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-rwh66crg"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-qjoygpie"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-ygbeyfbx",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-hyhu6g69"
+      },
+      "asan": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 717.65,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "de0166e930c0db157ed54f91bd23b963cc593aca95cfa5361cc498f41d6faa3b",
+        "runtime_sha256": "3fcad3f4d4ab02f1ad1f8d84e7e40f26cd4db5145d90e541f5f4ce957ab5b38a",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-znxt2uwu"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-2tv2vurs"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-s0ug9hrm",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-6x78rucz"
+      },
+      "gcstress": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 703.46,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "078cfc0ae32d9c3bd130fb53b464af2b15818ba0affc6143d0653cbf7fdf2201",
+        "runtime_sha256": "9d6b9f822c7510baec4a565649ceaff1ff226b2c9678bfee7c7cb671452d881a",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-7kzui2g1"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-m5y7v8yg"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-3uzyggfr",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-ffp5vv1g"
+      }
+    },
+    "deferred": [
+      "P19 runtime reflection",
+      "P14 v2 @swarmcore dependency/export integration",
+      "GD-C4 host drive and all later milestones"
+    ],
+    "limitations": [
+      "Debug/forced-GC detector smoke exceeds the five-second design aspiration; no performance-budget claim",
+      "Leak detection disabled; no leak-clean shutdown claim"
+    ],
+    "evidence": "/tmp/zr-swarm-gd-c3-final-evidence.json"
   }
 }
