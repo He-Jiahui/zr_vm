@@ -18,7 +18,7 @@ DETECTOR_ERRORS = ("ERROR: AddressSanitizer", "AddressSanitizer:DEADLYSIGNAL", "
 def run(args):
     cli = Path(args.cli).resolve(strict=True)
     native = Path(args.native_dir).resolve(strict=True)
-    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c2-" + args.mode + "-", dir="/tmp"))
+    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c2-" + args.mode + "-", dir=tempfile.gettempdir()))
     project = out / "project"
     shutil.copytree(DEMO / "native/tests/smoke", project)
     source = project / "src/main.zr"

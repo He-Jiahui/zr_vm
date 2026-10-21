@@ -1,5 +1,38 @@
 # Verification evidence
 
+## GD-C3 rebuilt GD-C2 baseline (2026-10-20)
+
+Before adding GD-C3 code, the fresh instance rebuilt all three demo trees and
+recreated the engine Release, detector and forced-GC trees. System CMake 3.31.6,
+Ninja, Clang/LLVM 19.1.7 and system libffi replace the lost local tool directories.
+The baseline has no behavior or test-count differences: demo **67/67** in Release
+(7.43 s), ASan/UBSan (16.89 s), and forced full GC + ASan/UBSan (16.71 s).
+Each retains 38/38 required mode checks, 58/62 successful checks overall, P22
+18/18 required pairs, the eight native C tests, and both native plugin smokes.
+There are no detector findings. The four optional P19/v2-package failures remain
+expected failures, with unchanged feature status.
+
+The unchanged engine Release full core suite passes **515/515** (63.63 s), with
+`ZR_VM_TEST_TIER=core`, excluding `performance_report`. The other engine trees
+build the CLI; their full core suites are not rerun for demo-only work.
+Every demo tree retains the identical 515-test core inventory.
+
+Configure uses Ninja, `CMAKE_C_COMPILER=/usr/bin/clang-19`, tests and performance
+CTest registration ON, language server/extension and Rust binding OFF, and
+`ZR_VM_LIBFFI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu`,
+`ZR_VM_LIBFFI_LIBRARY=/usr/lib/x86_64-linux-gnu/libffi.so`.
+Release uses `CMAKE_BUILD_TYPE=Release`; detector trees use Debug with
+`CMAKE_C_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'`, adding
+`-DZR_DEBUG_GARBAGE_COLLECT_MEM_TEST` for forced GC. Demo trees additionally
+set `ZR_VM_BUILD_DEMOS=ON`. No lost tool directory is placed on PATH.
+
+Raw configure/build/test logs and inventories are under `/tmp/zr-swarm-gd-c3-*`;
+`/tmp/zr-swarm-gd-c3-rebuild-results.jsonl` records exact commands and timings.
+CTest Temporary and probe-results are symlinked there. The native smoke runner
+now respects `TMPDIR`; setting it to `/tmp/zr-swarm-gd-c3-runtime` also keeps its
+private logs under this task's evidence root. Detector runs retain
+`ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
+
 ## GD-C2 native runtime and null backend (2026-10-20)
 
 Implementation commits: `b2466ea3` (shared runtime and native C tests) and
