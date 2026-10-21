@@ -182,6 +182,50 @@ static void run_incremental_cycle(void) {
         ZrCore_GarbageCollector_GcStep(state);
     } while (collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
 }
+static void test_moving_a_gray_function_preserves_its_metadata(void) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    SZrGcRootLease ownerLease = {0}, sourceLease = {0};
+    SZrFunction *source = ZrCore_Function_New(state);
+    TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &source->super, &sourceLease));
+    source->localVariableList = ZrCore_Memory_RawMallocWithType(state->global,
+            sizeof(*source->localVariableList), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(source->localVariableList);
+    memset(source->localVariableList, 0, sizeof(*source->localVariableList));
+    source->localVariableLength = 1;
+    SZrString *name = ZrCore_String_CreateFromNative(state, "moved-function-local");
+    source->localVariableList[0].name = name;
+    SZrFunction *owner = ZrCore_Function_New(state);
+    TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &owner->super, &ownerLease));
+    collector->gcMode = ZR_GARBAGE_COLLECT_MODE_INCREMENTAL;
+    collector->gcPauseBudget = 1;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    unsigned steps = 0;
+    do {
+        TEST_ASSERT_TRUE(++steps < 10000u);
+        ZrCore_GarbageCollector_GcStep(state);
+    } while (!ZrCore_RawObject_IsMarkReferenced(&owner->super));
+    TEST_ASSERT_TRUE(ZrCore_RawObject_IsMarkWaitToScan(&source->super));
+    /* Module imports can move a still-gray compiler function into an owner
+     * that was already scanned. Its new address needs independent gray work. */
+    owner->childFunctionList = ZrCore_Memory_RawMallocWithType(state->global,
+            sizeof(*owner->childFunctionList), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(owner->childFunctionList);
+    owner->childFunctionLength = 1;
+    ZrCore_Function_CopyToInline(owner->childFunctionList, source);
+    ZrCore_Function_RebindConstantFunctionValuesToChildren(owner);
+    ZrCore_RawObject_Barrier(state, &owner->super, &owner->childFunctionList[0].super);
+    ZrCore_Function_DetachOwnedBuffers(source);
+    ZrCore_Gc_RootLeaseRelease(state->global, &sourceLease);
+    do {
+        TEST_ASSERT_TRUE(++steps < 10000u);
+        ZrCore_GarbageCollector_GcStep(state);
+    } while (collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
+    TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)name));
+    TEST_ASSERT_EQUAL_STRING("moved-function-local", ZrCore_String_GetNativeString(name));
+    run_incremental_cycle();
+    TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)name));
+    ZrCore_Gc_RootLeaseRelease(state->global, &ownerLease);
+}
 static void publish_child_graph(SZrObject *owner, SZrTypeValue *key,
                                  SZrObject **child, SZrObject **grandchild) {
     SZrTypeValue value;
@@ -443,5 +487,6 @@ int main(void) {
     RUN_TEST(test_dropped_interpreter_strings_are_collectable);
     RUN_TEST(test_intern_identity_survives_only_while_referenced);
     RUN_TEST(test_function_metadata_context_is_a_traced_and_forwarded_edge);
+    RUN_TEST(test_moving_a_gray_function_preserves_its_metadata);
     return UNITY_END();
 }

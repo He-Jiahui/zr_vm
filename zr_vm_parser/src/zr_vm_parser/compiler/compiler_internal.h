@@ -853,7 +853,7 @@ ZR_PARSER_API TZrBool compiler_assemble_final_function(SZrCompilerState *cs,
                                                        TZrBool copyCurrentFunctionBuffers,
                                                        TZrBool preserveExistingSignature);
 
-void compiler_rebind_moved_child_constants(SZrFunction *function,
+void compiler_rebind_moved_child_constants(SZrState *state, SZrFunction *function,
                                            SZrFunction *const *sourceChildren);
 
 TZrBool compiler_attach_detached_function_prototype_context(SZrState *state,

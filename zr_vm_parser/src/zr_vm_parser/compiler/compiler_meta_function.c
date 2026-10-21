@@ -346,7 +346,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
             }
             newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
             compiler_relocate_copied_child_constants(newFunc, srcArray);
-            compiler_rebind_moved_child_constants(newFunc, srcArray);
+            compiler_rebind_moved_child_constants(cs->state, newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
                     ZrCore_Function_DetachOwnedBuffers(srcArray[i]);
