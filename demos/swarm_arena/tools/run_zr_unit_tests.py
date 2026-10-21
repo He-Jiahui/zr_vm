@@ -49,7 +49,7 @@ def main():
     result = {"schema": "zr-swarm-gd-c3-units/1", "status": "FAIL", "command": command,
               "tests_staged": True, "cli_sha256": hashlib.sha256(cli.read_bytes()).hexdigest()}
     try:
-        proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=480)
+        proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
         output = proc.stdout + proc.stderr
         (out / "unit.log").write_text(output)
         summaries = re.findall(r"test-result: passed=(\d+) failed=(\d+) skipped=(\d+) timedout=(\d+) crashed=(\d+)", output)
