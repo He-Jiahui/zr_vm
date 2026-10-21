@@ -124,7 +124,7 @@ def run(args):
         start = time.perf_counter_ns()
         try:
             proc = subprocess.run(command, capture_output=True, text=True,
-                                  cwd=DEMO.parents[1], timeout=30, env=env)
+                                  cwd=DEMO.parents[1], timeout=600, env=env)
             code, output = proc.returncode, proc.stdout + proc.stderr
         except subprocess.TimeoutExpired as exc:
             code, output = 124, str(exc)

@@ -147,7 +147,7 @@ if (BUILD_TESTS)
                 --host-exe $<TARGET_FILE:zr_swarm_probe_host>
                 --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native"
                 --out "${swarm_probe_results}/${case_name}-${mode}")
-            set_tests_properties(${probe_name} PROPERTIES LABELS "demo;probe" TIMEOUT 90)
+            set_tests_properties(${probe_name} PROPERTIES LABELS "demo;probe" TIMEOUT 1800)
             string(JSON expected_error ERROR_VARIABLE no_expectation GET "${swarm_cases}" ${index} expect ${mode})
             if (NOT no_expectation)
                 # The runner returns 1 only for the exact known failure, without

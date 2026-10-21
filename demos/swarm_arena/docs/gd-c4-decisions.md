@@ -123,6 +123,11 @@ seconds, with an 1800-second runner allowance and 2400 seconds in CTest.
 The ten assertions and staged module graph remain the same. These limits
 bound functional completion and establish no performance budget.
 
+A retained forced-GC P01 binary probe exceeded its inherited startup deadline;
+its dependent parity and feature gates also failed. Probe processes now allow
+600 seconds and their CTests allow 1800 seconds. The affected binary probe,
+P22 and the feature gate are rerun together with their existing assertions.
+
 ## Measurement contract
 
 [perf-summary.schema.json](perf-summary.schema.json) makes the design §7.4
