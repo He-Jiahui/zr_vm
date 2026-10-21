@@ -1,0 +1,59 @@
+let container = import("zr.container");
+let world = import("lanes/dod/world");
+
+// 64x64 cells cover the 4096-unit arena. Boundary queries clamp to the arena.
+pub class Grid {
+    pub fn cell(x: float, y: float): int {
+        var cx = <int>(x / 64.0);
+        var cy = <int>(y / 64.0);
+        if (cx < 0) { cx = 0; }
+        if (cy < 0) { cy = 0; }
+        if (cx > 63) { cx = 63; }
+        if (cy > 63) { cy = 63; }
+        return cy * 64 + cx;
+    }
+    
+
+    pub var counts: zr.container.Array<int>;
+    pub var starts: zr.container.Array<int>;
+    pub var cursor: zr.container.Array<int>;
+    pub var slots: zr.container.Array<int>;
+    pub @constructor(capacity: int) {
+        this.counts = new container.Array<int>(); this.starts = new container.Array<int>();
+        this.cursor = new container.Array<int>(); this.slots = new container.Array<int>();
+        var i = 0;
+        while (i < 4096) {
+            this.counts.add(0); this.starts.add(0); this.cursor.add(0); i += 1;
+        }
+        this.starts.add(0);
+        i = 0;
+        while (i < capacity) { this.slots.add(0); i += 1; }
+    }
+    pub fn build(enemies: world.EnemySoA): void {
+        var counts = this.counts; var starts = this.starts;
+        var cursor = this.cursor; var slots = this.slots;
+        var px = enemies.px; var py = enemies.py;
+        var i = 0;
+        while (i < 4096) { counts[i] = 0; i += 1; }
+        i = 0;
+        while (i < enemies.count) {
+            var c = this.cell(px[i], py[i]);
+            counts[c] = counts[c] + 1;
+            i += 1;
+        }
+        var sum = 0;
+        i = 0;
+        while (i < 4096) {
+            starts[i] = sum; cursor[i] = sum;
+            sum += counts[i]; i += 1;
+        }
+        starts[4096] = sum;
+        i = 0;
+        while (i < enemies.count) {
+            var c = this.cell(px[i], py[i]);
+            slots[cursor[c]] = i;
+            cursor[c] = cursor[c] + 1;
+            i += 1;
+        }
+    }
+}

@@ -1,0 +1,102 @@
+let container = import("zr.container");
+let events = import("events");
+let exception = import("zr.system.exception");
+
+pub class EnemySoA {
+    pub var count: int = 0;
+    pub var cap: int;
+    pub var px: zr.container.Array<float>;
+    pub var py: zr.container.Array<float>;
+    pub var vx: zr.container.Array<float>;
+    pub var vy: zr.container.Array<float>;
+    pub var ax: zr.container.Array<float>;
+    pub var ay: zr.container.Array<float>;
+    pub var hp: zr.container.Array<int>;
+    pub var kind: zr.container.Array<int>;
+    pub var id: zr.container.Array<int>;
+    pub @constructor(cap: int) {
+        this.cap = cap;
+        this.px = new container.Array<float>(); this.py = new container.Array<float>();
+        this.vx = new container.Array<float>(); this.vy = new container.Array<float>();
+        this.ax = new container.Array<float>(); this.ay = new container.Array<float>();
+        this.hp = new container.Array<int>(); this.kind = new container.Array<int>();
+        this.id = new container.Array<int>();
+        var i = 0;
+        while (i < cap) {
+            this.px.add(0.0); this.py.add(0.0); this.vx.add(0.0); this.vy.add(0.0);
+            this.ax.add(0.0); this.ay.add(0.0);
+            this.hp.add(0); this.kind.add(0); this.id.add(0); i += 1;
+        }
+    }
+    pub fn add(x: float, y: float, id: int): void {
+        if (this.count == this.cap) { throw new exception.RuntimeError("enemy capacity exceeded"); }
+        var i = this.count;
+        this.px[i] = x; this.py[i] = y;
+        this.vx[i] = 0.0; this.vy[i] = 0.0;
+        this.ax[i] = 0.0; this.ay[i] = 0.0;
+        this.hp[i] = 2; this.kind[i] = 0; this.id[i] = id;
+        this.count += 1;
+    }
+    pub fn swapRemove(slot: int): void {
+        var last = this.count - 1;
+        this.px[slot] = this.px[last]; this.py[slot] = this.py[last];
+        this.vx[slot] = this.vx[last]; this.vy[slot] = this.vy[last];
+        this.ax[slot] = this.ax[last]; this.ay[slot] = this.ay[last];
+        this.hp[slot] = this.hp[last]; this.kind[slot] = this.kind[last];
+        this.id[slot] = this.id[last]; this.count = last;
+    }
+}
+
+// Bullets and cosmetic particles share a fixed-capacity numeric layout.
+pub class MovingSoA {
+    pub var count: int = 0;
+    pub var cap: int;
+    pub var px: zr.container.Array<float>;
+    pub var py: zr.container.Array<float>;
+    pub var vx: zr.container.Array<float>;
+    pub var vy: zr.container.Array<float>;
+    pub var life: zr.container.Array<int>;
+    pub @constructor(cap: int) {
+        this.cap = cap;
+        this.px = new container.Array<float>(); this.py = new container.Array<float>();
+        this.vx = new container.Array<float>(); this.vy = new container.Array<float>();
+        this.life = new container.Array<int>();
+        var i = 0;
+        while (i < cap) {
+            this.px.add(0.0); this.py.add(0.0); this.vx.add(0.0); this.vy.add(0.0);
+            this.life.add(0); i += 1;
+        }
+    }
+    pub fn add(x: float, y: float, vx: float, vy: float, life: int): bool {
+        if (this.count == this.cap) { return false; }
+        var i = this.count;
+        this.px[i] = x; this.py[i] = y;
+        this.vx[i] = vx; this.vy[i] = vy; this.life[i] = life;
+        this.count += 1;
+        return true;
+    }
+    pub fn swapRemove(slot: int): void {
+        var last = this.count - 1;
+        this.px[slot] = this.px[last]; this.py[slot] = this.py[last];
+        this.vx[slot] = this.vx[last]; this.vy[slot] = this.vy[last];
+        this.life[slot] = this.life[last]; this.count = last;
+    }
+}
+
+pub class World {
+    pub var enemies: EnemySoA;
+    pub var bullets: MovingSoA;
+    pub var particles: MovingSoA;
+    pub var queue: events.EventQueue;
+    pub var nextId: int = 1;
+    pub var shots: int = 0;
+    pub var hits: int = 0;
+    pub var kills: int = 0;
+    pub var score: int = 0;
+    pub @constructor() {
+        this.enemies = new EnemySoA(200);
+        this.bullets = new MovingSoA(512);
+        this.particles = new MovingSoA(256);
+        this.queue = new events.EventQueue(1024);
+    }
+}

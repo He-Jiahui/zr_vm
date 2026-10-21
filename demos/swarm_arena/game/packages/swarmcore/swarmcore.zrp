@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 1,
+  "name": "swarmcore",
+  "version": "0.1.0",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -1,0 +1,36 @@
+let testing = import("zr.testing");
+let system = import("zr.system");
+let events = import("events");
+
+#zr.testing.test#
+fn fifoCapacityWrapAndEmptyFill(): void {
+    var q = new events.EventQueue(2);
+    testing.assert(!q.pop() && q.tag == 0);
+    testing.assert(q.hit(7, 1) && q.hit(9, 1) && !q.hit(11, 1));
+    testing.assert(q.pop() && q.tag == 1 && q.id == 7 && q.damage == 1);
+    testing.assert(q.hit(11, 1) && q.count() == 2);
+    testing.assert(q.pop() && q.tag == 1 && q.id == 9);
+    testing.assert(q.pop() && q.tag == 1 && q.id == 11);
+    testing.assert(!q.pop() && q.tag == 0 && q.count() == 0);
+}
+
+#zr.testing.test#
+fn unionPayloadSurvivesGcAndWrap(): void {
+    var q = new events.EventQueue(2);
+    testing.assert(q.hit(17, 2));
+    testing.assert(q.killed(23, 1.25, -2.5));
+    system.gc.collect("full");
+    testing.assert(q.pop() && q.tag == 1 && q.id == 17 && q.damage == 2);
+    testing.assert(q.playerHit(3));
+    testing.assert(q.pop() && q.tag == 2 && q.id == 23 && q.x == 1.25 && q.y == -2.5);
+    testing.assert(q.pop() && q.tag == 3 && q.damage == 3);
+    testing.assert(!q.pop() && q.tag == 0);
+}
+
+#zr.testing.test#
+fn rejectsZeroCapacity(): void {
+    var caught = false;
+    try { var q = new events.EventQueue(0); }
+    catch (e) { caught = e.message == "queue capacity must be positive"; }
+    testing.assert(caught);
+}
