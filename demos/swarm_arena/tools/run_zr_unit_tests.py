@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--native-dir", required=True)
     args = parser.parse_args()
     cli = Path(args.cli).resolve(strict=True)
-    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c3-units-", dir="/tmp"))
+    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c3-units-", dir=tempfile.gettempdir()))
     project = out / "project"
     shutil.copytree(DEMO / "game", project, ignore=shutil.ignore_patterns("bin", "test-bin"))
     # testSource is not consumed by the CLI. Keep canonical tests outside src,

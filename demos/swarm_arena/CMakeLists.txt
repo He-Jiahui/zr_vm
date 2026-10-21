@@ -65,7 +65,7 @@ if (BUILD_TESTS)
             COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_game.py"
             --mode ${mode} --cli $<TARGET_FILE:zr_vm_cli_executable>
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
-        set_tests_properties(demo_cli_smoke_${mode}_dod PROPERTIES LABELS "demo;game" TIMEOUT 660)
+        set_tests_properties(demo_cli_smoke_${mode}_dod PROPERTIES LABELS "demo;game" TIMEOUT 960)
     endforeach()
     add_test(NAME demo_zr_unit_tests
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_zr_unit_tests.py"

@@ -34,7 +34,7 @@ def main():
     cli = Path(args.cli).resolve(strict=True)
     native = Path(args.native_dir).resolve(strict=True)
     kind = "bad" if args.bad else args.mode
-    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c3-game-" + kind + "-", dir="/tmp"))
+    out = Path(tempfile.mkdtemp(prefix="zr-swarm-gd-c3-game-" + kind + "-", dir=tempfile.gettempdir()))
     env = os.environ.copy()
     env["ZR_VM_NATIVE_PATH"] = str(native)
     steps = []
@@ -45,7 +45,7 @@ def main():
     def execute(name, command):
         started = time.monotonic()
         try:
-            proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=180)
+            proc = subprocess.run(command, env=env, capture_output=True, text=True, timeout=300)
             output = proc.stdout + proc.stderr
         except subprocess.TimeoutExpired as exc:
             (out / (name + ".log")).write_bytes((exc.stdout or b"") + (exc.stderr or b""))

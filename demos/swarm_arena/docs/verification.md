@@ -1,5 +1,52 @@
 # Verification evidence
 
+## GD-C4 prerequisite: restored GD-C3 baseline (2026-10-21)
+
+Before integrating the host or changing game sources, the existing system
+toolchain trees were rebuilt with their GD-C3 flags. Release passes **71/71**
+in 42.81 s and ASan/UBSan passes **71/71** in 830.42 s. Forced full GC has
+**71/71 successful final per-test outcomes**: its initial full run passed
+70/71 in 1004.75 s, and the interpreter smoke's isolated corrected rerun passed
+1/1 in 181.65 s. All three interpreter repetitions in that rerun match
+**224663030**. Native C tests remain 8/8, required probes 38/38 and P22 18/18
+in each configuration. There are no detector findings.
+
+The initial forced-GC smoke and a first isolated retry exhausted the old
+180-second per-process allowance on repetition two. Their failed logs are
+retained. The runner now allows 300 seconds per process, and the three-run
+smoke CTests allow 960 seconds overall. No state/counter/hash expectation or
+compiler flag changed. The retained game/unit runners also respect `TMPDIR`
+so every new raw runtime log stays under this task's `/tmp` prefix.
+
+The unchanged engine Release core suite passes **515/515** in 73.05 s after
+a quick rebuild. All three demo core inventories remain 515. No full engine
+detector/forced-GC rerun is required for this demo-only work.
+
+```sh
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+export TMPDIR=/tmp/zr-swarm-gd-c4-runtime
+mkdir -p "$TMPDIR"
+for configuration in release asan gcstress; do
+  cmake --build "build/demo-${configuration}" -j3 --target \
+    zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe \
+    zrgame_inline_probe zrgame_plugins zrgame_native_tests \
+    > "/tmp/zr-swarm-gd-c4-baseline-${configuration}-build.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" -L demo -j1 --output-on-failure \
+    > "/tmp/zr-swarm-gd-c4-baseline-${configuration}-demo.log" 2>&1
+done
+ctest --test-dir build/demo-gcstress -R '^demo_cli_smoke_interp_dod$' -j1 \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-baseline-gcstress-interp-300s.log 2>&1
+# From /workspace/zr_vm-perf, with the same environment:
+ctest --test-dir build/r2-merged-release -j3 -E '^performance_report$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-baseline-engine-release-core.log 2>&1
+```
+
+`/tmp/zr-swarm-gd-c4-baseline-results.jsonl` records the initial exact commands,
+exit codes and timings. The separate `gcstress-interp-rerun.log` is the failed
+180-second retry; `gcstress-interp-300s.log` is the successful corrected run.
+CTest Temporary/probe-results are symlinked under `/tmp/zr-swarm-gd-c4-*`.
+Leak detection stays disabled; these results make no leak-clean claim.
+
 ## GD-C3 DOD CLI smoke (2026-10-21)
 
 **GD-C3 is complete.** Engine `ed10137f` is unchanged. Implementation commits
