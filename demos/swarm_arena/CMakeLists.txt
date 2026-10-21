@@ -6,7 +6,7 @@ target_include_directories(zrgame_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/na
 set_target_properties(zrgame_runtime PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
 
-# Descriptors can also be registered by an embedding host in a later milestone.
+# The same descriptors serve zr_swarm's static registration and CLI plugins.
 add_library(zrgame_modules STATIC native/modules/mod_host.c native/modules/mod_gfx.c)
 target_include_directories(zrgame_modules PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/native/modules"
     "${PROJECT_SOURCE_DIR}/zr_vm_core/include" "${PROJECT_SOURCE_DIR}/zr_vm_common/include")
@@ -44,6 +44,43 @@ target_link_libraries(zr_swarm_probe_host PRIVATE zr_vm_parser_shared zr_vm_lib_
     zr_vm_lib_container_shared zr_vm_library_shared zr_vm_core_shared)
 set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# GD-C4 uses the core/library path and the same runtime provider list as the CLI.
+add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/platform_null.c)
+foreach(component zr_vm_common zr_vm_core zr_vm_library zr_vm_parser zr_vm_lib_math
+        zr_vm_lib_system zr_vm_lib_container zr_vm_lib_ffi)
+    target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/${component}/include")
+endforeach()
+target_link_libraries(zr_swarm PRIVATE zrgame_modules zr_vm_parser_shared
+    zr_vm_lib_math_shared zr_vm_lib_system_shared zr_vm_lib_container_shared
+    zr_vm_lib_ffi_shared zr_vm_library_shared zr_vm_core_shared)
+if (TARGET zr_vm_lib_network_shared)
+    target_link_libraries(zr_swarm PRIVATE zr_vm_lib_network_shared)
+    target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_lib_network/include")
+    target_compile_definitions(zr_swarm PRIVATE ZRG_HAS_NETWORK=1)
+endif()
+if (TARGET zr_vm_thread_shared)
+    target_link_libraries(zr_swarm PRIVATE zr_vm_thread_shared)
+    target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_lib_thread/include")
+    target_compile_definitions(zr_swarm PRIVATE ZRG_HAS_THREAD=1)
+endif()
+find_package(Git QUIET)
+set(swarm_git "unknown")
+if (GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}" OUTPUT_VARIABLE swarm_git
+        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" diff-index --quiet HEAD --
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}" RESULT_VARIABLE swarm_dirty)
+    if (swarm_dirty EQUAL 1)
+        string(APPEND swarm_git "-dirty")
+    endif()
+endif()
+target_compile_definitions(zr_swarm PRIVATE ZR_SWARM_GIT="${swarm_git}" ZR_SWARM_BUILD="$<CONFIG>")
+if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(zr_swarm PRIVATE -Wall -Wextra -Werror)
+endif()
+set_target_properties(zr_swarm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 if (BUILD_TESTS)
     if (NOT TARGET zr_vm_cli_executable)
         message(FATAL_ERROR "Swarm Arena feature probes require BUILD_CLI=ON")
@@ -77,6 +114,19 @@ if (BUILD_TESTS)
         --bad --cli $<TARGET_FILE:zr_vm_cli_executable>
         --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
     set_tests_properties(demo_bad_scenario PROPERTIES LABELS "demo;game" TIMEOUT 600)
+    foreach(check smoke parity)
+        if (check STREQUAL "smoke")
+            set(host_test demo_host_smoke_dod)
+        else()
+            set(host_test demo_cli_host_parity)
+        endif()
+        add_test(NAME ${host_test}
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_host.py"
+            --check ${check} --host $<TARGET_FILE:zr_swarm>
+            --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+        set_tests_properties(${host_test} PROPERTIES LABELS "demo;host;game" TIMEOUT 900)
+    endforeach()
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

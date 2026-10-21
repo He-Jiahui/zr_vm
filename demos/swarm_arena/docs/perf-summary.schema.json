@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "zr-swarm-perf/1 (design section 7.4)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "git", "build", "cpu", "load_avg", "scenario", "lane", "drive", "exec", "render", "submit", "gc_policy", "gc_budget_us", "seed", "frames", "warmup", "hash", "frame_us", "tick_us", "render_us", "backend_us", "zones_us", "gc", "alloc", "rss_kb_max", "budget_misses", "entities"],
+  "properties": {
+    "schema": {"const": "zr-swarm-perf/1"},
+    "git": {"type": "string"},
+    "build": {"type": "string"},
+    "cpu": {"type": ["integer", "null"], "minimum": 0},
+    "load_avg": {"type": ["array", "null"], "minItems": 3, "maxItems": 3, "items": {"type": "number", "minimum": 0}},
+    "scenario": {"type": "string"},
+    "lane": {"enum": ["dod", "oop", "hybrid", "pool", "c"]},
+    "drive": {"enum": ["host", "cli"]},
+    "exec": {"enum": ["interp", "binary"]},
+    "render": {"enum": ["null", "soft", "gl"]},
+    "submit": {"enum": ["percall", "struct", "bulk", "direct"]},
+    "gc_policy": {"enum": ["auto", "slack", "manual"]},
+    "gc_budget_us": {"$ref": "#/$defs/count"},
+    "seed": {"type": "integer", "minimum": 1, "maximum": 2147483646},
+    "frames": {"type": "integer", "minimum": 1},
+    "warmup": {"$ref": "#/$defs/count"},
+    "hash": {"type": "integer", "minimum": 0, "maximum": 1000000006},
+    "status": {"enum": ["ok", "hash_mismatch"]},
+    "frame_us": {"$ref": "#/$defs/timing"},
+    "tick_us": {"$ref": "#/$defs/timing"},
+    "render_us": {"$ref": "#/$defs/timing"},
+    "backend_us": {"$ref": "#/$defs/timing"},
+    "zones_us": {"type": "object", "additionalProperties": {"$ref": "#/$defs/zone"}},
+    "gc": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minor", "major", "full", "total_us", "max_pause_us", "p99_pause_us"],
+      "properties": {
+        "minor": {"$ref": "#/$defs/count"},
+        "major": {"$ref": "#/$defs/count"},
+        "full": {"$ref": "#/$defs/count"},
+        "total_us": {"$ref": "#/$defs/count"},
+        "max_pause_us": {"$ref": "#/$defs/count"},
+        "p99_pause_us": {"type": ["integer", "null"], "minimum": 0},
+        "pause_source": {"type": "string"},
+        "slack_steps": {"$ref": "#/$defs/count"},
+        "manual_requests": {"$ref": "#/$defs/count"},
+        "manual_interval_frames": {"type": "integer", "minimum": 1}
+      }
+    },
+    "alloc": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bytes_per_frame_p50", "bytes_per_frame_max", "exact"],
+      "properties": {
+        "bytes_per_frame_p50": {"$ref": "#/$defs/count"},
+        "bytes_per_frame_max": {"$ref": "#/$defs/count"},
+        "exact": {"type": "boolean"},
+        "source": {"type": "string"}
+      }
+    },
+    "rss_kb_max": {"$ref": "#/$defs/count"},
+    "budget_misses": {
+      "type": "object", "additionalProperties": false, "required": ["16667", "8333"],
+      "properties": {"16667": {"$ref": "#/$defs/count"}, "8333": {"$ref": "#/$defs/count"}}
+    },
+    "entities": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enemies_max", "bullets_max", "particles_max"],
+      "properties": {
+        "enemies_max": {"$ref": "#/$defs/count"},
+        "bullets_max": {"$ref": "#/$defs/count"},
+        "particles_max": {"$ref": "#/$defs/count"}
+      }
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["clock", "percentiles", "frame_scope", "entities_scope", "cpu_scope"],
+      "properties": {
+        "clock": {"type": "string"},
+        "percentiles": {"type": "string"},
+        "frame_scope": {"type": "string"},
+        "entities_scope": {"type": "string"},
+        "cpu_scope": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "zone": {
+      "type": "object", "additionalProperties": false, "required": ["p50", "p95"],
+      "properties": {
+        "p50": {"$ref": "#/$defs/count"},
+        "p95": {"$ref": "#/$defs/count"},
+        "p99": {"$ref": "#/$defs/count"},
+        "max": {"$ref": "#/$defs/count"},
+        "mean": {"type": "number", "minimum": 0}
+      }
+    },
+    "timing": {
+      "type": "object", "additionalProperties": false, "required": ["p50", "p95", "p99", "max"],
+      "properties": {
+        "p50": {"$ref": "#/$defs/count"},
+        "p95": {"$ref": "#/$defs/count"},
+        "p99": {"$ref": "#/$defs/count"},
+        "max": {"$ref": "#/$defs/count"},
+        "mean": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}
