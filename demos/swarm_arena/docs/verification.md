@@ -1,5 +1,124 @@
 # Verification evidence
 
+## GD-C4 host acceptance (2026-10-21)
+
+**GD-C4 is complete.** `zr_swarm` drives smoke/DOD through the shared game API,
+submits bulk frames to the null backend, steps the selected GC policy and writes
+schema-checked `frames.csv` / `summary.json`. Host and CLI drive match
+**224663030** for seed 12345 and 120 frames; checkpoint 60 stays **227689432**.
+The existing GD-C3 rules and golden remain unchanged.
+
+Engine correction `e1d3ab19` is merged as `268b6864`; shared game API
+`857e4456`, host/artifacts `d321437a`, usage docs `df8c84ba`, stress deadlines
+`944f81be`, unit discovery deadlines `58a5f1f7`, worker deadlines `d3e4c1e7`,
+and probe deadlines `c7c6b741` preserve baseline `9885cb15`. The [acceptance
+note](../../../tests/acceptance/2026-10-21-swarm-gd-c4-host.md) records scope
+and decisions.
+
+| Gate | Release | memory-error-detector | forced-GC |
+| --- | --- | --- | --- |
+| All demo CTests (71 retained + 2 host), final outcomes | 73/73 | 73/73 | 73/73 |
+| Host smoke and CLI/host parity | 2/2 | 2/2 | 2/2 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Required GD-C1 mode checks | 38/38 | 38/38 | 38/38 |
+| Successful GD-C1 mode checks | 58/62 | 58/62 | 58/62 |
+| P22 required parity pairs | 18/18 | 18/18 | 18/18 |
+| CLI smoke repetitions, interp + source-removed binary | 3 + 3 | 3 + 3 | 3 + 3 |
+| ZR unit tests | 10/10 | 10/10 | 10/10 |
+| Host failure cases | 25/25 | 25/25 | 25/25 |
+| Core CTest inventory | 515 unchanged | 515 unchanged | 515 unchanged |
+| Engine core CTests | 515/515 | 515/515 | 129/129 selected |
+| Detector findings | — | 0 | 0 |
+| Demo validation wall seconds | 87.87 | 3699.53 | 2654.13 |
+| Engine wall seconds | 70.93 | 1982.22 | 270.17 |
+
+The table reports the latest successful outcome for each of the 73 distinct
+tests. Release passes a complete 73-test run plus a final 1/1 unit recheck.
+Memory-error-detector combines a 72/73 full run, 3/3 focused unit/rebuilt-host
+checks and the final 1/1 unit recheck. Forced-GC combines a 69/73 full run with
+4/4 focused checks: units, P01 binary, P22 and the feature gate. Each wall time
+sums its recorded component runs. Host binaries were built at `58a5f1f7`; later runner deadline validation uses those same executables.
+
+The host smoke covers the golden, all three policies, exact manual cadence, zero
+slack budget, field-naming option errors, expected-hash mismatch artifacts,
+output failures and script-error cleanup in a reused output directory. Parity
+also checks one frame at the maximum supported seed. CLI binary smokes still
+compile fresh and remove copied sources. All existing native/probe gates remain.
+
+The independent Draft 2020-12 validator accepts all **21** retained final host
+summaries. The CTests also validate the schema, negative controls and CSV/JSON
+aggregates. Core inventories retain the same 515 names in all six trees. The
+129-test forced-GC engine selection is recreated from the documented families
+because the original temporary list was unavailable; it includes all 28
+`swarm_*` checks and `interpreter_gc`.
+
+Initial unchanged-engine host parity timed out, and two Release attempts passed
+72/73. The supplied moved-function regression fails before the focused
+correction and passes afterward. Initial engine memory-error-detector link
+configuration failures were resolved with the system compiler's shared runtime
+link mode. One initial forced-GC engine check returned a wrong value; its
+isolated retry and final 129-test serial run pass.
+
+Initial demo attempts timed out during startup, unit discovery, unit workers and
+the P01 binary probe. The probe timeout also failed its dependent gates. An
+exact binary-compilation replay passed in 24.93 seconds. Game/host processes
+allow 600 seconds; bad-input and host CTests allow 1800 seconds. Unit workers
+allow 600 seconds, their enclosing process 1800 seconds and CTest 2400 seconds.
+Probe processes allow 600 seconds and their CTests 1800 seconds. All final
+outcomes above pass; earlier failed/interrupted attempts remain separate.
+
+Use system CMake/Ninja/Clang 19 and the retained libffi paths. The engine's
+local memory-error-detector and forced-GC caches add `-shared-libsan`; demo
+caches keep the GD-C3 flags. The detector gates retain the existing policy: leak detection disabled. A pre-push fetch confirms `origin/main` at `291be0cba00f`,
+already included in the focused engine revision and its demo merge. Measurements
+remain descriptive: exact allocation counts, exact pause p99, per-system zones,
+performance targets and later renderers remain deferred.
+
+```sh
+export PATH="/usr/lib/llvm-19/bin:/usr/bin:/bin:$PATH"
+export LD_LIBRARY_PATH="/usr/lib/llvm-19/lib/clang/19/lib/linux:${LD_LIBRARY_PATH:-}"
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+export TMPDIR=/tmp/zr-swarm-gd-c4-runtime
+mkdir -p "$TMPDIR"
+# Keep CTest Temporary, generated test evidence, configure logs and probe results
+# symlinked under /tmp/zr-swarm-gd-c4-* before running these commands.
+for configuration in release asan gcstress; do
+  cmake --build "build/demo-${configuration}" -j1 --target \
+    zr_vm_cli_executable zr_swarm zr_swarm_probe_host zrgame_ffi zrgame_probe \
+    zrgame_inline_probe zrgame_plugins zrgame_native_tests \
+    > "/tmp/zr-swarm-gd-c4-${configuration}-build.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" -L demo -j1 --output-on-failure \
+    > "/tmp/zr-swarm-gd-c4-${configuration}-demo.log" 2>&1
+done
+# Focused validation after the unit deadline adjustment and host rebuild:
+ctest --test-dir build/demo-asan -j1 --no-tests=error \
+  -R '^(demo_zr_unit_tests|demo_host_smoke_dod|demo_cli_host_parity)$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-memory-focused.log 2>&1
+# Final unit-only checks in Release and the memory-error-detector build:
+for configuration in release asan; do
+  ctest --test-dir "build/demo-${configuration}" -j1 \
+    -R '^demo_zr_unit_tests$' --no-tests=error --output-on-failure \
+    > "/tmp/zr-swarm-gd-c4-${configuration}-units.log" 2>&1
+done
+# Focused forced-GC validation after the retained probe deadline adjustment:
+ctest --test-dir build/demo-gcstress -j1 --no-tests=error \
+  -R '^(demo_zr_unit_tests|demo_probe_p01_main_binary|demo_probe_p22|demo_feature_gate)$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-forced-focused.log 2>&1
+# From /workspace/zr_vm-perf, with all test targets built in the existing trees:
+ctest --test-dir build/r2-merged-release -j3 -E '^performance_report$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-engine-release-core.log 2>&1
+ctest --test-dir build/r2-asan -j2 -E '^performance_report$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-engine-memory-core.log 2>&1
+selection='^(aot_|artifact_|binary_loader|compiled_function|frame_slot|session_checkpoint|interpreter_|core_gc|execution_|typed_opcode|debug_|runtime_value|function_instruction|call_binding|close_|struct_array_|swarm_|macro_syntax_hygiene_field_results$)'
+ctest --test-dir build/r2-merged-gcstress -j1 -R "$selection" --no-tests=error \
+  --output-on-failure > /tmp/zr-swarm-gd-c4-engine-forced-core.log 2>&1
+```
+
+Exact commands, timings, runtime checksums and runner evidence paths are in
+`/tmp/zr-swarm-gd-c4-20261021/final-evidence.json` and `results.jsonl` in that
+same directory. Every raw log is under `/tmp/zr-swarm-gd-c4-*`. After each
+build, move any recreated `.ninja_log` under that prefix and restore its link.
+
 ## GD-C4 prerequisite: restored GD-C3 baseline (2026-10-21)
 
 Before integrating the host or changing game sources, the existing system

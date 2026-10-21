@@ -772,5 +772,295 @@
       "Leak detection disabled; no leak-clean shutdown claim"
     ],
     "evidence": "/tmp/zr-swarm-gd-c3-final-evidence.json"
+  },
+  "gd_c4": {
+    "date": "2026-10-21",
+    "status": "OK",
+    "engine_revision": "e1d3ab190bf986841561807adbbdfabaa5215ab6",
+    "engine_changed": true,
+    "engine_merge_revision": "268b6864",
+    "preserved_baseline": "9885cb15",
+    "implementation_commits": [
+      "857e4456",
+      "d321437a"
+    ],
+    "usage_commit": "df8c84ba",
+    "deadline_commit": "944f81be",
+    "unit_deadline_commit": "58a5f1f7",
+    "unit_worker_deadline_commit": "d3e4c1e7",
+    "probe_deadline_commit": "c7c6b741",
+    "host_build_revision": "58a5f1f7",
+    "golden": 224663030,
+    "checkpoint_60": 227689432,
+    "seed": 12345,
+    "frames": 120,
+    "engine": {
+      "release": {
+        "passed": 515,
+        "total": 515,
+        "seconds": 70.93,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-release-core.log"
+      },
+      "memory-error-detector": {
+        "passed": 515,
+        "total": 515,
+        "seconds": 1982.22,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-memory-shared-core.log"
+      },
+      "forced-GC": {
+        "passed": 129,
+        "total": 129,
+        "seconds": 270.17,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-forced-final-core.log"
+      }
+    },
+    "configurations": {
+      "release": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 87.87,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "8cef9675fdeeff8be4e0e20fd06fd0fa170c2ccb9673c7d98e33f46452816b4d",
+        "cli_sha256": "b9729468c8d211a7b4fca31de85db9f335a3a8030fdfe84d85f36bb08425b4df",
+        "runtime_sha256": "6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 73,
+        "full_run_total": 73,
+        "focused_passed": 1,
+        "focused_total": 1,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final4-release-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final5-release-units.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-dq0g5vjd"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-6timhkp0"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-py0wd0jg"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-d8kcnf_y"
+          }
+        }
+      },
+      "memory": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 3699.53,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "7d744841588e95ec8e2bedf924c79d26dfa9dde9f199f83ef9cf56ef197182f0",
+        "cli_sha256": "de0166e930c0db157ed54f91bd23b963cc593aca95cfa5361cc498f41d6faa3b",
+        "runtime_sha256": "3fcad3f4d4ab02f1ad1f8d84e7e40f26cd4db5145d90e541f5f4ce957ab5b38a",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 72,
+        "full_run_total": 73,
+        "focused_passed": 4,
+        "focused_total": 4,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final3-memory-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final4-memory-focused.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final5-memory-units.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-rc6fbre3"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-gy8g0p5u"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-8j7cxk2n"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-lq_a4t2t"
+          }
+        }
+      },
+      "forced": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 2654.13,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "aaba8fd254aa43595d862441453e125a8b354cb40d3db81d78c287ee871fea32",
+        "cli_sha256": "078cfc0ae32d9c3bd130fb53b464af2b15818ba0affc6143d0653cbf7fdf2201",
+        "runtime_sha256": "9d6b9f822c7510baec4a565649ceaff1ff226b2c9678bfee7c7cb671452d881a",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 69,
+        "full_run_total": 73,
+        "focused_passed": 4,
+        "focused_total": 4,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final4-forced-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final6-forced-focused.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-w_27tdau"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-z9_7_u60"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-lhr2g2aa"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-dlgl2fkv"
+          }
+        }
+      }
+    },
+    "raw_evidence_root": "/tmp/zr-swarm-gd-c4-20261021",
+    "retained_attempts": {
+      "final2-memory-demo": {
+        "exit": 8,
+        "seconds": 2254.8,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final2-memory-demo.log",
+        "passed": 72,
+        "total": 73
+      },
+      "final3-memory-demo": {
+        "exit": 8,
+        "seconds": 2213.95,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final3-memory-demo.log",
+        "passed": 72,
+        "total": 73
+      },
+      "final4-forced-demo": {
+        "exit": 8,
+        "seconds": 2538.17,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final4-forced-demo.log",
+        "passed": 69,
+        "total": 73
+      },
+      "compile-timeout-replay": {
+        "exit": 0,
+        "seconds": 24.93,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/compile-timeout-replay.log"
+      }
+    },
+    "upstream_main": "291be0cba00f185b4f7f70a7e3cf5c692905953d",
+    "schema_validation": {
+      "draft": "2020-12",
+      "passed": 21
+    },
+    "scope": "smoke/DOD host; null platform/backend; bulk; three GC policies; file metrics",
+    "forced_selection": {
+      "regex": "^(aot_|artifact_|binary_loader|compiled_function|frame_slot|session_checkpoint|interpreter_|core_gc|execution_|typed_opcode|debug_|runtime_value|function_instruction|call_binding|close_|struct_array_|swarm_|macro_syntax_hygiene_field_results$)",
+      "count": 129,
+      "original_temporary_list_available": false
+    },
+    "limitations": [
+      "leak detection disabled",
+      "Allocation deltas are estimates; exact pause p99 unavailable",
+      "No performance-budget acceptance"
+    ],
+    "deferred": [
+      "P19 runtime reflection",
+      "P14 v2 package dependency/export integration",
+      "GD-C5 and all later milestones"
+    ]
   }
 }

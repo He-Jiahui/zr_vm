@@ -11,6 +11,7 @@ See [rules](docs/rules.md), [composition workarounds](docs/gd-c3-decisions.md),
 [native APIs](docs/native-runtime.md), [readiness](docs/feature-readiness.md), and
 [verification](docs/verification.md). Host choices and measurement limits are
 in [GD-C4 decisions](docs/gd-c4-decisions.md); GD-C5 and later work remain deferred.
+The [acceptance note](../../tests/acceptance/2026-10-21-swarm-gd-c4-host.md) records the final gates.
 
 ## Build with the system toolchain
 
@@ -41,6 +42,8 @@ with CTest `-j1` to stay within available memory. Keep `Testing/Temporary`,
 symlinked under `/tmp/zr-swarm-gd-c4-*`. Set
 `TMPDIR=/tmp/zr-swarm-gd-c4-runtime` (create it first) for private runtime
 evidence. All raw build/test/runtime logs belong under that task prefix.
+Ninja can recreate `.ninja_log`; relocate it under the same prefix and restore
+its link after each build.
 
 ## Run and test
 

@@ -1,28 +1,43 @@
-# Feature readiness — GD-C3 DOD CLI smoke
+# Feature readiness — GD-C4 host
 
-**GD-C3 is complete**: the DOD `smoke` scenario follows all 14 canonical
-phases, with Park–Miller RNG/mod-prime hashing in the local swarmcore package,
-a counting-sort grid, fixed-capacity SoA storage, queued hits/deaths, a bot,
-mode C null rendering, CLI validation, and timing/GC metrics. Its default
-120-frame/seed-12345 golden is **224663030**. Three repetitions in each of
-interpreter and source-removed binary modes match, with checkpoint 60
-**227689432** and last render content hash **183257039**.
+**GD-C4 is complete.** `zr_swarm` implements the source-driven smoke/DOD host,
+null platform/backend, bulk submit, auto/slack/manual GC, bounded options and
+schema-checked CSV/JSON artifacts. CLI/host parity matches **224663030** for the
+120-frame, seed-12345 golden and also passes a boundary-seed partial run.
 
-The four GD-C3 CTests add smoke in both modes, ten stock `zr.testing` unit
-tests in the requested three files, and six bad-input/expected-hash cases per
-mode that require OS exit 2, a clear diagnostic and `finally` cleanup.
-All three final demo gates pass **71/71**, with zero detector findings. The
-final gate table is in [verification.md](verification.md). The core
-inventory remains 515; all 67 previous demo CTests are retained (71 total).
+| Gate | Release | memory-error-detector | forced-GC |
+| --- | --- | --- | --- |
+| All demo CTests (71 retained + 2 host), final outcomes | 73/73 | 73/73 | 73/73 |
+| Host smoke and CLI/host parity | 2/2 | 2/2 | 2/2 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Required GD-C1 mode checks | 38/38 | 38/38 | 38/38 |
+| Successful GD-C1 mode checks | 58/62 | 58/62 | 58/62 |
+| P22 required parity pairs | 18/18 | 18/18 | 18/18 |
+| CLI smoke repetitions, interp + source-removed binary | 3 + 3 | 3 + 3 | 3 + 3 |
+| ZR unit tests | 10/10 | 10/10 | 10/10 |
+| Host failure cases | 25/25 | 25/25 | 25/25 |
+| Core CTest inventory | 515 unchanged | 515 unchanged | 515 unchanged |
+| Engine core CTests | 515/515 | 515/515 | 129/129 selected |
+| Detector findings | — | 0 | 0 |
+| Demo validation wall seconds | 87.87 | 3699.53 | 2654.13 |
+| Engine wall seconds | 70.93 | 1982.22 | 270.17 |
 
-The [implemented rules](rules.md) deliberately defer full gameplay to GD-C5.
-The game uses a **v1 `$swarmcore` dependency with `import("&swarmcore")`**.
-Its concrete union ring, cross-module metadata/native-call workarounds and
-private testSource staging are recorded in [decisions](gd-c3-decisions.md).
-No engine code changed. P19 runtime reflection and P14's v2 package case keep
-their existing deferred statuses. GD-C4 host drive and all later milestones
-remain unstarted; no host parity, other-lane equivalence, software image or
-performance-budget acceptance is claimed.
+All 73 distinct tests have successful final outcomes. Release passes a complete
+73-test run and a final unit recheck. Memory-error-detector combines a 72/73
+full run, 3/3 focused checks and a final unit recheck. Forced-GC combines a
+69/73 full run with 4/4 focused unit/probe/dependent-gate checks. The final unit
+rechecks use the adjusted worker deadlines and pass all ten assertions.
+
+The shared Session/Buffer split preserves GD-C3 arithmetic, dense order and
+hashing. The focused engine import correction is `e1d3ab19`; its regression
+fails before the correction and passes afterward without adding a CTest. See
+[host decisions](gd-c4-decisions.md), [rules](rules.md), and
+[verification](verification.md) for commands, timings, artifact precision and
+retained initial attempts. The detector gates retain the existing policy: leak detection disabled.
+
+P19 runtime reflection and P14's v2 package alias remain deferred. The game
+continues to use v1 `$swarmcore` / `import("&swarmcore")`. GD-C5, all H/M work,
+other lanes/scenarios and software/GL rendering remain deferred.
 
 ## Retained GD-C1/GD-C2 readiness
 
@@ -154,8 +169,8 @@ specializations and higher-order native nominal calls remain outside these
 regressions.
 
 DOD CLI smoke determinism and its package/event/native-call fallbacks are
-implemented in GD-C3. Host drive, full v1 rules and other scenarios,
-OOP/Hybrid/C simulations, lane equivalence, CLI/host gameplay parity, W0–W14
-baselines, capacity@60Hz, software/GL rendering and screenshots remain future
-work. Current smoke timing/GC summaries establish no performance budget.
-P21 remains an API spike. GD-C4–C5, GD-H1–H6 and M-tier work have not started.
+implemented in GD-C3; GD-C4 adds host drive and CLI/host gameplay parity.
+Full v1 rules, other scenarios, OOP/Hybrid/C simulations, lane equivalence,
+W0–W14 baselines, capacity@60Hz, software/GL rendering and screenshots remain
+future work. Current smoke timing/GC summaries establish no performance budget.
+P21 remains an API spike. GD-C5, GD-H1–H6 and M-tier work remain deferred.
