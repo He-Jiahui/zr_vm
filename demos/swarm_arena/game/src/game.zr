@@ -1,0 +1,87 @@
+let config = import("config");
+let core = import("&swarmcore");
+let events = import("events");
+let director = import("director");
+let player = import("player");
+let world = import("lanes/dod/world");
+let grid = import("lanes/dod/grid");
+let systems = import("lanes/dod/systems");
+let render = import("render");
+let exception = import("zr.system.exception");
+
+// No top-level simulation state or work. The CLI owns this session; a host API
+// and its lifecycle remain GD-C4 work.
+pub class Session {
+    pri var booted: bool = false;
+    pri var cfg: config.Config;
+    pri var rng: core.Rng;
+    pri var wave: director.Director;
+    pri var p: player.Bot;
+    pri var w: world.World;
+    pri var bullets: world.MovingSoA;
+    pri var particles: world.MovingSoA;
+    pri var queue: events.EventQueue;
+    pri var g: grid.Grid;
+    pri var batch: render.Buffer;
+    pri var framesDone: int = 0;
+    pri var hash: int = 1;
+    pri var hash60: int = 0;
+    pri var sprites: int = 0;
+    pub @constructor() { }
+    pub fn boot(cfg: config.Config): void {
+        if (this.booted) { throw new exception.RuntimeError("session already booted"); }
+        this.cfg = cfg; this.rng = new core.Rng(cfg.seed);
+        this.wave = new director.Director(); this.p = new player.Bot(cfg.frames);
+        this.w = new world.World(200); this.bullets = new world.MovingSoA(512);
+        this.particles = new world.MovingSoA(256); this.queue = new events.EventQueue(1024);
+        this.g = new grid.Grid(200); this.batch = new render.Buffer();
+        this.framesDone = 0; this.hash = 1; this.hash60 = 0; this.booted = true;
+    }
+    pub fn tick(frame: int): int {
+        let systems = import("lanes/dod/systems");
+        if (!this.booted || frame != this.framesDone || frame >= this.cfg.frames) {
+            throw new exception.RuntimeError("tick requires the next configured frame");
+        }
+        {
+            this.p.input(frame);                                                   // 1 input
+            this.wave.advance(frame, this.w.count, this.rng, this.p.x, this.p.y);  // 2 director
+            var i = 0;
+            while (i < this.wave.pending) {                                       // 3 spawn
+                this.w.add(this.wave.xs[i], this.wave.ys[i], this.w.nextId);
+                this.w.nextId += 1; i += 1;
+            }
+            this.g.build(this.w);                                                 // 4 grid
+            systems.steer(this.w, this.p);                                        // 5 steer
+            systems.integrate(this.w);                                           // 6 integrate
+            systems.fire(this.w, this.bullets, this.p);                            // 7 fire
+            systems.move(this.bullets);                                           // 8 bullets
+            systems.collide(this.w, this.bullets, this.g, this.queue, this.p, frame); // 9 collide
+            systems.drain(this.w, this.particles, this.queue, this.p);             // 10 events
+            systems.move(this.particles);                                         // 11 particles
+            // 12 pickups: disabled in the GD-C3 rules subset.
+            this.hash = systems.cheapHash(this.w, this.bullets, this.p, this.rng.state, frame + 1, this.hash);
+            if ((frame + 1) % 60 == 0) {                                         // 13 hash
+                this.hash = systems.positionsHash(this.w, this.bullets, this.p, this.hash);
+            }
+            if (frame == 59) { this.hash60 = this.hash; }
+            this.framesDone += 1;
+        }
+        return this.hash;
+    }
+    pub fn render(frame: int): int {                                              // 14 render
+        let renderer = import("render");
+        this.sprites = renderer.submit(this.w, this.bullets, this.particles, this.p, this.batch, frame);
+        return this.sprites;
+    }
+    pub fn fullHash(): int { let systems = import("lanes/dod/systems"); return systems.positionsHash(this.w, this.bullets, this.p, this.hash); }
+    pub fn summary(hash: int): string {
+        return "SWARM_OK scenario=smoke lane=dod mode=cli frames=" + <string>this.framesDone
+            + " hash=" + <string>hash + " seed=" + <string>this.cfg.seed + " hash60=" + <string>this.hash60
+            + " enemies=" + <string>this.w.count + " bullets=" + <string>this.bullets.count
+            + " particles=" + <string>this.particles.count + " shots=" + <string>this.w.shots
+            + " hits=" + <string>this.w.hits + " kills=" + <string>this.w.kills + " score=" + <string>this.w.score
+            + " player_hp=" + <string>this.p.hp + " sprites=" + <string>this.sprites
+            + " render_hash=" + <string>this.batch.lastHash;
+    }
+    pub fn shutdown(): void { this.booted = false; }
+}

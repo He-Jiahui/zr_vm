@@ -1,0 +1,165 @@
+let world = import("lanes/dod/world");
+let grid = import("lanes/dod/grid");
+let player = import("player");
+let events = import("events");
+let math = import("zr.math");
+let core = import("&swarmcore");
+let exception = import("zr.system.exception");
+
+pub fn steer(w: world.World, p: player.Bot): void {
+    var px = w.px; var py = w.py; var vx = w.vx; var vy = w.vy;
+    var ax = w.ax; var ay = w.ay;
+    var i = 0;
+    while (i < w.count) {
+        var dx = p.x - px[i]; var dy = p.y - py[i];
+        var d = math.sqrt(dx * dx + dy * dy);
+        var tx = 0.0; var ty = 0.0;
+        if (d > 0.000001) { tx = dx / d * 72.0; ty = dy / d * 72.0; }
+        ax[i] = (tx - vx[i]) * 6.0; ay[i] = (ty - vy[i]) * 6.0;
+        i += 1;
+    }
+}
+
+pub fn integrate(w: world.World): void {
+    var px = w.px; var py = w.py; var vx = w.vx; var vy = w.vy;
+    var ax = w.ax; var ay = w.ay; var dt = 1.0 / 60.0;
+    var i = 0;
+    while (i < w.count) {
+        var x = vx[i] + ax[i] * dt; var y = vy[i] + ay[i] * dt;
+        var speed = math.sqrt(x * x + y * y);
+        if (speed > 72.0) { x = x / speed * 72.0; y = y / speed * 72.0; }
+        vx[i] = x; vy[i] = y;
+        var nx = px[i] + x * dt; var ny = py[i] + y * dt;
+        if (nx < 0.0) { nx = 0.0; } if (nx > 4095.0) { nx = 4095.0; }
+        if (ny < 0.0) { ny = 0.0; } if (ny > 4095.0) { ny = 4095.0; }
+        px[i] = nx; py[i] = ny; i += 1;
+    }
+}
+
+pub fn fire(w: world.World, b: world.MovingSoA, p: player.Bot): void {
+    var nearest = -1; var best = 100000000.0;
+    var px = w.px; var py = w.py;
+    var i = 0;
+    while (i < w.count) {
+        var dx = px[i] - p.x; var dy = py[i] - p.y;
+        var d2 = dx * dx + dy * dy;
+        if (d2 < best) { best = d2; nearest = i; }
+        i += 1;
+    }
+    if (nearest < 0) { return; }
+    var dx = px[nearest] - p.x; var dy = py[nearest] - p.y;
+    var distance = math.sqrt(dx * dx + dy * dy);
+    var vx = 480.0; var vy = 0.0;
+    if (distance > 0.000001) { vx = dx / distance * 480.0; vy = dy / distance * 480.0; }
+    i = 0;
+    while (i < 2) {
+        if (!b.add(p.x, p.y, vx, vy, 90)) { throw new exception.RuntimeError("bullet capacity exceeded"); }
+        w.shots += 1; i += 1;
+    }
+}
+
+pub fn move(pool: world.MovingSoA): void {
+    var px = pool.px; var py = pool.py; var vx = pool.vx; var vy = pool.vy;
+    var life = pool.life; var dt = 1.0 / 60.0;
+    var i = 0;
+    while (i < pool.count) {
+        px[i] = px[i] + vx[i] * dt; py[i] = py[i] + vy[i] * dt;
+        life[i] = life[i] - 1;
+        if (life[i] <= 0) { pool.swapRemove(i); }
+        else { i += 1; }
+    }
+}
+
+pub fn collide(w: world.World, b: world.MovingSoA, g: grid.Grid,
+               q: events.EventQueue, p: player.Bot, frame: int): void {
+    var ex = w.px; var ey = w.py; var ids = w.id;
+    var bx = b.px; var by = b.py; var starts = g.starts; var slots = g.slots;
+    var i = 0;
+    while (i < b.count) {
+        var c = g.cell(bx[i], by[i]); var cx = c % 64; var cy = c / 64;
+        var target = -1;
+        var row = cy - 1;
+        while (row <= cy + 1 && target < 0) {
+            var col = cx - 1;
+            while (col <= cx + 1 && target < 0) {
+                if (row >= 0 && row < 64 && col >= 0 && col < 64) {
+                    var cell = row * 64 + col; var j = starts[cell]; var end = starts[cell + 1];
+                    while (j < end && target < 0) {
+                        var slot = slots[j]; var dx = ex[slot] - bx[i]; var dy = ey[slot] - by[i];
+                        if (dx * dx + dy * dy <= 144.0) { target = slot; }
+                        j += 1;
+                    }
+                }
+                col += 1;
+            }
+            row += 1;
+        }
+        if (target >= 0) {
+            if (!q.hit(ids[target], 1)) { throw new exception.RuntimeError("event queue capacity exceeded"); }
+            b.swapRemove(i);
+        } else { i += 1; }
+    }
+    i = 0;
+    while (i < w.count && frame >= p.immuneUntil) {
+        var dx = ex[i] - p.x; var dy = ey[i] - p.y;
+        if (dx * dx + dy * dy <= 400.0) {
+            if (!q.playerHit(1)) { throw new exception.RuntimeError("event queue capacity exceeded"); }
+            p.immuneUntil = frame + 30;
+        }
+        i += 1;
+    }
+}
+
+pub fn drain(w: world.World, particles: world.MovingSoA, q: events.EventQueue, p: player.Bot): void {
+    while (q.pop()) {
+        if (q.tag == 1) {
+            var slot = -1; var i = 0;
+            while (i < w.count && slot < 0) { if (w.id[i] == q.id) { slot = i; } i += 1; }
+            // Earlier queued hits may already have removed this stable ID.
+            if (slot >= 0) {
+                w.hp[slot] = w.hp[slot] - q.damage; w.hits += 1;
+                if (w.hp[slot] <= 0) {
+                    if (!q.killed(w.id[slot], w.px[slot], w.py[slot])) {
+                        throw new exception.RuntimeError("event queue capacity exceeded");
+                    }
+                    w.swapRemove(slot);
+                }
+            }
+        } else if (q.tag == 2) {
+            w.kills += 1; w.score += 10;
+            var i = 0;
+            while (i < 4) {
+                var vx = 0.0; var vy = 0.0;
+                if (i == 0) { vx = 24.0; } else if (i == 1) { vx = -24.0; }
+                else if (i == 2) { vy = 24.0; } else { vy = -24.0; }
+                // Cosmetic overflow is allowed to drop a particle, never RNG.
+                particles.add(q.x, q.y, vx, vy, 24); i += 1;
+            }
+        } else if (q.tag == 3) { p.hp -= q.damage; }
+    }
+}
+
+pub fn cheapHash(w: world.World, b: world.MovingSoA, p: player.Bot, rng: int, frame: int, hash: int): int {
+    var h = core.mix(hash, frame); h = core.mix(h, rng); h = core.mix(h, w.nextId);
+    h = core.mix(h, w.count); h = core.mix(h, b.count); h = core.mix(h, p.hp);
+    h = core.mix(h, p.immuneUntil); h = core.mix(h, w.shots); h = core.mix(h, w.hits);
+    h = core.mix(h, w.kills); return core.mix(h, w.score);
+}
+
+pub fn positionsHash(w: world.World, b: world.MovingSoA, p: player.Bot, hash: int): int {
+    var h = core.mixPosition(hash, p.x); h = core.mixPosition(h, p.y);
+    var i = 0;
+    while (i < w.count) {
+        h = core.mix(h, w.id[i]); h = core.mix(h, w.kind[i]); h = core.mix(h, w.hp[i]);
+        h = core.mixPosition(h, w.px[i]); h = core.mixPosition(h, w.py[i]);
+        h = core.mixPosition(h, w.vx[i]); h = core.mixPosition(h, w.vy[i]);
+        h = core.mixPosition(h, w.ax[i]); h = core.mixPosition(h, w.ay[i]); i += 1;
+    }
+    i = 0;
+    while (i < b.count) {
+        h = core.mixPosition(h, b.px[i]); h = core.mixPosition(h, b.py[i]);
+        h = core.mixPosition(h, b.vx[i]); h = core.mixPosition(h, b.vy[i]);
+        h = core.mix(h, b.life[i]); i += 1;
+    }
+    return h;
+}

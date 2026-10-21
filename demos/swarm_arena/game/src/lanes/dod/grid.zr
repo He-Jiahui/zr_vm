@@ -29,7 +29,7 @@ pub class Grid {
         i = 0;
         while (i < capacity) { this.slots.add(0); i += 1; }
     }
-    pub fn build(enemies: world.EnemySoA): void {
+    pub fn build(enemies: world.World): void {
         var counts = this.counts; var starts = this.starts;
         var cursor = this.cursor; var slots = this.slots;
         var px = enemies.px; var py = enemies.py;

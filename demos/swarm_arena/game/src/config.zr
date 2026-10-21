@@ -1,0 +1,84 @@
+let system = import("zr.system");
+let container = import("zr.container");
+let exception = import("zr.system.exception");
+
+pub class Config {
+    pub var scenario: string = "smoke";
+    pub var lane: string = "dod";
+    pub var frames: int = 120;
+    pub var seed: int = 12345;
+    pub var render: string = "null";
+    pub var submit: string = "bulk";
+    pub var gcPolicy: string = "auto";
+    pub var gcBudgetUs: int = 500;
+    pub var expectHash: int = -1;
+    pub var help: bool = false;
+    pub @constructor() { }
+    pub fn usage(): string {
+        return "usage: --scenario smoke --lane dod --frames 1..120 --seed 1..2147483646 --render null --submit bulk --gc-policy auto --gc-budget-us 0..1000000 --expect-hash H";
+    }
+    pri fn number(option: string, text: string, limit: int): int {
+        if (text == "") { throw new exception.RuntimeError(option + " requires a decimal integer"); }
+        var value = 0; var place = 1; var remaining: object = text;
+        while (remaining != "") {
+            // String - int removes trailing codepoints. This avoids depending
+            // on the String.toArray return path for command-line parsing.
+            var prefix = remaining - 1;
+            var digit = -1; var i = 0;
+            while (i < 10) {
+                if (remaining == prefix + <string>i) { digit = i; }
+                i += 1;
+            }
+            if (digit < 0 || digit > (limit - value) / place) {
+                throw new exception.RuntimeError(option + " must be a decimal integer in 0.." + <string>limit);
+            }
+            value += digit * place; remaining = prefix;
+            if (remaining != "") {
+                if (place > limit / 10) {
+                    throw new exception.RuntimeError(option + " must be a decimal integer in 0.." + <string>limit);
+                }
+                place *= 10;
+            }
+        }
+        return value;
+    }
+    pub fn parse(): void {
+        let system = import("zr.system");
+        var args = system.process.arguments;
+        var seen = new container.Array<string>();
+        var i = 1;
+        while (i < args.length) {
+            var option = args[i]; i += 1;
+            if (option == "--help") { this.help = true; continue; }
+            var j = 0;
+            while (j < seen.length) {
+                if (seen[j] == option) { throw new exception.RuntimeError("duplicate argument " + option); }
+                j += 1;
+            }
+            seen.add(option);
+            if (option != "--scenario" && option != "--lane" && option != "--frames" && option != "--seed"
+                && option != "--render" && option != "--submit" && option != "--gc-policy"
+                && option != "--gc-budget-us" && option != "--expect-hash") {
+                throw new exception.RuntimeError("unknown argument " + option);
+            }
+            if (i == args.length) { throw new exception.RuntimeError("missing value for " + option); }
+            var value = args[i]; i += 1;
+            if (option == "--scenario") { this.scenario = value; }
+            else if (option == "--lane") { this.lane = value; }
+            else if (option == "--frames") { this.frames = this.number(option, value, 120); }
+            else if (option == "--seed") { this.seed = this.number(option, value, 2147483646); }
+            else if (option == "--render") { this.render = value; }
+            else if (option == "--submit") { this.submit = value; }
+            else if (option == "--gc-policy") { this.gcPolicy = value; }
+            else if (option == "--gc-budget-us") { this.gcBudgetUs = this.number(option, value, 1000000); }
+            else { this.expectHash = this.number(option, value, 1000000006); }
+        }
+        if (this.scenario != "smoke") { throw new exception.RuntimeError("scenario must be smoke (got " + this.scenario + ")"); }
+        if (this.lane != "dod") { throw new exception.RuntimeError("lane must be dod"); }
+        if (this.frames < 1) { throw new exception.RuntimeError("--frames must be in 1..120"); }
+        if (this.seed < 1) { throw new exception.RuntimeError("--seed must be in 1..2147483646"); }
+        if (this.render != "null") { throw new exception.RuntimeError("render must be null"); }
+        if (this.submit != "bulk") { throw new exception.RuntimeError("submit must be bulk"); }
+        if (this.gcPolicy != "auto") { throw new exception.RuntimeError("gc-policy must be auto"); }
+    }
+}

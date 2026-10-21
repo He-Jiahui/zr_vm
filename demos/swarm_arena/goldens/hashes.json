@@ -1,0 +1,22 @@
+{
+  "schema": "zr-swarm-hashes/1",
+  "rules": "gd-c3-smoke/1",
+  "smoke_dod_cli": {
+    "seed": 12345,
+    "frames": 120,
+    "hash": 224663030,
+    "state": {
+      "hash60": 227689432,
+      "enemies": 187,
+      "bullets": 46,
+      "particles": 88,
+      "shots": 240,
+      "hits": 120,
+      "kills": 60,
+      "score": 600,
+      "player_hp": 100,
+      "sprites": 295,
+      "render_hash": 183257039
+    }
+  }
+}

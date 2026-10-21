@@ -1,6 +1,9 @@
 let testing = import("zr.testing");
 let system = import("zr.system");
 let events = import("events");
+let world = import("lanes/dod/world");
+let systems = import("lanes/dod/systems");
+let player = import("player");
 
 #zr.testing.test#
 fn fifoCapacityWrapAndEmptyFill(): void {
@@ -33,4 +36,19 @@ fn rejectsZeroCapacity(): void {
     try { var q = new events.EventQueue(0); }
     catch (e) { caught = e.message == "queue capacity must be positive"; }
     testing.assert(caught);
+}
+
+#zr.testing.test#
+fn queuedIdsRemainCorrectAfterSwapRemove(): void {
+    var w = new world.World(3);
+    w.add(1.0, 2.0, 10); w.add(3.0, 4.0, 11); w.add(5.0, 6.0, 12);
+    w.hp[0] = 1;
+    var q = new events.EventQueue(8);
+    var particles = new world.MovingSoA(16);
+    var p = new player.Bot(1);
+    testing.assert(q.hit(10, 1) && q.hit(11, 1) && q.hit(10, 1) && q.playerHit(3));
+    systems.drain(w, particles, q, p);
+    testing.assert(w.count == 2 && w.id[0] == 12 && w.id[1] == 11 && w.hp[1] == 1);
+    testing.assert(w.hits == 2 && w.kills == 1 && w.score == 10);
+    testing.assert(p.hp == 97 && particles.count == 4 && q.count() == 0);
 }

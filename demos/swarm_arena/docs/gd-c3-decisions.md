@@ -33,6 +33,37 @@ source tree is untouched. This also avoids package-qualified public type
 metadata when testing the game as a second dependency package. The legacy
 swarmcore dependency itself is exercised directly by the RNG tests.
 
+Imported class methods bind module values with local literal imports when they
+need native functions or other script functions. This avoids missing lexical
+module bindings during imported-class metadata compilation. The CLI loop is a
+normal `run` function called from a small outer try/catch/finally; the original
+large top-level protected block failed before entry execution.
+
+Plugin calls from imported class methods/ordinary functions also failed binary
+loading before script execution. Host timing/zone calls use a dynamic `object`
+module value in the CLI run function, and `render.submit` uses the same form for
+gfx. This retains the GD-C2 descriptor APIs and mode C `submitSoA`, and avoids
+the failing direct native-call binding during artifact loading. The binary
+gate removes **all** `.zr` files, including swarmcore and tests, before starting
+each fresh process. No source fallback or engine patch is involved.
+
+`String.toArray()` returned null in a runtime check. Cold numeric argument
+parsing instead uses dynamic string subtraction (remove one trailing codepoint)
+and decimal suffix comparisons, bounding every multiply/add before it executes.
+Numeric spellings are bounded to the decimal width of each option's maximum;
+excess leading zeroes are rejected along with other oversized input.
+
 These are demo workarounds, not engine changes or claims that the deferred
 features work. Preallocated columns do not establish an allocation/performance
 budget; that measurement belongs to the later performance milestones.
+
+The unit staging runner omits CLI/render/metrics/director modules that the unit
+files do not use. Discovery otherwise recompiles those untested modules in
+every child. The initial detector gate exceeded the original process wrappers
+under concurrent work; final timeouts allow 180 seconds per smoke process,
+60 seconds per unit isolate and 480 seconds for the unit command. Bad-argument
+CTest coverage uses six representative OS-exit cases per mode. Additional
+Release exploratory checks exercised all 16 original argument cases successfully.
+These Debug configurations perform frequent full collections and do not meet
+the design's aspirational under-five-second detector smoke target. This is
+recorded as a performance limitation, not an engine correctness failure.

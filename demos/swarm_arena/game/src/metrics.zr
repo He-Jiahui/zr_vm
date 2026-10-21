@@ -1,0 +1,56 @@
+let container = import("zr.container");
+let system = import("zr.system");
+
+pub class Metrics {
+    pri var ticks: zr.container.Array<int>;
+    pri var renders: zr.container.Array<int>;
+    pri var count: int = 0;
+    pri var previousMinor: int;
+    pri var previousMajor: int;
+    pri var previousFull: int;
+    pri var previousUs: int;
+    pri var minor: int = 0;
+    pri var major: int = 0;
+    pri var full: int = 0;
+    pri var totalUs: int = 0;
+    pri var maxUs: int = 0;
+    pub @constructor(frames: int) {
+        let system = import("zr.system");
+        this.ticks = new container.Array<int>(); this.renders = new container.Array<int>();
+        var i = 0;
+        while (i < frames) { this.ticks.add(0); this.renders.add(0); i += 1; }
+        var s = system.gc.get_stats();
+        this.previousMinor = s.minorCollectionCount; this.previousMajor = s.majorCollectionCount;
+        this.previousFull = s.fullCollectionCount;
+        this.previousUs = s.minorCollectionTotalDurationUs + s.majorCollectionTotalDurationUs + s.fullCollectionTotalDurationUs;
+    }
+    pub fn record(tick: int, render: int): void {
+        let system = import("zr.system");
+        this.ticks[this.count] = tick; this.renders[this.count] = render; this.count += 1;
+        var s = system.gc.get_stats();
+        this.minor += s.minorCollectionCount - this.previousMinor;
+        this.major += s.majorCollectionCount - this.previousMajor;
+        this.full += s.fullCollectionCount - this.previousFull;
+        this.previousMinor = s.minorCollectionCount; this.previousMajor = s.majorCollectionCount;
+        this.previousFull = s.fullCollectionCount;
+        var total = s.minorCollectionTotalDurationUs + s.majorCollectionTotalDurationUs + s.fullCollectionTotalDurationUs;
+        this.totalUs += total - this.previousUs; this.previousUs = total;
+        if (s.minorCollectionMaxDurationUs > this.maxUs) { this.maxUs = s.minorCollectionMaxDurationUs; }
+        if (s.majorCollectionMaxDurationUs > this.maxUs) { this.maxUs = s.majorCollectionMaxDurationUs; }
+        if (s.fullCollectionMaxDurationUs > this.maxUs) { this.maxUs = s.fullCollectionMaxDurationUs; }
+    }
+    pri fn p95(values: zr.container.Array<int>): int {
+        var i = 1;
+        while (i < this.count) {
+            var value = values[i]; var j = i;
+            while (j > 0 && values[j - 1] > value) { values[j] = values[j - 1]; j -= 1; }
+            values[j] = value; i += 1;
+        }
+        return values[(this.count * 95 - 1) / 100];
+    }
+    pub fn summary(): string {
+        return " tick_p95_us=" + <string>this.p95(this.ticks) + " render_p95_us=" + <string>this.p95(this.renders)
+            + " gc_minor=" + <string>this.minor + " gc_major=" + <string>this.major + " gc_full=" + <string>this.full
+            + " gc_total_us=" + <string>this.totalUs + " gc_max_us=" + <string>this.maxUs;
+    }
+}

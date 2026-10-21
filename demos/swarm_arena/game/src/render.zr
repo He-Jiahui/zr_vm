@@ -1,0 +1,51 @@
+let container = import("zr.container");
+let gfx = import("zrgame.gfx");
+let world = import("lanes/dod/world");
+let player = import("player");
+
+pub class Buffer {
+    pub var xs: zr.container.Array<float>;
+    pub var ys: zr.container.Array<float>;
+    pub var sizes: zr.container.Array<float>;
+    pub var colors: zr.container.Array<int>;
+    pub var count: int = 0;
+    pub var lastHash: int = 0;
+    pub @constructor() {
+        this.xs = new container.Array<float>(); this.ys = new container.Array<float>();
+        this.sizes = new container.Array<float>(); this.colors = new container.Array<int>();
+        var i = 0;
+        while (i < 969) {
+            this.xs.add(0.0); this.ys.add(0.0); this.sizes.add(0.0); this.colors.add(0); i += 1;
+        }
+    }
+    pri fn add(x: float, y: float, size: float, color: int, p: player.Bot): void {
+        if (x + size * 0.5 >= p.x - 640.0 && x - size * 0.5 <= p.x + 640.0
+            && y + size * 0.5 >= p.y - 360.0 && y - size * 0.5 <= p.y + 360.0) {
+            var i = this.count;
+            this.xs[i] = x; this.ys[i] = y; this.sizes[i] = size; this.colors[i] = color;
+            this.count += 1;
+        }
+    }
+    pub fn build(w: world.World, b: world.MovingSoA, particles: world.MovingSoA, p: player.Bot): void {
+        this.count = 0;
+        this.add(p.x, p.y, 20.0, 1717987071, p);
+        var i = 0;
+        while (i < w.count) { this.add(w.px[i], w.py[i], 20.0, 4284901119, p); i += 1; }
+        i = 0;
+        while (i < b.count) { this.add(b.px[i], b.py[i], 4.0, 4294967295, p); i += 1; }
+        i = 0;
+        while (i < particles.count) { this.add(particles.px[i], particles.py[i], 3.0, 4290773247, p); i += 1; }
+    }
+}
+
+// Plugin calls live in an ordinary module function, outside imported class
+// methods, so binary loading can discover the module's native providers.
+pub fn submit(w: world.World, b: world.MovingSoA, particles: world.MovingSoA,
+              p: player.Bot, batch: Buffer, frame: int): int {
+    batch.build(w, b, particles, p);
+    var backend: object = gfx;
+    backend.beginFrame(frame); backend.camera(p.x, p.y);
+    backend.submitSoA(batch.xs, batch.ys, batch.sizes, batch.colors, 0, batch.count);
+    var submitted = <int>backend.endFrame(); batch.lastHash = <int>backend.snapshot("");
+    return submitted;
+}

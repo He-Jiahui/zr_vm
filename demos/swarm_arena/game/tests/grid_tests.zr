@@ -13,7 +13,7 @@ fn boundaryCells(): void {
 
 #zr.testing.test#
 fn stableCountingSortAndEmptyRebuild(): void {
-    var e = new world.EnemySoA(4);
+    var e = new world.World(4);
     e.add(65.0, 0.0, 10); e.add(1.0, 0.0, 11);
     e.add(66.0, 0.0, 12); e.add(4095.0, 4095.0, 13);
     var g = new grid.Grid(4);
@@ -29,7 +29,7 @@ fn stableCountingSortAndEmptyRebuild(): void {
 
 #zr.testing.test#
 fn denseSwapRemoveKeepsAllColumns(): void {
-    var e = new world.EnemySoA(3);
+    var e = new world.World(3);
     e.add(1.0, 2.0, 10); e.add(3.0, 4.0, 11); e.add(5.0, 6.0, 12);
     e.vx[2] = 7.0; e.vy[2] = 8.0; e.ax[2] = 9.0; e.ay[2] = 10.0;
     e.hp[2] = 1; e.kind[2] = 2;

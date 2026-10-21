@@ -60,6 +60,23 @@ if (BUILD_TESTS)
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
         set_tests_properties(demo_native_smoke_${mode} PROPERTIES LABELS "demo;native" TIMEOUT 90)
     endforeach()
+    foreach(mode interp binary)
+        add_test(NAME demo_cli_smoke_${mode}_dod
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_game.py"
+            --mode ${mode} --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+        set_tests_properties(demo_cli_smoke_${mode}_dod PROPERTIES LABELS "demo;game" TIMEOUT 660)
+    endforeach()
+    add_test(NAME demo_zr_unit_tests
+        COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_zr_unit_tests.py"
+        --cli $<TARGET_FILE:zr_vm_cli_executable>
+        --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+    set_tests_properties(demo_zr_unit_tests PROPERTIES LABELS "demo;game" TIMEOUT 540)
+    add_test(NAME demo_bad_scenario
+        COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_game.py"
+        --bad --cli $<TARGET_FILE:zr_vm_cli_executable>
+        --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+    set_tests_properties(demo_bad_scenario PROPERTIES LABELS "demo;game" TIMEOUT 600)
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

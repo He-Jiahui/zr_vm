@@ -1,8 +1,12 @@
 let container = import("zr.container");
-let events = import("events");
 let exception = import("zr.system.exception");
 
-pub class EnemySoA {
+pub class World {
+    pub var nextId: int = 1;
+    pub var shots: int = 0;
+    pub var hits: int = 0;
+    pub var kills: int = 0;
+    pub var score: int = 0;
     pub var count: int = 0;
     pub var cap: int;
     pub var px: zr.container.Array<float>;
@@ -80,23 +84,5 @@ pub class MovingSoA {
         this.px[slot] = this.px[last]; this.py[slot] = this.py[last];
         this.vx[slot] = this.vx[last]; this.vy[slot] = this.vy[last];
         this.life[slot] = this.life[last]; this.count = last;
-    }
-}
-
-pub class World {
-    pub var enemies: EnemySoA;
-    pub var bullets: MovingSoA;
-    pub var particles: MovingSoA;
-    pub var queue: events.EventQueue;
-    pub var nextId: int = 1;
-    pub var shots: int = 0;
-    pub var hits: int = 0;
-    pub var kills: int = 0;
-    pub var score: int = 0;
-    pub @constructor() {
-        this.enemies = new EnemySoA(200);
-        this.bullets = new MovingSoA(512);
-        this.particles = new MovingSoA(256);
-        this.queue = new events.EventQueue(1024);
     }
 }
