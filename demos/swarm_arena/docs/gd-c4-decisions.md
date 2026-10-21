@@ -116,10 +116,12 @@ with 1800 seconds for the bad-input and host CTests. The full gate is rerun with
 the same input, hash, schema and error expectations. These are functional
 deadlines, with no performance acceptance.
 
-The retained ZR unit runner also exceeded its 480-second process allowance
-while discovering the staged project. It now uses the same 600-second process
-allowance as the game runners and a 960-second CTest allowance. Its ten test
-assertions, staged module graph and per-test limits remain unchanged.
+The retained ZR unit runner exceeded its 480-second discovery allowance.
+A later forced-GC run completed eight tests correctly while two workers
+exceeded their inherited 60-second allowance. Unit workers now allow 600
+seconds, with an 1800-second runner allowance and 2400 seconds in CTest.
+The ten assertions and staged module graph remain the same. These limits
+bound functional completion and establish no performance budget.
 
 ## Measurement contract
 

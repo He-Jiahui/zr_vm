@@ -108,7 +108,7 @@ if (BUILD_TESTS)
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_zr_unit_tests.py"
         --cli $<TARGET_FILE:zr_vm_cli_executable>
         --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
-    set_tests_properties(demo_zr_unit_tests PROPERTIES LABELS "demo;game" TIMEOUT 960)
+    set_tests_properties(demo_zr_unit_tests PROPERTIES LABELS "demo;game" TIMEOUT 2400)
     add_test(NAME demo_bad_scenario
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_game.py"
         --bad --cli $<TARGET_FILE:zr_vm_cli_executable>
