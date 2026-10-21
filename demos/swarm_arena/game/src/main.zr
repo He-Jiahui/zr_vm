@@ -1,11 +1,11 @@
 let system = import("zr.system");
 let config = import("config");
-let game = import("game");
+let game_session = import("game_session");
 let metrics = import("metrics");
 let host = import("zrgame.host");
 let exception = import("zr.system.exception");
 
-fn run(cfg: config.Config, session: game.Session): void {
+fn run(cfg: config.Config, session: game_session.Session): void {
     var runtimeHost: object = host;
     system.gc.set_budget(cfg.gcBudgetUs);
     session.boot(cfg);
@@ -26,11 +26,17 @@ fn run(cfg: config.Config, session: game.Session): void {
     if (cfg.expectHash >= 0 && hash != cfg.expectHash) {
         throw new exception.RuntimeError("hash mismatch: expected " + <string>cfg.expectHash + " got " + <string>hash);
     }
-    system.console.printLine(session.summary(hash) + stats.summary());
+    system.console.printLine(session.summary(hash, "cli") + stats.summary());
 }
 
+// Calling this export imports/runs entry exactly once. Host drive returns
+// before argument parsing or construction of the CLI-owned Session.
+pub fn hostEntry(): int { return 1; }
+var entryHost: object = host;
+if (entryHost.isHostDriven()) { return 0; }
+
 var cfg = new config.Config();
-var session = new game.Session();
+var session = new game_session.Session();
 var exitCode = 0;
 try {
     cfg.parse();
