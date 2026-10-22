@@ -26,20 +26,22 @@ pub class EventQueue {
         if (cap <= 0) { throw new exception.RuntimeError("queue capacity must be positive"); }
         this.cap = cap;
         this.items = new container.Array<GameEvent>();
-        var i = 0;
-        while (i < cap) { this.items.add(GameEvent.Nothing); i += 1; }
     }
     pub fn count(): int { return this.size; }
     pub fn hit(id: int, damage: int): bool {
         if (this.size == this.cap) { return false; }
         var ev = GameEvent.Hit(id, damage);
-        this.items[(this.head + this.size) % this.cap] = ev;
+        var slot = (this.head + this.size) % this.cap;
+        if (slot == this.items.length) { this.items.add(ev); }
+        else { this.items[slot] = ev; }
         this.size += 1; return true;
     }
     pub fn killedKind(id: int, kind: int, boss: int, x: float, y: float): bool {
         if (this.size == this.cap) { return false; }
         var ev = GameEvent.EnemyKilled(id, kind, boss, x, y);
-        this.items[(this.head + this.size) % this.cap] = ev;
+        var slot = (this.head + this.size) % this.cap;
+        if (slot == this.items.length) { this.items.add(ev); }
+        else { this.items[slot] = ev; }
         this.size += 1; return true;
     }
     pub fn killed(id: int, x: float, y: float): bool {
@@ -48,7 +50,9 @@ pub class EventQueue {
     pub fn playerHit(damage: int): bool {
         if (this.size == this.cap) { return false; }
         var ev = GameEvent.PlayerHit(damage);
-        this.items[(this.head + this.size) % this.cap] = ev;
+        var slot = (this.head + this.size) % this.cap;
+        if (slot == this.items.length) { this.items.add(ev); }
+        else { this.items[slot] = ev; }
         this.size += 1; return true;
     }
     // Construct and switch on union values only in their declaring module.

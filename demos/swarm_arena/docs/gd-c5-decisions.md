@@ -38,6 +38,9 @@ results will be recorded in verification and the acceptance note.
 The Release completion gate may run its independent CLI and host processes
 together; their project is read-only and host artifacts have a separate path.
 Stress checks run the two drives sequentially, with CTest `-j1` throughout.
+The added scenario gates use 1800 frames in Release and four frames in each
+stress tree. Full 120-frame smoke and all twenty gameplay units still run in
+every tree, including the 64-particle allocation path.
 
 ## Gameplay choices
 
@@ -71,6 +74,12 @@ Other scenarios create four particles per kill using the retained pool.
 The full rules document will specify exact phase arithmetic, query order,
 wave definitions, capacities and hash order before goldens are generated.
 
+The first retained Release run passes 72/73. Its new host negative case puts
+`--scenario` first but correctly receives an error naming the invalid
+`--frames`. Ordering the invalid field first restores the runner's existing
+field assertion. This is a test correction; no rule, golden or host option
+behavior changes.
+
 ## Retained composition constraints
 
 Helpers are declared before callers that need their imported metadata. Player
@@ -95,3 +104,14 @@ storage for indexed assignment. Combining construction and assignment skipped
 two damage events in binary execution. The split preserves the intended FIFO
 rules and memory lifetime; three source-removed binary smoke repetitions now
 match the interpreter and host. Full kind/boss death payloads remain explicit.
+
+The first full-v1 memory-error-detector smoke hits the inherited 600-second
+process deadline while the ring fills thousands of unused placeholder slots.
+The ring now appends each slot on its first write, then reuses storage on wrap.
+The tail visits every index in order before its first wrap, so no unwritten
+slot can be popped. Logical capacity, FIFO order and scalar decoding remain
+unchanged. This storage choice changes no rule or hash input and requires no
+golden regeneration. A private completion check matches **552988638** in
+**115.24 s**; three Release interpreter repetitions, three source-removed
+binary repetitions and all twenty units also pass. The full gates are rerun
+after applying the change. Engine source remains unchanged.

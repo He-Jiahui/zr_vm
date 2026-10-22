@@ -40,6 +40,9 @@ is 512 in smoke, 8192 in bullet storm, 16384 in particle burst, and 4096
 otherwise. Cosmetic overflow drops particles. Simulation capacity overflow is
 an error. The event ring has `8*bullet capacity + 64` entries, bounding eight hits per
 bullet plus player contact. Death events replace popped damage entries.
+The ring appends storage as each slot is first written and reuses it on wrap;
+unused slots need no placeholder values at boot. Logical capacity and FIFO
+order are unchanged, and empty storage is never read.
 The render buffer can hold the player and every live slot from all four pools;
 these totals fit the existing native capacity of 65536 sprites.
 
@@ -84,7 +87,7 @@ aimed count toward the nearest enemy, retaining the first dense slot on ties.
 A zero-length aim uses velocity (480,0); otherwise normalize direction to
 speed 480. The radial weapon fires at frames 0,60,… when enemies exist;
 its next deadline advances from the firing frame. It starts with eight shots.
-Both use boot-time 64-direction sine/cosine tables; radial shot i uses table
+The radial weapon uses boot-time 64-direction sine/cosine tables; shot i uses table
 index `i*64/radial count` with integer division.
 
 All bullets have radius 2, lifetime 90 ticks and initial damage 1. Aimed
@@ -131,7 +134,8 @@ level, increase the next threshold by 2, and consume exactly one RNG draw.
 | 4 | Radial shots +2 | 32 |
 
 Upgrades affect the next fire phase; existing bullets retain their birth
-damage and pierce. The upgrade selection history is mixed into a separate
+damage and pierce. A magnet upgrade applies to later dense pickups in the
+same collection phase. The upgrade selection history is mixed into a separate
 integer hash for verification.
 
 ## Wave state machine and cosmetics
