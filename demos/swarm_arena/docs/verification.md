@@ -1,5 +1,37 @@
 # Verification evidence
 
+## GD-C5 prerequisite: restored GD-C4 baseline (2026-10-21)
+
+Before applying gameplay changes, all three existing demo trees pass complete
+73-test runs at demo `e988a3ee`, with their retained flags and system
+CMake/Ninja/Clang 19. Engine `e1d3ab19` remains unchanged.
+
+| Baseline gate | Release | memory-error-detector | forced-GC |
+| --- | --- | --- | --- |
+| Demo CTests | 73/73 | 73/73 | 73/73 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Required GD-C1 checks | 38/38 | 38/38 | 38/38 |
+| P22 required pairs | 18/18 | 18/18 | 18/18 |
+| ZR units | 10/10 | 10/10 | 10/10 |
+| Smoke CLI/host hash | 224663030 | 224663030 | 224663030 |
+| Checkpoint 60 | 227689432 | 227689432 | 227689432 |
+| Core inventory | 515 | 515 | 515 |
+| Test wall seconds | 60.38 | 2202.79 | 1804.60 |
+
+The unchanged engine Release core passes **515/515** in **68.13 s**.
+Detector and forced-GC demo runs use CTest `-j1` sequentially. Every baseline
+CTest passes in its complete run, without a focused retry. The retained policy
+is leak detection disabled. Engine detector/forced-GC core suites are not
+required for demo-only changes.
+
+Exact commands, timings and exit codes are in
+`/tmp/zr-swarm-gd-c5-20261021/results.jsonl`; baseline CTest logs, core
+inventories and runner evidence are under that same prefix. CTest Temporary,
+probe results, configure logs and Ninja logs point there. Runtime projects use
+its `runtime` directory through `TMPDIR`. The new
+[acceptance note](../../../tests/acceptance/2026-10-21-swarm-gd-c5-gameplay.md)
+records the scope and final results.
+
 ## GD-C4 host acceptance (2026-10-21)
 
 **GD-C4 is complete.** `zr_swarm` drives smoke/DOD through the shared game API,
