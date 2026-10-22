@@ -80,7 +80,7 @@ static void bootstrap(SZrState *state, TZrPtr data) {
         !ZR_VALUE_IS_TYPE_INT(result.type) || result.value.nativeObject.nativeInt64 != 1) return;
     for (unsigned i = 0; i < 2; ++i) {
         if (!ZrLib_TempValueRoot_Begin(state, &boot->roots[i])) return;
-        ZrLib_Value_SetString(state, ZrLib_TempValueRoot_Value(&boot->roots[i]), i ? "dod" : "smoke");
+        ZrLib_Value_SetString(state, ZrLib_TempValueRoot_Value(&boot->roots[i]), i ? "dod" : boot->options->scenario);
     }
     for (unsigned i = 0; i < 4; ++i) ZrCore_Value_ResetAsNull(&args[i]);
     /* Resolve the roots only after both string allocations, which can move GC objects. */

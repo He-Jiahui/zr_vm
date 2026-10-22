@@ -9,12 +9,12 @@ const char *zrg_gc_policy_name(ZrgGcPolicy policy) {
 }
 
 void zrg_options_usage(void) {
-    puts("usage: zr_swarm --project FILE [--scenario smoke] [--lane dod]\n"
-         "  [--frames 1..120] [--seed 1..2147483646] [--render null] [--submit bulk]\n"
+    puts("usage: zr_swarm --project FILE [--scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst] [--lane dod]\n"
+         "  [--frames 1..scenario-limit] [--seed 1..2147483646] [--render null] [--submit bulk]\n"
          "  [--gc-policy auto|slack|manual] [--gc-budget-us 0..1000000]\n"
-         "  [--gc-minor-interval 1..120] [--warmup 0] [--out DIR]\n"
+         "  [--gc-minor-interval 1..1800] [--warmup 0] [--out DIR]\n"
          "  [--expect-hash 0..1000000006] [--help]\n"
-         "Defaults: 120 frames, seed 12345, auto GC, 500us cap, minor every 30 frames,\n"
+         "Defaults: scenario length (smoke 120, others 1800), seed 12345, auto GC, 500us cap, minor every 30 frames,\n"
          "          out/swarm. Source execution; null platform uses the game bot.");
 }
 
@@ -45,7 +45,7 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
         "--seed", "--render", "--submit", "--gc-policy", "--gc-budget-us",
         "--gc-minor-interval", "--warmup", "--expect-hash", "--help"};
     bool seen[sizeof(names) / sizeof(names[0])] = {false};
-    *options = (ZrgOptions){.out = "out/swarm", .frames = 120, .seed = 12345,
+    *options = (ZrgOptions){.out = "out/swarm", .scenario = "smoke", .frames = 120, .seed = 12345,
         .gc_budget_us = 500, .minor_interval = 30, .expect_hash = -1, .gc_policy = ZRG_GC_AUTO};
     for (int i = 1; i < argc; ++i) {
         size_t key = 0;
@@ -61,9 +61,14 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
         switch (key) {
             case 0: if (!*value) return error(option, "requires a path"); options->project = value; break;
             case 1: if (!*value) return error(option, "requires a directory"); options->out = value; break;
-            case 2: if (strcmp(value, "smoke")) return error(option, "must be smoke"); break;
+            case 2:
+                if (strcmp(value, "smoke") && strcmp(value, "arena_2k") && strcmp(value, "swarm_10k") &&
+                    strcmp(value, "bullet_storm") && strcmp(value, "particle_burst"))
+                    return error(option, "must be smoke, arena_2k, swarm_10k, bullet_storm or particle_burst");
+                options->scenario = value;
+                break;
             case 3: if (strcmp(value, "dod")) return error(option, "must be dod"); break;
-            case 4: if (!number(option, value, 1, 120, &options->frames)) return false; break;
+            case 4: if (!number(option, value, 1, 1800, &options->frames)) return false; break;
             case 5: if (!number(option, value, 1, 2147483646, &options->seed)) return false; break;
             case 6: if (strcmp(value, "null")) return error(option, "must be null"); break;
             case 7: if (strcmp(value, "bulk")) return error(option, "must be bulk (mode C)"); break;
@@ -74,7 +79,7 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
                 else return error(option, "must be auto, slack or manual");
                 break;
             case 9: if (!number(option, value, 0, 1000000, &options->gc_budget_us)) return false; break;
-            case 10: if (!number(option, value, 1, 120, &options->minor_interval)) return false; break;
+            case 10: if (!number(option, value, 1, 1800, &options->minor_interval)) return false; break;
             case 11: if (!number(option, value, 0, 0, &parsed)) return false; break;
             case 12:
                 if (!number(option, value, 0, 1000000006, &parsed)) return false;
@@ -83,5 +88,8 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
             default: return false;
         }
     }
+    uint32_t limit = !strcmp(options->scenario, "smoke") ? 120 : 1800;
+    if (!seen[4]) options->frames = limit;
+    if (options->frames > limit) return error("--frames", "exceeds the scenario limit");
     return options->help || options->project || error("--project", "is required");
 }

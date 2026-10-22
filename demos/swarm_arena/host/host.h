@@ -12,6 +12,7 @@ typedef enum ZrgGcPolicy { ZRG_GC_AUTO, ZRG_GC_SLACK, ZRG_GC_MANUAL } ZrgGcPolic
 typedef struct ZrgOptions {
     const char *project;
     const char *out;
+    const char *scenario;
     uint32_t frames, seed, gc_budget_us, minor_interval;
     int64_t expect_hash;
     ZrgGcPolicy gc_policy;

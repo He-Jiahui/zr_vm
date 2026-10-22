@@ -88,7 +88,7 @@ static uint64_t percentile(const uint64_t *sorted, size_t count, size_t percent)
 }
 
 static void timing(FILE *file, const char *name, const Frame *frames, size_t count, size_t offset) {
-    uint64_t values[120];
+    uint64_t values[1800];
     sorted_values(frames, count, offset, values);
     double total = 0.0;
     for (size_t i = 0; i < count; ++i) total += (double)values[i];
@@ -103,7 +103,7 @@ static bool summary_file(const char *path, const char *temporary, const ZrgOptio
     FILE *file = fopen(temporary, "w");
     if (!file) return false;
     uint64_t minor = 0, major = 0, full = 0, total_us = 0, maximum = 0, steps = 0, requests = 0;
-    uint64_t misses60 = 0, misses120 = 0, allocations[120];
+    uint64_t misses60 = 0, misses120 = 0, allocations[1800];
     int64_t rss = 0;
     for (size_t i = 0; i < options->frames; ++i) {
         const Frame *row = &frames[i];
@@ -124,11 +124,11 @@ static bool summary_file(const char *path, const char *temporary, const ZrgOptio
     if (getloadavg(load, 3) == 3)
         fprintf(file, " \"load_avg\": [%.6f, %.6f, %.6f],\n", load[0], load[1], load[2]);
     else fputs(" \"load_avg\": null,\n", file);
-    fprintf(file, "  \"scenario\": \"smoke\", \"lane\": \"dod\", \"drive\": \"host\", \"exec\": \"interp\",\n"
+    fprintf(file, "  \"scenario\": \"%s\", \"lane\": \"dod\", \"drive\": \"host\", \"exec\": \"interp\",\n"
         "  \"render\": \"null\", \"submit\": \"bulk\", \"gc_policy\": \"%s\", \"gc_budget_us\": %u,\n"
         "  \"seed\": %u, \"frames\": %u, \"warmup\": 0, \"hash\": %" PRId64 ",\n"
         "  \"status\": \"%s\",\n",
-        zrg_gc_policy_name(options->gc_policy), options->gc_budget_us, options->seed,
+        options->scenario, zrg_gc_policy_name(options->gc_policy), options->gc_budget_us, options->seed,
         options->frames, hash, options->expect_hash >= 0 && hash != options->expect_hash ? "hash_mismatch" : "ok");
     timing(file, "frame_us", frames, options->frames, offsetof(Frame, frame_us));
     timing(file, "tick_us", frames, options->frames, offsetof(Frame, tick_us));
@@ -164,7 +164,7 @@ static bool output_path(char *buffer, size_t capacity, const char *directory, co
 
 int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options) {
     char csv_path[4096], json_path[4096], temporary[4096], summary[2048];
-    Frame frames[120] = {{0}};
+    Frame frames[1800] = {{0}};
     int64_t hash, entities[3];
     int status = 2;
     if (!zrg_platform_make_directory(options->out) ||
