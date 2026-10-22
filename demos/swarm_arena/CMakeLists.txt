@@ -127,6 +127,21 @@ if (BUILD_TESTS)
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
         set_tests_properties(${host_test} PROPERTIES LABELS "demo;host;game" TIMEOUT 1800)
     endforeach()
+    # Long scenario completion belongs to Release; stress trees keep short
+    # scenario parity alongside full smoke and the gameplay unit suite.
+    set(swarm_scenario_frames)
+    if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(swarm_scenario_frames --frames 4)
+    endif()
+    foreach(scenario arena_2k swarm_10k bullet_storm particle_burst)
+        add_test(NAME demo_cli_host_${scenario}_dod
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_scenario.py"
+            --scenario ${scenario} ${swarm_scenario_frames}
+            --host $<TARGET_FILE:zr_swarm> --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+        set_tests_properties(demo_cli_host_${scenario}_dod PROPERTIES
+            LABELS "demo;host;game;scenario" TIMEOUT 15000)
+    endforeach()
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

@@ -218,7 +218,7 @@ def main():
             _, zero, _ = host_run("light-slack-zero", frames=4, policy="slack", budget=0, expected_hash=int(reference["hash"]))
             require(zero["gc"]["slack_steps"] == 0, "zero GC budget performed slack work")
             bad = [["--scenario", "unknown"], ["--scenario", "sweep"], ["--scenario", "arena_2K"],
-                   ["--scenario", "arena_2k", "--frames", "1801"],
+                   ["--frames", "1801", "--scenario", "arena_2k"],
                    ["--lane", "oop"], ["--render", "soft"], ["--submit", "percall"],
                    ["--gc-policy", "bad"], ["--frames", "0"], ["--frames", "121"], ["--frames", "bad"],
                    ["--seed", "0"], ["--seed", "2147483647"], ["--gc-budget-us", "-1"],
