@@ -1,0 +1,164 @@
+let pickup_store = import("lanes/dod/pickup_store");
+let bullet_store = import("lanes/dod/bullet_store");
+let testing = import("zr.testing");
+let world = import("lanes/dod/world");
+let grid = import("lanes/dod/grid");
+let systems = import("lanes/dod/systems");
+let player = import("player");
+let events = import("events");
+let director = import("director");
+let config = import("config");
+let core = import("&swarmcore");
+
+#zr.testing.test#
+fn enemyKindsClampSpeedAndPreserveIdentity(): void {
+    var w = new world.World(4);
+    w.spawn(100.0, 100.0, 1, 0, 0); w.spawn(200.0, 100.0, 2, 1, 0);
+    w.spawn(300.0, 100.0, 3, 2, 0); w.spawn(400.0, 100.0, 4, 2, 1);
+    testing.assert(w.hp[0] == 2 && w.hp[1] == 1 && w.hp[2] == 8 && w.hp[3] == 40);
+    testing.assert(w.radius[0] == 10.0 && w.radius[1] == 7.0 && w.radius[2] == 16.0);
+    var i = 0;
+    while (i < 4) { w.ax[i] = 60000.0; i += 1; }
+    systems.integrate(w);
+    testing.assert(w.vx[0] == 72.0 && w.vx[1] == 120.0 && w.vx[2] == 42.0);
+    w.swapRemove(1);
+    testing.assert(w.find(2) == -1 && w.find(4) == 1 && w.find(3) == 2);
+    testing.assert(w.kind[1] == 2 && w.boss[1] == 1 && w.hp[1] == 40);
+    testing.assert(w.radius[1] == 16.0 && w.speed[1] == 42.0);
+    w.swapRemove(2); testing.assert(w.find(3) == -1 && w.find(4) == 1);
+}
+
+#zr.testing.test#
+fn separationCrossesCellsAndBreaksCoincidentTies(): void {
+    var p = new player.Bot(1); p.x = 64.0; p.y = 64.0;
+    var w = new world.World(2); w.add(63.0, 64.0, 1); w.add(65.0, 64.0, 2);
+    var g = new grid.Grid(2); g.build(w); systems.steer(w, p, g);
+    testing.assert(w.ax[0] < 0.0 && w.ax[1] > 0.0 && w.ay[0] == 0.0 && w.ay[1] == 0.0);
+    testing.assert(w.px[0] == 63.0 && w.px[1] == 65.0);
+    w.px[0] = 64.0; w.px[1] = 64.0; g.build(w); systems.steer(w, p, g);
+    testing.assert(w.ax[0] == -144.0 && w.ax[1] == 144.0);
+    w.px[0] = 52.0; w.px[1] = 76.0; g.build(w); systems.steer(w, p, g);
+    testing.assert(w.ax[0] == 432.0 && w.ax[1] == -432.0);
+}
+
+#zr.testing.test#
+fn nearestAndRadialWeaponsKeepSeparateCadence(): void {
+    var p = new player.Bot(1); p.x = 100.0; p.y = 100.0;
+    var w = new world.World(2); w.add(110.0, 100.0, 1); w.add(90.0, 100.0, 2);
+    var b = new bullet_store.Bullets(64); p.fire(w, b, 0);
+    testing.assert(b.motion.count == 10 && w.shots == 10 && p.nextBurst == 60);
+    testing.assert(b.motion.vx[0] == 480.0 && b.motion.vy[0] == 0.0);
+    testing.assert(b.pierce[0] == 2 && b.pierce[2] == 3);
+    testing.assert(b.motion.vx[2] == 480.0 && b.motion.vy[2] == 0.0);
+    testing.assert(b.motion.vy[4] > 479.0 && b.motion.vx[6] < -479.0);
+    p.fire(w, b, 1); testing.assert(b.motion.count == 12 && p.nextBurst == 60);
+    p.fire(w, b, 60); testing.assert(b.motion.count == 22 && p.nextBurst == 120);
+}
+
+#zr.testing.test#
+fn pierceSurvivesFramesAndSkipsPreviouslyHitIds(): void {
+    var p = new player.Bot(1); p.x = 1000.0; p.y = 1000.0;
+    var w = new world.World(3); w.add(64.0, 64.0, 1); w.add(65.0, 64.0, 2); w.add(200.0, 64.0, 3);
+    var b = new bullet_store.Bullets(2); b.add(64.0, 64.0, 0.0, 0.0, 1, 3);
+    var q = new events.EventQueue(16); var g = new grid.Grid(3); g.build(w);
+    systems.collide(w, b, g, q, p, 0);
+    testing.assert(b.motion.count == 1 && b.pierce[0] == 1 && b.hitCount[0] == 2 && q.count() == 2);
+    systems.collide(w, b, g, q, p, 1);
+    testing.assert(b.pierce[0] == 1 && q.count() == 2);
+    w.swapRemove(0); w.px[w.find(3)] = 64.0; g.build(w);
+    systems.collide(w, b, g, q, p, 2);
+    testing.assert(b.motion.count == 0 && q.count() == 3);
+    testing.assert(q.pop() && q.id == 1); testing.assert(q.pop() && q.id == 2);
+    testing.assert(q.pop() && q.id == 3);
+}
+
+#zr.testing.test#
+fn bulletExpiryCopiesDamagePierceAndHistory(): void {
+    var b = new bullet_store.Bullets(2);
+    b.add(1.0, 2.0, 60.0, 0.0, 1, 3); b.recordHit(0, 77);
+    b.add(4.0, 5.0, 120.0, 0.0, 7, 8); b.recordHit(1, 88); b.recordHit(1, 99);
+    b.motion.life[0] = 1; b.motion.life[1] = 2;
+    systems.moveBullets(b);
+    testing.assert(b.motion.count == 1 && b.motion.px[0] == 6.0 && b.motion.life[0] == 1);
+    testing.assert(b.damage[0] == 7 && b.pierce[0] == 6 && b.hitCount[0] == 2);
+    testing.assert(b.history[0] == 88 && b.history[1] == 99 && !b.alreadyHit(0, 77));
+    systems.moveBullets(b); testing.assert(b.motion.count == 0);
+}
+
+#zr.testing.test#
+fn magnetBoundaryCollectionAndMultipleUpgrades(): void {
+    var p = new player.Bot(1); p.x = 0.0; p.y = 0.0;
+    var pickups = new pickup_store.Pickups(4);
+    pickups.add(160.0, 0.0, 1); pickups.add(161.0, 0.0, 1);
+    pickups.add(18.0, 0.0, 4); pickups.add(0.0, 0.0, 6);
+    var rng = new core.Rng(1); rng.state = systems.magnet(pickups, p, rng.state);
+    testing.assert(pickups.count == 2 && pickups.px[0] == 156.0 && pickups.px[1] == 161.0);
+    testing.assert(p.collected == 2 && p.level == 3 && p.xp == 0 && p.threshold == 8);
+    testing.assert(p.pierce == 1 && p.radialCount == 10 && rng.state == 182605794);
+}
+
+#zr.testing.test#
+fn cappedUpgradesStillConsumeExactlyOneDraw(): void {
+    var p = new player.Bot(1); var rng = new core.Rng(1);
+    p.damage = 8; p.pierce = 6; p.aimedCount = 10; p.magnetRadius = 384.0; p.radialCount = 32;
+    rng.state = player.gain(p, 18, rng.state);
+    testing.assert(p.level == 4 && p.xp == 0 && p.threshold == 10);
+    testing.assert(rng.state == 1291394886 && p.upgradesHash == 30877);
+    testing.assert(p.damage == 8 && p.pierce == 6 && p.aimedCount == 10 && p.magnetRadius == 384.0 && p.radialCount == 32);
+}
+
+#zr.testing.test#
+fn directorReservesBossBurstAndConsumesThreeDrawsPerSpawn(): void {
+    var d = new director.Director(200, 40, 192); var rng = new core.Rng(1);
+    var reference = new core.Rng(1); var i = 0;
+    d.advance(0, 0, rng, 2048.0, 2048.0);
+    testing.assert(d.pending == 190 && d.totalSpawned == 190 && d.nextSpawn == 6);
+    while (i < 570) { reference.next(); i += 1; }
+    testing.assert(rng.state == reference.state);
+    d.advance(1, 190, rng, 2048.0, 2048.0); testing.assert(d.pending == 0 && rng.state == reference.state);
+    d.advance(40, 190, rng, 2048.0, 2048.0); testing.assert(d.waveIndex == 1 && d.pending == 0);
+    d.advance(80, 190, rng, 2048.0, 2048.0);
+    testing.assert(d.waveIndex == 2 && d.pending == 10 && d.bosses[0] == 1 && d.kinds[0] == 2);
+    testing.assert(d.bossWaves == 1 && d.burstSpawns == 10 && d.totalSpawned == 200);
+    i = 0; while (i < 30) { reference.next(); i += 1; }
+    testing.assert(rng.state == reference.state);
+    var longWave = new director.Director(200, 300, 192);
+    longWave.advance(0, 0, reference, 2048.0, 2048.0);
+    longWave.advance(600, 190, reference, 2048.0, 2048.0);
+    longWave.advance(1500, 190, reference, 2048.0, 2048.0);
+    testing.assert(longWave.waveIndex == 5 && longWave.bossWaves == 2 && longWave.burstSpawns == 20);
+}
+
+#zr.testing.test#
+fn cosmeticBurstCapacityCannotChangeDropsOrSimulationHash(): void {
+    var a = new world.World(1); var b = new world.World(1);
+    var pa = new player.Bot(1); var pb = new player.Bot(1);
+    var ba = new bullet_store.Bullets(1); var bb = new bullet_store.Bullets(1);
+    var qa = new events.EventQueue(2); var qb = new events.EventQueue(2);
+    var da = new pickup_store.Pickups(1); var db = new pickup_store.Pickups(1);
+    var ra = new core.Rng(1); var rb = new core.Rng(1);
+    var particlesA = new world.MovingSoA(0); var particlesB = new world.MovingSoA(64);
+    testing.assert(qa.killedKind(1, 2, 1, 10.0, 20.0) && qb.killedKind(1, 2, 1, 10.0, 20.0));
+    ra.state = systems.drain(a, particlesA, qa, pa, da, ra.state, 4);
+    rb.state = systems.drain(b, particlesB, qb, pb, db, rb.state, 64);
+    testing.assert(particlesA.count == 0 && particlesB.count == 64 && da.count == 1 && db.value[0] == 8);
+    testing.assert(ra.state == rb.state && ra.state == 48271);
+    var wave = new director.Director(200, 40, 192);
+    testing.assert(systems.cheapHash(a, ba, pa, wave, da, ra.state, 1, 1)
+                   == systems.cheapHash(b, bb, pb, wave, db, rb.state, 1, 1));
+    testing.assert(systems.positionsHash(a, ba, pa, da, 1) == systems.positionsHash(b, bb, pb, db, 1));
+    systems.move(particlesB); testing.assert(particlesB.life[0] == 23);
+}
+
+#zr.testing.test#
+fn scenarioProfilesKeepLimitsAndRejectUnsupportedNames(): void {
+    var c = new config.Config(); c.configure(); testing.assert(c.maxFrames == 120 && c.enemyCap == 200);
+    c.scenario = "arena_2k"; c.configure(); c.frames = 1800; c.validate();
+    testing.assert(c.enemyCap == 2000 && c.aimedCount == 10 && c.waveFrames == 300);
+    c.scenario = "swarm_10k"; c.configure(); testing.assert(c.enemyCap == 10000);
+    c.scenario = "bullet_storm"; c.configure(); testing.assert(c.enemyCap == 1000 && c.aimedCount == 100);
+    c.scenario = "particle_burst"; c.configure(); testing.assert(c.particlesPerKill == 64);
+    var caught = false; c.scenario = "sweep";
+    try { c.configure(); } catch (e) { caught = true; }
+    testing.assert(caught);
+}

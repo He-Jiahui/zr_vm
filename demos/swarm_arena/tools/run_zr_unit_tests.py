@@ -29,10 +29,11 @@ def main():
     # but stage them under src/tests only in this isolated, disposable project.
     shutil.copytree(project / "tests", project / "src/tests")
     # Discovery visits every source, including modules without tests. Limit the
-    # staged graph to the modules these ten tests use; do not compile the CLI,
+    # staged graph to the modules these tests use; do not compile the CLI,
     # renderer and metrics again in each fresh test worker.
-    needed = {"events.zr", "player.zr", "lanes/dod/world.zr",
-              "lanes/dod/grid.zr", "lanes/dod/systems.zr"}
+    needed = {"events.zr", "player.zr", "director.zr", "config.zr", "lanes/dod/world.zr",
+              "lanes/dod/grid.zr", "lanes/dod/systems.zr",
+              "lanes/dod/bullet_store.zr", "lanes/dod/pickup_store.zr"}
     for path in (project / "src").rglob("*.zr"):
         relative = path.relative_to(project / "src")
         if relative.parts[0] != "tests" and relative.as_posix() not in needed:
@@ -53,10 +54,10 @@ def main():
         output = proc.stdout + proc.stderr
         (out / "unit.log").write_text(output)
         summaries = re.findall(r"test-result: passed=(\d+) failed=(\d+) skipped=(\d+) timedout=(\d+) crashed=(\d+)", output)
-        if (proc.returncode or not summaries or summaries[-1] != ("10", "0", "0", "0", "0")
+        if (proc.returncode or not summaries or summaries[-1] != ("20", "0", "0", "0", "0")
                 or any(marker in output for marker in DETECTOR_ERRORS)):
             raise ValueError("unit result mismatch; see unit.log")
-        result.update(status="OK", passed=10, failed=0, timedout=0, crashed=0)
+        result.update(status="OK", passed=20, failed=0, timedout=0, crashed=0)
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         if isinstance(exc, subprocess.TimeoutExpired):
             (out / "unit.log").write_bytes((exc.stdout or b"") + (exc.stderr or b""))

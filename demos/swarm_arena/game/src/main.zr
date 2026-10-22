@@ -9,6 +9,7 @@ fn run(cfg: config.Config, session: game_session.Session): void {
     var runtimeHost: object = host;
     system.gc.set_budget(cfg.gcBudgetUs);
     session.boot(cfg);
+    if (cfg.gcPolicy == "manual") { system.gc.disable(); }
     var stats = new metrics.Metrics(cfg.frames);
     var frame = 0;
     while (frame < cfg.frames) {
@@ -19,6 +20,13 @@ fn run(cfg: config.Config, session: game_session.Session): void {
         runtimeHost.zoneBegin(1);
         try { session.render(frame); } finally { runtimeHost.zoneEnd(1); }
         var renderEnd = <int>runtimeHost.nowMicros();
+        if (cfg.gcPolicy == "manual" && (frame + 1) % cfg.minorInterval == 0) {
+            system.gc.collect("minor");
+        } else if (cfg.gcPolicy == "slack" && cfg.gcBudgetUs > 0 && renderEnd - start < 16667) {
+            var budget = 16667 - (renderEnd - start);
+            if (budget > cfg.gcBudgetUs) { budget = cfg.gcBudgetUs; }
+            system.gc.set_budget(budget); system.gc.collect("minor"); system.gc.set_budget(cfg.gcBudgetUs);
+        }
         stats.record(tickEnd - start, renderEnd - tickEnd);
         frame += 1;
     }

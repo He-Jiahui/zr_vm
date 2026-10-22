@@ -1,3 +1,4 @@
+let pickup_store = import("lanes/dod/pickup_store");
 let container = import("zr.container");
 let world = import("lanes/dod/world");
 let player = import("player");
@@ -9,11 +10,11 @@ pub class Buffer {
     pub var colors: zr.container.Array<int>;
     pub var count: int = 0;
     pub var lastHash: int = 0;
-    pub @constructor() {
+    pub @constructor(capacity: int) {
         this.xs = new container.Array<float>(); this.ys = new container.Array<float>();
         this.sizes = new container.Array<float>(); this.colors = new container.Array<int>();
         var i = 0;
-        while (i < 969) {
+        while (i < capacity) {
             this.xs.add(0.0); this.ys.add(0.0); this.sizes.add(0.0); this.colors.add(0); i += 1;
         }
     }
@@ -25,15 +26,17 @@ pub class Buffer {
             this.count += 1;
         }
     }
-    pub fn build(w: world.World, b: world.MovingSoA, particles: world.MovingSoA, p: player.Bot): void {
+    pub fn build(w: world.World, b: world.MovingSoA, particles: world.MovingSoA, pickups: pickup_store.Pickups, p: player.Bot): void {
         this.count = 0;
         this.add(p.x, p.y, 20.0, 1717987071, p);
         var i = 0;
-        while (i < w.count) { this.add(w.px[i], w.py[i], 20.0, 4284901119, p); i += 1; }
+        while (i < w.count) { this.add(w.px[i], w.py[i], w.radius[i] * 2.0, 4284901119, p); i += 1; }
         i = 0;
         while (i < b.count) { this.add(b.px[i], b.py[i], 4.0, 4294967295, p); i += 1; }
         i = 0;
         while (i < particles.count) { this.add(particles.px[i], particles.py[i], 3.0, 4290773247, p); i += 1; }
+        i = 0;
+        while (i < pickups.count) { this.add(pickups.px[i], pickups.py[i], 8.0, 1717960959, p); i += 1; }
     }
 }
 

@@ -5,7 +5,7 @@ let exception = import("zr.system.exception");
 union GameEvent {
     Nothing;
     Hit(id: int, damage: int);
-    EnemyKilled(id: int, x: float, y: float);
+    EnemyKilled(id: int, kind: int, boss: int, x: float, y: float);
     PlayerHit(damage: int);
 }
 
@@ -20,6 +20,8 @@ pub class EventQueue {
     pub var damage: int = 0;
     pub var x: float = 0.0;
     pub var y: float = 0.0;
+    pub var kind: int = 0;
+    pub var boss: int = 0;
     pub @constructor(cap: int) {
         if (cap <= 0) { throw new exception.RuntimeError("queue capacity must be positive"); }
         this.cap = cap;
@@ -30,17 +32,23 @@ pub class EventQueue {
     pub fn count(): int { return this.size; }
     pub fn hit(id: int, damage: int): bool {
         if (this.size == this.cap) { return false; }
-        this.items[(this.head + this.size) % this.cap] = GameEvent.Hit(id, damage);
+        var ev = GameEvent.Hit(id, damage);
+        this.items[(this.head + this.size) % this.cap] = ev;
+        this.size += 1; return true;
+    }
+    pub fn killedKind(id: int, kind: int, boss: int, x: float, y: float): bool {
+        if (this.size == this.cap) { return false; }
+        var ev = GameEvent.EnemyKilled(id, kind, boss, x, y);
+        this.items[(this.head + this.size) % this.cap] = ev;
         this.size += 1; return true;
     }
     pub fn killed(id: int, x: float, y: float): bool {
-        if (this.size == this.cap) { return false; }
-        this.items[(this.head + this.size) % this.cap] = GameEvent.EnemyKilled(id, x, y);
-        this.size += 1; return true;
+        return this.killedKind(id, 0, 0, x, y);
     }
     pub fn playerHit(damage: int): bool {
         if (this.size == this.cap) { return false; }
-        this.items[(this.head + this.size) % this.cap] = GameEvent.PlayerHit(damage);
+        var ev = GameEvent.PlayerHit(damage);
+        this.items[(this.head + this.size) % this.cap] = ev;
         this.size += 1; return true;
     }
     // Construct and switch on union values only in their declaring module.
@@ -48,6 +56,7 @@ pub class EventQueue {
     // exports and union out/method arguments; no decoded object is allocated.
     pub fn pop(): bool {
         this.tag = 0; this.id = 0; this.damage = 0; this.x = 0.0; this.y = 0.0;
+        this.kind = 0; this.boss = 0;
         if (this.size == 0) { return false; }
         var ev = this.items[this.head];
         this.head = (this.head + 1) % this.cap;
@@ -55,7 +64,9 @@ pub class EventQueue {
         switch (ev) {
             (Nothing) { }
             (Hit(id, damage)) { this.tag = 1; this.id = id; this.damage = damage; }
-            (EnemyKilled(id, x, y)) { this.tag = 2; this.id = id; this.x = x; this.y = y; }
+            (EnemyKilled(id, kind, boss, x, y)) {
+                this.tag = 2; this.id = id; this.kind = kind; this.boss = boss; this.x = x; this.y = y;
+            }
             (PlayerHit(damage)) { this.tag = 3; this.damage = damage; }
         }
         return true;

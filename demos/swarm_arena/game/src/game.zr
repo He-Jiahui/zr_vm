@@ -9,11 +9,9 @@ var hostBooted: bool = false;
 
 pub fn boot(scenario: string, lane: string, seed: int, frames: int): int {
     if (hostBooted) { throw new exception.RuntimeError("host session already booted"); }
-    if (scenario != "smoke" || lane != "dod" || seed < 1 || seed > 2147483646 || frames < 1 || frames > 120) {
-        throw new exception.RuntimeError("host boot requires smoke/dod and valid seed/frames");
-    }
     var cfg = new config.Config();
     cfg.scenario = scenario; cfg.lane = lane; cfg.seed = seed; cfg.frames = frames;
+    cfg.configure(); cfg.validate();
     hosted = new game_session.Session(); hosted.boot(cfg); hostBooted = true;
     return 0;
 }

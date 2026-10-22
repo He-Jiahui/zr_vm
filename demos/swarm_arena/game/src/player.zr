@@ -1,16 +1,39 @@
+let bullet_store = import("lanes/dod/bullet_store");
 let container = import("zr.container");
 let math = import("zr.math");
+let world = import("lanes/dod/world");
+let core = import("&swarmcore");
 
 pub class Bot {
     pub var x: float = 2048.0;
     pub var y: float = 2048.0;
     pub var hp: int = 100;
     pub var immuneUntil: int = 0;
+    pub var collected: int = 0;
+    pub var level: int = 1;
+    pub var xp: int = 0;
+    pub var threshold: int = 4;
+    pub var damage: int = 1;
+    pub var pierce: int = 0;
+    pub var baseAimed: int = 2;
+    pub var aimedCount: int = 2;
+    pub var radialCount: int = 8;
+    pub var magnetRadius: float = 160.0;
+    pub var nextBurst: int = 0;
+    pub var upgradesHash: int = 1;
+    pub var circleX: zr.container.Array<float>;
+    pub var circleY: zr.container.Array<float>;
     pri var xs: zr.container.Array<float>;
     pri var ys: zr.container.Array<float>;
     pub @constructor(frames: int) {
         let math = import("zr.math");
         this.xs = new container.Array<float>(); this.ys = new container.Array<float>();
+        this.circleX = new container.Array<float>(); this.circleY = new container.Array<float>();
+        var direction = 0;
+        while (direction < 64) {
+            var angle = <float>direction * 6.283185307179586 / 64.0;
+            this.circleX.add(math.cos(angle)); this.circleY.add(math.sin(angle)); direction += 1;
+        }
         var i = 1;
         while (i <= frames) {
             this.xs.add(2048.0 + 128.0 * math.sin(<float>i * 6.283185307179586 / 240.0));
@@ -19,4 +42,73 @@ pub class Bot {
         }
     }
     pub fn input(frame: int): void { this.x = this.xs[frame]; this.y = this.ys[frame]; }
+    pub fn nearest(w: world.World): int {
+        var nearest = -1; var best = 100000000.0; var i = 0;
+        var px = w.px; var py = w.py;
+        while (i < w.count) {
+            var dx = px[i] - this.x; var dy = py[i] - this.y;
+            var d2 = dx * dx + dy * dy;
+            if (d2 < best) { best = d2; nearest = i; }
+            i += 1;
+        }
+        return nearest;
+    }
+    pub fn dodge(w: world.World): void {
+        let math = import("zr.math");
+        var nearest = this.nearest(w);
+        if (nearest < 0) { return; }
+        var dx = this.x - w.px[nearest]; var dy = this.y - w.py[nearest];
+        var d2 = dx * dx + dy * dy;
+        if (d2 >= 2304.0) { return; }
+        var distance = math.sqrt(d2);
+        if (distance <= 0.000001) { this.x += 24.0; }
+        else {
+            var amount = 24.0 * (1.0 - distance / 48.0);
+            this.x += -dy / distance * amount; this.y += dx / distance * amount;
+        }
+    }
+    pub fn fire(w: world.World, b: bullet_store.Bullets, frame: int): void {
+        let math = import("zr.math");
+        var nearest = this.nearest(w);
+        if (nearest < 0) { return; }
+        var dx = w.px[nearest] - this.x; var dy = w.py[nearest] - this.y;
+        var distance = math.sqrt(dx * dx + dy * dy);
+        var vx = 480.0; var vy = 0.0;
+        if (distance > 0.000001) { vx = dx / distance * 480.0; vy = dy / distance * 480.0; }
+        var hits = 2 + this.pierce;
+        if (hits > 8) { hits = 8; }
+        var i = 0;
+        while (i < this.aimedCount) {
+            b.add(this.x, this.y, vx, vy, this.damage, hits); w.shots += 1; i += 1;
+        }
+        if (frame >= this.nextBurst) {
+            hits = 3 + this.pierce;
+            if (hits > 8) { hits = 8; }
+            i = 0;
+            while (i < this.radialCount) {
+                var direction = i * 64 / this.radialCount;
+                b.add(this.x, this.y, this.circleX[direction] * 480.0, this.circleY[direction] * 480.0,
+                      this.damage, hits);
+                w.shots += 1; i += 1;
+            }
+            this.nextBurst = frame + 60;
+        }
+    }
+}
+
+pub fn gain(p: Bot, value: int, rng: int): int {
+    p.xp += value;
+    while (p.xp >= p.threshold) {
+        p.xp -= p.threshold; p.level += 1; p.threshold += 2;
+        rng = core.nextState(rng); var upgrade = rng % 5;
+        p.upgradesHash = core.mix(p.upgradesHash, upgrade);
+        if (upgrade == 0 && p.damage < 8) { p.damage += 1; }
+        else if (upgrade == 1 && p.pierce < 6) { p.pierce += 1; }
+        else if (upgrade == 2 && p.aimedCount < p.baseAimed + 8) { p.aimedCount += 1; }
+        else if (upgrade == 3 && p.magnetRadius < 384.0) {
+            p.magnetRadius += 24.0;
+            if (p.magnetRadius > 384.0) { p.magnetRadius = 384.0; }
+        } else if (upgrade == 4 && p.radialCount < 32) { p.radialCount += 2; }
+    }
+    return rng;
 }

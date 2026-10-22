@@ -80,11 +80,11 @@ def percentile(values, percent):
     return sorted(values)[math.ceil(len(values) * percent / 100) - 1]
 
 
-def artifacts(directory, frames, seed, policy, interval=30):
+def artifacts(directory, frames, seed, policy, interval=30, scenario="smoke", caps=(200, 964, 512)):
     schema = json.loads((DEMO / "docs/perf-summary.schema.json").read_text())
     summary = json.loads((directory / "summary.json").read_text())
     validate_schema(summary, schema)
-    for key, value in dict(scenario="smoke", lane="dod", drive="host", exec="interp",
+    for key, value in dict(scenario=scenario, lane="dod", drive="host", exec="interp",
                            render="null", submit="bulk", frames=frames, seed=seed,
                            warmup=0, gc_policy=policy).items():
         require(summary[key] == value, "summary option mismatch: " + key)
@@ -124,7 +124,7 @@ def artifacts(directory, frames, seed, policy, interval=30):
     for threshold in (16667, 8333):
         require(summary["budget_misses"][str(threshold)] == sum(row["frame_us"] > threshold for row in rows),
                 "budget miss mismatch")
-    for key, cap in (("enemies_max", 200), ("bullets_max", 512), ("particles_max", 256)):
+    for key, cap in zip(("enemies_max", "bullets_max", "particles_max"), caps):
         require(0 <= summary["entities"][key] <= cap, "entity maximum out of bounds")
     # Negative controls prevent a malformed metric from silently passing the schema gate.
     for mutate in (lambda v: v.pop("gc"), lambda v: v["alloc"].update(exact="false"),
@@ -217,11 +217,13 @@ def main():
                 require([row["hash"] for row in rows] == [row["hash"] for row in reference_rows], "policy changed frame hashes")
             _, zero, _ = host_run("light-slack-zero", frames=4, policy="slack", budget=0, expected_hash=int(reference["hash"]))
             require(zero["gc"]["slack_steps"] == 0, "zero GC budget performed slack work")
-            bad = [["--scenario", "arena_2k"], ["--lane", "oop"], ["--render", "soft"], ["--submit", "percall"],
+            bad = [["--scenario", "unknown"], ["--scenario", "sweep"], ["--scenario", "arena_2K"],
+                   ["--scenario", "arena_2k", "--frames", "1801"],
+                   ["--lane", "oop"], ["--render", "soft"], ["--submit", "percall"],
                    ["--gc-policy", "bad"], ["--frames", "0"], ["--frames", "121"], ["--frames", "bad"],
                    ["--seed", "0"], ["--seed", "2147483647"], ["--gc-budget-us", "-1"],
                    ["--gc-budget-us", "1000001"], ["--warmup", "1"], ["--seed", "1", "--seed", "2"],
-                   ["--gc-minor-interval", "0"], ["--gc-minor-interval", "121"],
+                   ["--gc-minor-interval", "0"], ["--gc-minor-interval", "1801"],
                    ["--expect-hash", "1000000007"], ["--seed", "999999999999999999999999"],
                    ["--unknown", "1"], ["--frames"]]
             for index, arguments in enumerate(bad):

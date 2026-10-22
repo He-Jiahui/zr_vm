@@ -1,0 +1,49 @@
+let container = import("zr.container");
+let exception = import("zr.system.exception");
+let world = import("lanes/dod/world");
+
+// Bullet motion reuses the retained moving columns; gameplay columns stay separate.
+pub class Bullets {
+    pub var motion: world.MovingSoA;
+    pub var damage: zr.container.Array<int>;
+    pub var pierce: zr.container.Array<int>;
+    pub var hitCount: zr.container.Array<int>;
+    pub var history: zr.container.Array<int>;
+    pub @constructor(cap: int) {
+        this.motion = new world.MovingSoA(cap);
+        this.damage = new container.Array<int>(); this.pierce = new container.Array<int>();
+        this.hitCount = new container.Array<int>(); this.history = new container.Array<int>();
+        var i = 0;
+        while (i < cap) { this.damage.add(0); this.pierce.add(0); this.hitCount.add(0); i += 1; }
+        i = 0;
+        while (i < cap * 8) { this.history.add(0); i += 1; }
+    }
+    pub fn add(x: float, y: float, vx: float, vy: float, damage: int, pierce: int): void {
+        if (pierce < 1 || pierce > 8) { throw new exception.RuntimeError("bullet pierce must be in 1..8"); }
+        if (!this.motion.add(x, y, vx, vy, 90)) { throw new exception.RuntimeError("bullet capacity exceeded"); }
+        var i = this.motion.count - 1;
+        this.damage[i] = damage; this.pierce[i] = pierce; this.hitCount[i] = 0;
+    }
+    pub fn alreadyHit(slot: int, id: int): bool {
+        var j = 0;
+        while (j < this.hitCount[slot]) {
+            if (this.history[slot * 8 + j] == id) { return true; }
+            j += 1;
+        }
+        return false;
+    }
+    pub fn recordHit(slot: int, id: int): void {
+        this.history[slot * 8 + this.hitCount[slot]] = id;
+        this.hitCount[slot] = this.hitCount[slot] + 1;
+        this.pierce[slot] = this.pierce[slot] - 1;
+    }
+    pub fn swapRemove(slot: int): void {
+        var last = this.motion.count - 1;
+        this.motion.swapRemove(slot);
+        this.damage[slot] = this.damage[last]; this.pierce[slot] = this.pierce[last];
+        this.hitCount[slot] = this.hitCount[last];
+        var j = 0;
+        while (j < 8) { this.history[slot * 8 + j] = this.history[last * 8 + j]; j += 1; }
+    }
+}
+

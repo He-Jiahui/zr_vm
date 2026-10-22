@@ -10,11 +10,14 @@ pub class Rng {
         }
         this.state = seed;
     }
+    pub static fn advance(state: int): int { return (state * 48271) % 2147483647; }
     pub fn next(): int {
-        this.state = (this.state * 48271) % 2147483647;
+        this.state = Rng.advance(this.state);
         return this.state;
     }
 }
+
+pub fn nextState(state: int): int { return Rng.advance(state); }
 
 pub fn mix(hash: int, value: int): int {
     var q = value % 1000000007;

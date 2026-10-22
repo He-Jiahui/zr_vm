@@ -13,9 +13,47 @@ pub class Config {
     pub var gcBudgetUs: int = 500;
     pub var expectHash: int = -1;
     pub var help: bool = false;
+    pub var maxFrames: int = 120;
+    pub var enemyCap: int = 200;
+    pub var aimedCount: int = 2;
+    pub var ringRadius: int = 192;
+    pub var waveFrames: int = 40;
+    pub var particlesPerKill: int = 4;
+    pub var particleCap: int = 512;
+    pub var minorInterval: int = 30;
     pub @constructor() { }
     pub fn usage(): string {
-        return "usage: --scenario smoke --lane dod --frames 1..120 --seed 1..2147483646 --render null --submit bulk --gc-policy auto --gc-budget-us 0..1000000 --expect-hash H";
+        return "usage: --scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst --lane dod --frames 1..scenario-limit --seed 1..2147483646 --render null --submit bulk --gc-policy auto|slack|manual --gc-budget-us 0..1000000 --gc-minor-interval 1..1800 --expect-hash H";
+    }
+    pub fn configure(): void {
+        this.maxFrames = 1800; this.enemyCap = 2000; this.aimedCount = 10;
+        this.ringRadius = 1024; this.waveFrames = 300;
+        this.particlesPerKill = 4; this.particleCap = 4096;
+        if (this.scenario == "smoke") {
+            this.maxFrames = 120; this.enemyCap = 200; this.aimedCount = 2;
+            this.ringRadius = 192; this.waveFrames = 40; this.particleCap = 512;
+        } else if (this.scenario == "swarm_10k") {
+            this.enemyCap = 10000; this.ringRadius = 1600;
+        } else if (this.scenario == "bullet_storm") {
+            this.enemyCap = 1000; this.aimedCount = 100; this.ringRadius = 384; this.particleCap = 8192;
+        } else if (this.scenario == "particle_burst") {
+            this.ringRadius = 512; this.particlesPerKill = 64; this.particleCap = 16384;
+        } else if (this.scenario != "arena_2k") {
+            throw new exception.RuntimeError("scenario must be smoke, arena_2k, swarm_10k, bullet_storm or particle_burst (got " + this.scenario + ")");
+        }
+    }
+    pub fn validate(): void {
+        if (this.lane != "dod") { throw new exception.RuntimeError("lane must be dod"); }
+        if (this.frames < 1 || this.frames > this.maxFrames) {
+            throw new exception.RuntimeError("--frames must be in 1.." + <string>this.maxFrames + " for scenario " + this.scenario);
+        }
+        if (this.seed < 1 || this.seed > 2147483646) { throw new exception.RuntimeError("--seed must be in 1..2147483646"); }
+        if (this.render != "null") { throw new exception.RuntimeError("render must be null"); }
+        if (this.submit != "bulk") { throw new exception.RuntimeError("submit must be bulk"); }
+        if (this.gcPolicy != "auto" && this.gcPolicy != "slack" && this.gcPolicy != "manual") {
+            throw new exception.RuntimeError("gc-policy must be auto, slack or manual");
+        }
+        if (this.minorInterval < 1) { throw new exception.RuntimeError("--gc-minor-interval must be in 1..1800"); }
     }
     pri fn number(option: string, text: string, limit: int): int {
         if (text == "") { throw new exception.RuntimeError(option + " requires a decimal integer"); }
@@ -46,6 +84,7 @@ pub class Config {
         let system = import("zr.system");
         var args = system.process.arguments;
         var seen = new container.Array<string>();
+        var explicitFrames = false;
         var i = 1;
         while (i < args.length) {
             var option = args[i]; i += 1;
@@ -58,27 +97,24 @@ pub class Config {
             seen.add(option);
             if (option != "--scenario" && option != "--lane" && option != "--frames" && option != "--seed"
                 && option != "--render" && option != "--submit" && option != "--gc-policy"
-                && option != "--gc-budget-us" && option != "--expect-hash") {
+                && option != "--gc-budget-us" && option != "--expect-hash" && option != "--gc-minor-interval") {
                 throw new exception.RuntimeError("unknown argument " + option);
             }
             if (i == args.length) { throw new exception.RuntimeError("missing value for " + option); }
             var value = args[i]; i += 1;
             if (option == "--scenario") { this.scenario = value; }
             else if (option == "--lane") { this.lane = value; }
-            else if (option == "--frames") { this.frames = this.number(option, value, 120); }
+            else if (option == "--frames") { this.frames = this.number(option, value, 1800); explicitFrames = true; }
             else if (option == "--seed") { this.seed = this.number(option, value, 2147483646); }
             else if (option == "--render") { this.render = value; }
             else if (option == "--submit") { this.submit = value; }
             else if (option == "--gc-policy") { this.gcPolicy = value; }
             else if (option == "--gc-budget-us") { this.gcBudgetUs = this.number(option, value, 1000000); }
+            else if (option == "--gc-minor-interval") { this.minorInterval = this.number(option, value, 1800); }
             else { this.expectHash = this.number(option, value, 1000000006); }
         }
-        if (this.scenario != "smoke") { throw new exception.RuntimeError("scenario must be smoke (got " + this.scenario + ")"); }
-        if (this.lane != "dod") { throw new exception.RuntimeError("lane must be dod"); }
-        if (this.frames < 1) { throw new exception.RuntimeError("--frames must be in 1..120"); }
-        if (this.seed < 1) { throw new exception.RuntimeError("--seed must be in 1..2147483646"); }
-        if (this.render != "null") { throw new exception.RuntimeError("render must be null"); }
-        if (this.submit != "bulk") { throw new exception.RuntimeError("submit must be bulk"); }
-        if (this.gcPolicy != "auto") { throw new exception.RuntimeError("gc-policy must be auto"); }
+        this.configure();
+        if (!explicitFrames) { this.frames = this.maxFrames; }
+        this.validate();
     }
 }
