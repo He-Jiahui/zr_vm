@@ -53,9 +53,9 @@ At boot the deterministic bot retains its Lissajous lookup tables, for
 `y=2048+96*sin(t*6.283185307179586/180)`. Input frame f reads t=f+1. Using
 the previous enemy positions, the nearest enemy within 48 units causes a
 perpendicular displacement of `24*(1-distance/48)` from that table position.
-A zero-distance dodge uses positive x. Equal nearest distances retain the
-first dense slot. The player starts with HP 100 and radius 10. A completed
-run always advances its configured frame count; HP clamps to zero.
+A dodge distance at most 0.000001 uses positive x. Equal nearest distances
+retain the first dense slot. The player starts with HP 100 and radius 10.
+A completed run always advances its configured frame count; HP clamps to zero.
 
 | Kind | Code | Maximum speed | Initial HP | Radius | Pickup value |
 | --- | --- | --- | --- | --- | --- |
@@ -65,13 +65,13 @@ run always advances its configured frame count; HP clamps to zero.
 
 A boss is a Tank with HP 40 and pickup value 8. Spawn velocity and
 acceleration are zero. Seek computes a desired velocity toward the player
-with magnitude equal to the kind's speed (zero below distance 0.000001).
+with magnitude equal to the kind's speed (zero at distance ≤0.000001).
 Separation visits grid cells intersecting the 24-unit query square in increasing
 row, column and stable dense order. For each other enemy at squared distance
 `d2` in (0.000001, 576], add
 `weight=(576-d2)/576*600`, then add `(self-neighbour)/d2*weight`
-to desired velocity, preserving that operation order. Coincident
-centers contribute x=-24 for the lower stable ID and x=24 for the higher ID.
+to desired velocity, preserving that operation order. At d2 ≤0.000001,
+contribute x=-24 for the lower stable ID and x=24 for the higher ID.
 Acceleration is `(desired-current)*6`. Integration adds acceleration*dt,
 clamps velocity magnitude to the kind's speed, advances and clamps position.
 Steering reads the phase-4 snapshot; no positions change during steering.
@@ -84,11 +84,11 @@ one damage when drained. Enemy processing stays in dense order.
 
 Weapon rules live in `player.zr`. Every frame with enemies fires the configured
 aimed count toward the nearest enemy, retaining the first dense slot on ties.
-A zero-length aim uses velocity (480,0); otherwise normalize direction to
-speed 480. The radial weapon fires at frames 0,60,… when enemies exist;
-its next deadline advances from the firing frame. It starts with eight shots.
-The radial weapon uses boot-time 64-direction sine/cosine tables; shot i uses table
-index `i*64/radial count` with integer division.
+An aim distance at most 0.000001 uses velocity (480,0); otherwise normalize
+direction to speed 480. The radial weapon fires at frames 0,60,… when enemies
+exist; its next deadline advances from the firing frame. It starts with eight
+shots. The radial weapon uses boot-time 64-direction sine/cosine tables;
+shot i uses table index `i*64/radial count` with integer division.
 
 All bullets have radius 2, lifetime 90 ticks and initial damage 1. Aimed
 bullets permit two hits; radial bullets permit three. Pierce upgrades add to

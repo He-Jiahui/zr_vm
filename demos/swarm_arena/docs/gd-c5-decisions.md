@@ -8,33 +8,34 @@ remain deferred; the project keeps `$swarmcore` / `import("&swarmcore")`.
 
 ## Golden change declared before regeneration
 
-The restored GD-C4 smoke reference is **224663030**, with checkpoint 60
-**227689432**. The GD-C5 rules revision will be **gd-c5-v1/1**. Smoke will use
+This decision was written before regeneration. The restored GD-C4 smoke
+reference is **224663030**, with checkpoint 60 **227689432**. The GD-C5 rules
+revision is **gd-c5-v1/1**. Smoke uses
 the full gameplay systems, including separation, the three enemy kinds, both
 weapons, pierce, drops and progression. Separation changes enemy acceleration
 and positions. Kind selection, pickup drops and upgrades consume simulation
 RNG; player progression, director state, bullet pierce and pickups also need
 hash coverage. These changes make the GD-C3 hash inputs inequivalent, so a new
-smoke golden is deliberate and necessary. Goldens will be regenerated only
-after the rules and their ordering are written and functional checks pass.
+smoke golden is deliberate and necessary. Goldens were regenerated after the
+rules and their ordering were written and functional checks passed.
 
 ## Source inventory and implementation boundaries
 
 The retained modules are `config`, `director`, `events`, `player`,
 `lanes/dod/{world,grid,systems}`, `game_session`, `game`, `main`, `render`,
 `render_buffer` and `metrics`. The existing numeric columns, counting-sort
-grid, dense swap removal and stable-ID event queue will be extended. Weapon
+grid, dense swap removal and stable-ID event queue were extended. Weapon
 logic belongs in `player`; the shared Session keeps the canonical 14 phases.
 The host retains `main.c`, `options.c`, `host_vm.c`, `host_loop.c` and the null
-platform. Scenario selection must reach `game.boot` and host artifacts; frame
-storage and statistics must support 1800 frames without the old 120-slot limit.
+platform. Scenario selection reaches `game.boot` and host artifacts; frame
+storage and statistics support 1800 frames without the old 120-slot limit.
 
-Full scenarios will be completion/parity gates in Release. The same CTests in
-memory-error-detector and forced-GC builds will use bounded smoke-sized
+Full scenarios are completion/parity gates in Release. The same CTests in
+memory-error-detector and forced-GC builds use bounded smoke-sized
 scenario runs, while the full smoke and gameplay unit gates retain their
 coverage. This follows design §8.4's stress restriction and keeps the long
 scenario matrix separate from performance acceptance. Exact run lengths and
-results will be recorded in verification and the acceptance note.
+results are recorded in verification and the acceptance note.
 The Release completion gate may run its independent CLI and host processes
 together; their project is read-only and host artifacts have a separate path.
 Stress checks run the two drives sequentially, with CTest `-j1` throughout.
@@ -71,8 +72,8 @@ particle storage. This deliberately exercises allocation at burst creation
 without introducing per-particle game objects or affecting simulation RNG.
 Other scenarios create four particles per kill using the retained pool.
 
-The full rules document will specify exact phase arithmetic, query order,
-wave definitions, capacities and hash order before goldens are generated.
+The full rules document specifies exact phase arithmetic, query order,
+wave definitions, capacities and hash order, written before golden generation.
 
 The first retained Release run passes 72/73. Its new host negative case puts
 `--scenario` first but correctly receives an error naming the invalid
@@ -106,12 +107,48 @@ rules and memory lifetime; three source-removed binary smoke repetitions now
 match the interpreter and host. Full kind/boss death payloads remain explicit.
 
 The first full-v1 memory-error-detector smoke hits the inherited 600-second
-process deadline while the ring fills thousands of unused placeholder slots.
+process deadline with a ring prefilled with thousands of unused placeholders.
 The ring now appends each slot on its first write, then reuses storage on wrap.
 The tail visits every index in order before its first wrap, so no unwritten
 slot can be popped. Logical capacity, FIFO order and scalar decoding remain
 unchanged. This storage choice changes no rule or hash input and requires no
 golden regeneration. A private completion check matches **552988638** in
 **115.24 s**; three Release interpreter repetitions, three source-removed
-binary repetitions and all twenty units also pass. The full gates are rerun
-after applying the change. Engine source remains unchanged.
+binary repetitions and all twenty units also pass. All 77 distinct tests pass
+in each final configuration after applying the change. Engine source remains
+unchanged.
+
+Final rules wording spells out the existing distance cutoffs for dodge, seek,
+separation and aim. This clarifies the implementation; it changes no runtime
+arithmetic, hash input or golden.
+
+## Resume and acceptance decisions
+
+Release and memory-error-detector each pass one complete 77-test run.
+Forced-GC has 77 distinct successful outcomes: 12 retained passes before
+the previous session ended, followed by a successful sequential 65-test
+resume starting at `demo_cli_host_particle_burst_dod`. Interrupted
+particle-burst attempts had no completed outcome; this test was rerun. No
+runtime source, golden, compiler flag or test deadline changed during resume.
+The original partial logs and the resumed logs are preserved separately.
+
+Forced-GC validation time is 7429.25 s: 6826.05 s for the first 12
+completed tests plus 603.20 s for the 65-test resume. It excludes
+interrupted work and session downtime. Release and detector values are
+complete-suite wall times. Leak detection remains disabled.
+
+The resumed acceptance audit uses saved CTest stdout and fresh per-test
+artifacts after a concurrent inventory query replaced the temporary detail
+log. The original 12-test detail log is intact. Later inventory queries run
+after test completion; [verification](verification.md) records the exact
+evidence and this limitation.
+
+The acceptance note keeps its original `2026-10-21` filename and records
+completion on 2026-10-22, preserving its existing links. The resume
+updates documentation and readiness status only. Status needed refresh because
+its top-level summary still deferred GD-C4; historical probe records remain
+intact. Release and detector results are retained because their binaries
+match their recorded hashes. Current build hashes are in `gd_c5`; the
+earlier validation and milestone objects keep their historical evidence.
+P19 reflection, P14 v2 package integration, other lanes, software/GL
+rendering and all H/M milestones remain deferred.
