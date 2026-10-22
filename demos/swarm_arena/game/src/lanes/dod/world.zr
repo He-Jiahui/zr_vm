@@ -115,4 +115,3 @@ pub class MovingSoA {
         this.life[slot] = this.life[last]; this.count = last;
     }
 }
-
