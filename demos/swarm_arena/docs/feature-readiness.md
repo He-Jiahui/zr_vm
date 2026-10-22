@@ -1,4 +1,57 @@
-# Feature readiness — GD-C4 host
+# Feature readiness — GD-C5 gameplay
+
+**GD-C5 is complete.** It implements full v1 gameplay on the retained DOD lane
+and shared CLI/host Session: separation, three enemy kinds, nearest and radial
+weapons, pierce, pickups, magnet collection, deterministic XP upgrades, boss waves and cosmetic
+particles. All five named scenarios use null rendering and bulk submission.
+Acceptance completed on 2026-10-22. Full scenario completion and bounded
+stress profiles pass the gates below.
+
+| Gate | Release | memory-error-detector | forced-GC |
+| --- | --- | --- | --- |
+| All demo CTests (73 retained + 4 scenario) | 77/77 | 77/77 | 77/77 |
+| New scenario CTests | 4/4 | 4/4 | 4/4 |
+| Scenario frames per drive | 1800 | 4 | 4 |
+| Smoke frames | 120 | 120 | 120 |
+| Smoke repetitions, interpreter + source-removed binary | 3 + 3 | 3 + 3 | 3 + 3 |
+| ZR gameplay units | 20/20 | 20/20 | 20/20 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Required GD-C1 checks | 38/38 | 38/38 | 38/38 |
+| Successful GD-C1 mode checks | 58/62 | 58/62 | 58/62 |
+| P22 required pairs | 18/18 | 18/18 | 18/18 |
+| CLI bad-input cases | 28/28 | 28/28 | 28/28 |
+| Host failure cases | 28/28 | 28/28 | 28/28 |
+| Core inventory, names/commands/properties | 515 unchanged | 515 unchanged | 515 unchanged |
+| Detector findings | — | 0 | 0 |
+| Validation seconds (scope below) | 1942.37 | 7469.56 | 7429.25 |
+
+Release and memory-error-detector each pass one complete 77-test run.
+Forced-GC has 77 distinct successful outcomes: 12 retained passes before
+the previous session ended, followed by a successful sequential 65-test
+resume starting at `demo_cli_host_particle_burst_dod`. Interrupted
+particle-burst attempts had no completed outcome; this test was rerun. No
+runtime source, golden, compiler flag or test deadline changed during resume.
+The original partial logs and the resumed logs are preserved separately.
+
+Forced-GC validation time is 7429.25 s: 6826.05 s for the first 12
+completed tests plus 603.20 s for the 65-test resume. It excludes
+interrupted work and session downtime. Release and detector values are
+complete-suite wall times. Leak detection remains disabled.
+
+Smoke's new CLI/host golden is **552988638**, checkpoint 60 **42922906**.
+The written reason for replacing the GD-C4 reference is in
+[GD-C5 decisions](gd-c5-decisions.md); [rules](rules.md) now specifies full
+v1 under revision `gd-c5-v1/1`. [Verification](verification.md) and the
+[acceptance note](../../../tests/acceptance/2026-10-21-swarm-gd-c5-gameplay.md)
+record the restored prerequisite and final evidence. The unchanged engine's
+Release core is confirmed at **515/515**.
+
+P19 runtime reflection and P14's v2 package integration remain deferred. The
+game keeps v1 `$swarmcore` / `import("&swarmcore")`. Other lanes, `sweep`,
+software/GL rendering, interactive input, performance harnesses and every H/M
+milestone remain deferred.
+
+## GD-C4 host acceptance (retained)
 
 **GD-C4 is complete.** `zr_swarm` implements the source-driven smoke/DOD host,
 null platform/backend, bulk submit, auto/slack/manual GC, bounded options and
@@ -36,8 +89,8 @@ fails before the correction and passes afterward without adding a CTest. See
 retained initial attempts. The detector gates retain the existing policy: leak detection disabled.
 
 P19 runtime reflection and P14's v2 package alias remain deferred. The game
-continues to use v1 `$swarmcore` / `import("&swarmcore")`. GD-C5, all H/M work,
-other lanes/scenarios and software/GL rendering remain deferred.
+continues to use v1 `$swarmcore` / `import("&swarmcore")`. That acceptance was
+limited to smoke; GD-C5's current status is recorded above.
 
 ## Retained GD-C1/GD-C2 readiness
 
@@ -170,7 +223,8 @@ regressions.
 
 DOD CLI smoke determinism and its package/event/native-call fallbacks are
 implemented in GD-C3; GD-C4 adds host drive and CLI/host gameplay parity.
-Full v1 rules, other scenarios, OOP/Hybrid/C simulations, lane equivalence,
-W0–W14 baselines, capacity@60Hz, software/GL rendering and screenshots remain
-future work. Current smoke timing/GC summaries establish no performance budget.
-P21 remains an API spike. GD-C5, GD-H1–H6 and M-tier work remain deferred.
+GD-C5 extends that shared simulation to full v1 rules and all five named
+scenarios. OOP/Hybrid/C simulations, lane equivalence, W0–W14 baselines,
+capacity@60Hz, software/GL rendering and screenshots remain future work.
+Timing/GC summaries establish no performance budget. P21 remains an API spike.
+GD-H1–H6 and M-tier work remain deferred.

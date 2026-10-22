@@ -1,5 +1,147 @@
 # Verification evidence
 
+## GD-C5 full v1 gameplay (2026-10-21)
+
+**GD-C5 is complete.** Final acceptance completed on 2026-10-22.
+Rules revision `gd-c5-v1/1` extends the retained DOD Session with separation,
+three kinds, both weapons, pierce, pickups/magnet, deterministic upgrades,
+boss waves and cosmetic allocation bursts. CLI and host use null/bulk.
+The [decisions](gd-c5-decisions.md) declare the necessary smoke hash change
+before regeneration. Engine source remains at `e1d3ab19`.
+
+| Gate | Release | memory-error-detector | forced-GC |
+| --- | --- | --- | --- |
+| All demo CTests (73 retained + 4 scenario) | 77/77 | 77/77 | 77/77 |
+| New scenario CTests | 4/4 | 4/4 | 4/4 |
+| Scenario frames per drive | 1800 | 4 | 4 |
+| Smoke frames | 120 | 120 | 120 |
+| Smoke repetitions, interpreter + source-removed binary | 3 + 3 | 3 + 3 | 3 + 3 |
+| ZR gameplay units | 20/20 | 20/20 | 20/20 |
+| Native C tests | 8/8 | 8/8 | 8/8 |
+| Required GD-C1 checks | 38/38 | 38/38 | 38/38 |
+| Successful GD-C1 mode checks | 58/62 | 58/62 | 58/62 |
+| P22 required pairs | 18/18 | 18/18 | 18/18 |
+| CLI bad-input cases | 28/28 | 28/28 | 28/28 |
+| Host failure cases | 28/28 | 28/28 | 28/28 |
+| Core inventory, names/commands/properties | 515 unchanged | 515 unchanged | 515 unchanged |
+| Detector findings | — | 0 | 0 |
+| Validation seconds (scope below) | 1942.37 | 7469.56 | 7429.25 |
+
+Release and memory-error-detector each pass one complete 77-test run.
+Forced-GC has 77 distinct successful outcomes: 12 retained passes before
+the previous session ended, followed by a successful sequential 65-test
+resume starting at `demo_cli_host_particle_burst_dod`. Interrupted
+particle-burst attempts had no completed outcome; this test was rerun. No
+runtime source, golden, compiler flag or test deadline changed during resume.
+The original partial logs and the resumed logs are preserved separately.
+
+Forced-GC validation time is 7429.25 s: 6826.05 s for the first 12
+completed tests plus 603.20 s for the 65-test resume. It excludes
+interrupted work and session downtime. Release and detector values are
+complete-suite wall times. Leak detection remains disabled.
+
+Seed 12345, DOD, matching CLI/host goldens:
+
+| Scenario | Frames | Hash | Checkpoint 60 |
+| --- | --- | --- | --- |
+| smoke | 120 | 552988638 | 42922906 |
+| arena_2k | 1800 | 60149719 | 131330391 |
+| swarm_10k | 1800 | 603625956 | 422884711 |
+| bullet_storm | 1800 | 324791145 | 433197618 |
+| particle_burst | 1800 | 203028298 | 96337168 |
+
+Four-frame stress references use the same seed and match both drives:
+
+| Scenario | CLI/host hash |
+| --- | --- |
+| arena_2k | 91709327 |
+| swarm_10k | 286636939 |
+| bullet_storm | 822063058 |
+| particle_burst | 202404383 |
+
+Each Release scenario gate drives both processes to completion and compares
+the hash, checkpoint, all final counters and host CSV/JSON aggregates. The
+four-frame stress checks retain each scenario's real capacities and profile.
+They supplement full smoke and twenty units, following design §8.4's stress
+restriction. The Release pair may run concurrently; all stress drives run
+sequentially with CTest `-j1`, and the two stress trees run sequentially.
+
+The first retained Release attempt passes 72/73 because a new negative-case
+assertion expects the wrong option field. After correcting its ordering,
+the complete retained suite passes 73/73 in 211.34 s. No gameplay or golden
+changes result from that test correction. Earlier evidence remains private.
+The unchanged engine Release core passes **515/515** in **68.13 s**,
+confirmed before gameplay changes. Its source and perf worktree remain
+unchanged. All three final core inventories exactly match their baseline
+names, commands and properties; full engine stress suites were not rerun.
+
+Raw logs, detailed runner projects, commands and timings are only under
+`/tmp/zr-swarm-gd-c5-20261021/`; `results.jsonl` records each invocation.
+The first memory-error-detector attempt hits a functional timeout in the
+interpreter smoke's 600-second process allowance. The interrupted suite remains
+separate from final validation. Growing event-ring storage on first write
+preserves the ring's bound and FIFO order, while avoiding unused boot values.
+A private corrected smoke completes in 115.24 s with the same golden; the
+final outcomes pass with this correction and the existing process deadlines.
+
+For the forced-GC resume, `final77-gcstress-interrupted-tests.log` and
+`final77-gcstress-interrupted-last-test.log` preserve the first 12 passes;
+`final77-gcstress-resume2-tests.log` records all 65 resumed passes.
+`resume2-gcstress-tests.txt` lists precisely the unfinished tests from the
+unchanged 77-test inventory. `final77-{release,asan,gcstress}-evidence.json`
+audits native/unit results, runner hashes, all scenario pairs, required probes,
+P22 and unchanged core inventories. Release and detector binaries still
+match their completed-run SHA-256 values, so their gates were retained.
+
+A concurrent CTest inventory query replaced the resumed temporary detail log.
+The resume audit therefore checks the saved CTest stdout for 65 named passes,
+all 62 fresh per-mode probe results, fresh P22 results and the particle-burst
+runner result, CLI/host logs and schema-checked CSV/JSON. Every resumed result
+was written after the saved unfinished-test list. The original 12-test detail
+log is intact. The incomplete resumed LastTest snapshot supplies no gate
+evidence. Inventory queries are now serialized after test completion.
+
+Final validation reuses the three existing trees, their flags and system
+CMake/Ninja/Clang 19. The Release suite may overlap the stress chain; the two
+stress suites never overlap. Commands below reproduce the per-tree checks
+sequentially. Keep CTest Temporary, configure/Ninja logs and probe results
+linked under the task prefix before running them. Set the retained detector
+environment from the existing tree instructions; the policy is leak detection disabled.
+
+```sh
+export PATH="/usr/lib/llvm-19/bin:/usr/bin:/bin:$PATH"
+export LD_LIBRARY_PATH="/usr/lib/llvm-19/lib/clang/19/lib/linux:${LD_LIBRARY_PATH:-}"
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1
+export ZR_VM_TEST_TIER=core TMPDIR=/tmp/zr-swarm-gd-c5-runtime
+mkdir -p "$TMPDIR"
+for configuration in release asan gcstress; do
+  cmake -S . -B "build/demo-${configuration}" \
+    > "/tmp/zr-swarm-gd-c5-${configuration}-configure.log" 2>&1
+  cmake --build "build/demo-${configuration}" -j3 --target \
+    zr_vm_cli_executable zr_swarm zr_swarm_probe_host zrgame_ffi zrgame_probe \
+    zrgame_inline_probe zrgame_plugins zrgame_native_tests \
+    > "/tmp/zr-swarm-gd-c5-${configuration}-build.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" -L demo --no-tests=error \
+    -j1 --output-on-failure > "/tmp/zr-swarm-gd-c5-${configuration}-demo.log" 2>&1
+  ctest --test-dir "build/demo-${configuration}" --show-only=json-v1 \
+    -LE demo -E '^performance_report$' \
+    > "/tmp/zr-swarm-gd-c5-${configuration}-core-inventory.json" 2>&1
+done
+# Unchanged engine Release confirmation, from /workspace/zr_vm-perf:
+ctest --test-dir build/r2-merged-release -j3 -E '^performance_report$' \
+  --output-on-failure > /tmp/zr-swarm-gd-c5-engine-release-core.log 2>&1
+```
+
+The actual resume used the saved unfinished-test list with the same detector
+environment and existing build; it did not rebuild or repeat the first 12:
+
+```sh
+ctest --test-dir build/demo-gcstress -L demo -j1 --no-tests=error \
+  --tests-from-file /tmp/zr-swarm-gd-c5-20261021/resume2-gcstress-tests.txt \
+  --output-on-failure \
+  > /tmp/zr-swarm-gd-c5-20261021/final77-gcstress-resume2-tests.log 2>&1
+```
+
 ## GD-C5 prerequisite: restored GD-C4 baseline (2026-10-21)
 
 Before applying gameplay changes, all three existing demo trees pass complete
