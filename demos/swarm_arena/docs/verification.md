@@ -1,5 +1,133 @@
 # Verification evidence
 
+## GD-H1 C reference lane and DOD==C (2026-10-22)
+
+Implementation: **61f7d717**. The independent host C lane mirrors
+`gd-c5-v1/1`, using `double` arithmetic and a translation-unit-specific
+`-fno-fast-math -ffp-contract=off`. Rules, hash order and all committed goldens
+are unchanged. See [GD-H1 decisions](gd-h1-decisions.md).
+
+**GD-H1 is complete.** The initial focused Release run passes
+**4/4**: existing DOD smoke and CLI/host parity, C smoke and lane equivalence
+(58.55 s). The committed-build full Release run passes **79/79** (1312.20 s),
+focused ASan/UBSan passes **2/2** (412.89 s), and forced full GC + ASan/UBSan
+passes **2/2** (354.82 s). Both stress runs have no detector findings; leak
+detection remains disabled. All three final builds validate implementation commit
+`61f7d71776377b67a0f743de41d892eebfaeb823`. The following acceptance commit
+changes documentation only, so these binary identities remain the tested ones.
+
+| Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
+| --- | --- | --- | --- |
+| Full demo suite, 77 retained + 2 GD-H1 | 79/79 | not rerun | not rerun |
+| GD-H1 C smoke and DOD==C | 2/2 | 2/2 | 2/2 |
+| Equivalence cases (120, 61, 1 frames) | 3/3 | 3/3 | 3/3 |
+| Detector findings | — | 0 | 0 |
+
+The equivalence gate compares every frame hash and sprite count, all final
+gameplay fields, and deterministic required summary fields including entity
+maxima. Every CSV and JSON artifact also passes the existing schema/aggregate
+validator. Negative controls reject corrupt frame/final hashes, kill counts,
+and entity maxima. C expected-hash mismatch exits 2, reports `--expect-hash`,
+publishes `status=hash_mismatch`, and replaces a reused successful summary.
+Unsupported lanes retain field-naming errors. C has no managed heap: GC options
+are inert, managed counters are zero, and native allocation measurement is
+explicitly unavailable. JSON reports `lane=c`, `exec=native`.
+
+| Smoke case | Seed | Frames | DOD and C final hash |
+| --- | --- | --- | --- |
+| Canonical | 12345 | 120 | 552988638 |
+| Non-checkpoint final positional pass | 1 | 61 | 183562673 |
+| Maximum seed | 2147483646 | 1 | 58009711 |
+
+Canonical checkpoint 60 remains **42922906**, render hash **1485595989**.
+Final counts remain 186 enemies, 178 bullets, 92 particles, 368 shots,
+216 applied hits, 85 kills, score 850, 25 pickups, 40 drops, 15 collections,
+level 4, XP 3 and player HP 100. Every other golden final counter is also gated.
+
+A supplementary C correctness check runs all four larger scenarios to their
+default 1800 frames against the existing DOD goldens, checking every final
+counter, checkpoint 60 and schema/CSV aggregates. All pass: `arena_2k`
+**60149719**, `swarm_10k` **603625956**, `bullet_storm` **324791145**, and
+`particle_burst` **203028298**. This check used the pre-commit implementation
+build; the committed build differs only in comments and its Git stamp.
+It establishes no throughput, capacity or performance acceptance.
+
+Builds use this demo checkout's engine sources, with Clang 19.1.7, system
+CMake 3.31.6/Ninja and libffi. The missing post-reboot toolchain was restored;
+package logs are retained. `/workspace/zr_vm-perf` remains at **e1d3ab19**
+and receives no edits or commits. The noisy Unity submodule is ignored;
+demo build-stamp dirty detection now ignores submodules too. The Linux
+`.codex/config.toml` overlay is unchanged and uncommitted.
+
+All raw evidence is under `/tmp/zr-swarm-gd-h1-evidence` and runner projects
+under `/tmp/zr-swarm-gd-h1-runtime`. Each local build's `Testing/Temporary`,
+probe-results, CMake configure log and Ninja log point to the evidence tree.
+The initial focused run's detail files are archived separately. No inventory
+queries run during the final full or stress CTests. Before/after inventories
+retain the 593 original registrations (77 demo, 515 core, one performance)
+and add exactly the two requested tests, for 79 demo gates. Available commands
+and every retained property are unchanged; `demo_native_runtime` has no
+resolved command before its first build and resolves normally afterwards.
+The inventory audit and exact C compile command are retained as JSON/text.
+Clang static analysis of `csim.c` reports no findings.
+`final-audit.json` ties each successful runner result to the tested binary
+hashes and rechecks scope, unchanged goldens/overlay, perf tip and evidence
+symlinks. Implementation commit `61f7d717` is pushed to the demo branch;
+the documentation-only acceptance commit follows it without a force-push.
+
+Configure commands, from `/workspace/zr_vm-demo`:
+
+```sh
+cmake -S . -B build/gd-h1-release -G Ninja \
+  -DCMAKE_C_COMPILER=/usr/bin/clang-19 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DZR_VM_BUILD_DEMOS=ON -DBUILD_TESTS=ON \
+  -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF \
+  -DBUILD_RUST_BINDING=OFF -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON \
+  -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DZR_VM_LIBFFI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu \
+  -DZR_VM_LIBFFI_LIBRARY=/usr/lib/x86_64-linux-gnu/libffi.so
+cmake --build build/gd-h1-release -j3 --target zr_vm_cli_executable zr_swarm \
+  zrgame_plugins zrgame_ffi zrgame_native_tests zr_swarm_probe_host \
+  zrgame_probe zrgame_inline_probe
+```
+
+`build/gd-h1-asan` and `build/gd-h1-forced` retain the same configure options,
+with Debug instead of Release and
+`CMAKE_C_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'`, adding
+`-DZR_DEBUG_GARBAGE_COLLECT_MEM_TEST` for the forced tree. These two trees build
+`zr_swarm` with `-j2`; only the two GD-H1 CTests are selected. These runs do not
+claim a full detector/forced-GC language or demo suite.
+
+Exact CTest commands (stdout/stderr redirected to each tree's evidence log):
+
+```sh
+export TMPDIR=/tmp/zr-swarm-gd-h1-runtime
+export PYTHONDONTWRITEBYTECODE=1
+export ZR_VM_TEST_TIER=core
+ctest --test-dir build/gd-h1-release \
+  -R '^(demo_host_smoke_c|demo_lane_equivalence|demo_host_smoke_dod|demo_cli_host_parity)$' \
+  -j1 --output-on-failure
+ctest --test-dir build/gd-h1-release -L demo -j1 --output-on-failure
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+  ctest --test-dir build/gd-h1-asan \
+  -R '^(demo_host_smoke_c|demo_lane_equivalence)$' -j1 --output-on-failure
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+  ctest --test-dir build/gd-h1-forced \
+  -R '^(demo_host_smoke_c|demo_lane_equivalence)$' -j1 --output-on-failure
+```
+
+Committed-build binary SHA-256 identities:
+
+| Configuration | File | SHA-256 |
+| --- | --- | --- |
+| Release | `bin/zr_swarm` | `d4afd9cc8998bfe5ba510ee7ec2b18d346d8154abf3eb592ac561946ae6db172` |
+| Release | `bin/zr_vm_cli` | `812e1a626ee217b3341222c968af62a3729569b08ae8e3b59e9bffec4b7ab39d` |
+| Release | `native/libzrgame_runtime.so` | `6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62` |
+| ASan/UBSan | `bin/zr_swarm` | `4c1276561316438307bddefd3af2f326d63cd8c54b99f2c7dfd5d8ffdfba98c0` |
+| ASan/UBSan | `native/libzrgame_runtime.so` | `6312c1ac810bfdb07ceb8fb8ba51de6366e0474cd9993f9b828f3de309672880` |
+| Forced full GC + ASan/UBSan | `bin/zr_swarm` | `a700528b05affc2a668acdccbc3033a36d3473923d3475603df7670e4adf0d09` |
+| Forced full GC + ASan/UBSan | `native/libzrgame_runtime.so` | `0c9264c16455987ac7a18230442a0507877659201af2c4f30b65c91fe9501e95` |
+
 ## GD-C5 full v1 gameplay (2026-10-21)
 
 **GD-C5 is complete.** Final acceptance completed on 2026-10-22.

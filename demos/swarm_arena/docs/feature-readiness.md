@@ -1,4 +1,37 @@
-# Feature readiness — GD-C5 gameplay
+# Feature readiness — GD-H1 C reference lane
+
+**GD-H1 is complete.** It implements independent C reference gameplay for rules
+`gd-c5-v1/1` and host `--lane c`, with null rendering, bulk submission, the
+existing CSV/JSON artifact contract and a DOD==C smoke gate that fails on a
+hash mismatch. Acceptance completed on
+2026-10-22. The initial Release C smoke, equivalence, existing DOD smoke and
+CLI/host parity checks pass 4/4. See [GD-H1 decisions](gd-h1-decisions.md) and
+[verification](verification.md) for scope, exact commands and evidence.
+
+| Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
+| --- | --- | --- | --- |
+| Full demo suite (77 retained + 2 GD-H1) | 79/79 | not rerun | not rerun |
+| GD-H1 C smoke and DOD==C | 2/2 | 2/2 | 2/2 |
+| Equivalence cases (120, 61, 1 frames) | 3/3 | 3/3 | 3/3 |
+| Detector findings | — | 0 | 0 |
+| Validation seconds | 1312.20 | 412.89 | 354.82 |
+
+Stress results select only the two GD-H1 CTests; they are not full stress-suite
+reruns. Leak detection remains disabled. Tested binaries identify implementation
+commit `61f7d717`; the acceptance update changes documentation only. The
+retained 77 Release gates pass, and the 515-test engine core inventory is
+unchanged. No full engine core run is claimed for GD-H1.
+
+No gameplay rules, hash order or goldens change. Smoke retains **552988638**,
+checkpoint 60 **42922906**, and render hash **1485595989**. C uses f64 and
+`-ffp-contract=off`; JSON identifies native execution and unmeasured native
+allocations. Its GC options are inert because it has no managed heap.
+
+GD-H2+, OOP/Hybrid lanes, W0–W14 baselines, capacity work, software/GL rendering,
+screenshots, P19 reflection, P14 v2 integration and M-tier work remain deferred.
+No engine source or perf-worktree change is included.
+
+## GD-C5 gameplay acceptance (retained)
 
 **GD-C5 is complete.** It implements full v1 gameplay on the retained DOD lane
 and shared CLI/host Session: separation, three enemy kinds, nearest and radial
@@ -47,9 +80,9 @@ record the restored prerequisite and final evidence. The unchanged engine's
 Release core is confirmed at **515/515**.
 
 P19 runtime reflection and P14's v2 package integration remain deferred. The
-game keeps v1 `$swarmcore` / `import("&swarmcore")`. Other lanes, `sweep`,
-software/GL rendering, interactive input, performance harnesses and every H/M
-milestone remain deferred.
+game keeps v1 `$swarmcore` / `import("&swarmcore")`. OOP/Hybrid lanes, `sweep`,
+software/GL rendering, interactive input, performance harnesses and GD-H2+ / M
+milestones remain deferred.
 
 ## GD-C4 host acceptance (retained)
 
@@ -224,7 +257,8 @@ regressions.
 DOD CLI smoke determinism and its package/event/native-call fallbacks are
 implemented in GD-C3; GD-C4 adds host drive and CLI/host gameplay parity.
 GD-C5 extends that shared simulation to full v1 rules and all five named
-scenarios. OOP/Hybrid/C simulations, lane equivalence, W0–W14 baselines,
+scenarios. GD-H1 adds C reference gameplay and smoke lane equivalence.
+OOP/Hybrid simulations, W0–W14 baselines,
 capacity@60Hz, software/GL rendering and screenshots remain future work.
 Timing/GC summaries establish no performance budget. P21 remains an API spike.
-GD-H1–H6 and M-tier work remain deferred.
+GD-H2–H6 and M-tier work remain deferred.
