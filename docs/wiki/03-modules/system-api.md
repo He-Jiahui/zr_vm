@@ -123,7 +123,7 @@ Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosl
 **TODO:** Windows/POSIX 长等待的默认 GC-aware 策略、Emscripten Asyncify/JSPI 配置及
 重入/挂起期借用有效性、支持 ABI 的 `time_t` 宽度、退出码范围和 function hint 的消费
 仍需沿各自入口核实。调用链、平台资料与测试边界见
-[Process 审查台账](../../code-review/coverage/zr_vm_lib_system_process.tsv)。
+[Process 审查台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_process.tsv)。
 
 ## 文件系统
 
@@ -157,7 +157,7 @@ dispatcher 交付 null。不能把 C 回调的 false 统一解释为脚本布尔
 字符串结果和 metadata 字段的 void setter 还存在软失败边界；native true 不证明
 所有结果或字段均已写入。File/Folder I/O 完成后的快照刷新只是尝试，失败不会
 回滚已经完成的宿主操作。逐入口的失败、借用与测试边界见
-[Fs 公共契约台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
+[Fs 公共契约台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
 
 ### 对象和字段
 
@@ -218,7 +218,7 @@ using (let stream = file.open("w+")) {
 包装对象的私有句柄号与 `closed=false` 保持原值，后续仍可进入关闭路径；底层句柄是否已释放需按平台核验。读写模式不匹配、宿主长度/seek 操作失败和已关闭句柄的 I/O 保护路径
 抛 `IOException`；参数 helper 的普通 false、缓冲或对象构造失败不一定设置异常，需按具体回调判断。
 
-公共声明与注册表的逐单元契约见 [Fs 公共接口台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
+公共声明与注册表的逐单元契约见 [Fs 公共接口台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
 现有 Fs 八例基线为 7 PASS / 1 FAIL，流模式用例在 `takeReader` 的 cached native callable 检查处提前失败；
 其后的 read、setLength、append、using 等语句未执行。省略可选参数、appendText 和 flush 没有本批运行覆盖；
 默认值来自回调实现，descriptor 只记录参数区间与类型。
@@ -285,8 +285,8 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 
 相关 module 测试只核导出、根模块缓存身份和 module links；本轮 provider 9/9 只验证提供者契约。
 环境查询、nullable metadata、长值同桶读取和分配失败没有执行信用。逐单元依据见
-[Env 审查批次](../../code-review/batches/20261013-system-env-contracts.md)和
-[Env 台账](../../code-review/coverage/zr_vm_lib_system_env.tsv)。
+[Env 审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261013-system-env-contracts.md)和
+[Env 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_env.tsv)。
 
 
 ## Console 调用、资源与失败边界
@@ -305,10 +305,10 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 
 **TODO:** `ferror` 尚未区分：首字节流错误与 EOF 返回同样 null，中途 read 错误表现为截断 UTF-8，readLine 的部分输入遇到错误可照常交付；须明确并测试 I/O 错误策略。末尾孤立 CR 加 EOF 的裁剪是否符合行契约也须核实。descriptor 默认 GC_AWARE 模式下，阻塞 fgetc/同步日志仍持有 RUNNING mutator；须从 `native_binding_dispatch_lanes.h:240-278` 和 `gc_domain_mutator.c:630-693` 检查 STW 等待与 native 模式策略，现有测试没有该时序覆盖。
 
-System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 [Console 台账](../../code-review/coverage/zr_vm_lib_system_console.tsv)；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。
+System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 [Console 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_console.tsv)；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。
 
 
-## GC 调用、统计与失败边界
+## GC 调用、统计与失败边界（Statistics）
 
 这六个 callback 使用当前 state 所属 global 的共享 collector；多个 state 可以共享它。GcDomain 指标是统计内容，不代表每次调用拥有独立 collector。context、state、collector 与 result 都只借用至本次同步调用结束；宿主须协调同一 global 的并发控制和读取。注册元数分别为 enable/disable/get_stats 0、collect 0..1、set_heap_limit/set_budget 1，数量错误在 callback 前抛 ArityError。
 
@@ -322,7 +322,7 @@ System 的现有 module 测试检查 console 导出/hint，provider 测试检查
 
 **BUG:** 42 次字段写入使用 void setter，三条软失败路径均可留下缺字段对象：新实例的初始 nodeMap 桶申请失败，首个 setter 内重试初始化仍失败时，只记录日志并跳过 enabled；ignored-root pin 表扩容的 ARRAY RawMalloc 失败会跳过对应字段；后续整数项使 map 跨负载阈值时，HASH_BUCKET rehash 分配失败也会让 Object_SetValue 静默返回。首字段初始化失败与后续扩容分别记录，不将 enabled 的正常首写归于负载阈值。投影 helper 不检测这些状态，GetStats 仍把非空对象作为成功结果。证据涵盖 native instance helper、Object_Init/SetValue、HashSet_Init/Rehash、dispatcher pin 和成功返回链；没有故障注入信用。抛出 VM 异常的分配失败属于另一条传播路径，不归为正常成功。
 
-现有两项 module 测试中，`test_system_gc_safe_controls_report_runtime_stats` 在单 VM state 中核对控制参数及选定计数，`test_system_native_types_register_complete_struct_fields` 核对字段元数据。Root 修改前运行整 module target 78 项，相关两项及 Vector3 构造均 PASS；另两项既有失败保留。另有 `tests/gc/gc_tests.c` 的 `test_system_gc_enable_callback_switches_generational_mode` 直接调用 Enable/Disable，断言模式及 stop flag，不经 dispatcher；本批尚未运行该直接 C 测试。上述测试未覆盖非法 numeric/kind、disable 后自动推进、allocator 软失败或并发快照。完整逐单元依据见 [GC 台账](../../code-review/coverage/zr_vm_lib_system_gc.tsv) 与 [GC 批次](../../code-review/batches/20261014-system-gc-contracts.md)。
+现有两项 module 测试中，`test_system_gc_safe_controls_report_runtime_stats` 在单 VM state 中核对控制参数及选定计数，`test_system_native_types_register_complete_struct_fields` 核对字段元数据。Root 修改前运行整 module target 78 项，相关两项及 Vector3 构造均 PASS；另两项既有失败保留。另有 `tests/gc/gc_tests.c` 的 `test_system_gc_enable_callback_switches_generational_mode` 直接调用 Enable/Disable，断言模式及 stop flag，不经 dispatcher；本批尚未运行该直接 C 测试。上述测试未覆盖非法 numeric/kind、disable 后自动推进、allocator 软失败或并发快照。完整逐单元依据见 [GC 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_gc.tsv) 与 [GC 批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-system-gc-contracts.md)。
 
 ## VM 快照与跨层调用契约
 
@@ -340,7 +340,7 @@ state 先统计 loadedModuleCount，再创建对象并逐字段读取 GC 和线�
 
 callModuleExport 借用两个 VM 字符串的原生文本，以 malloc 申请只保存 SZrTypeValue 浅拷贝的连续参数区；空数组保持 NULL。逐项读取失败、共享调用器正常返回后都 free 该区，不转移 VM 对象所有权。**TODO:** 共享调用器在本地恢复点前可能进行目标查找/惰性导入；需沿 ZrLib_CallModuleExport、Module_GetExport、CallValue 的实际 GC root 与异常跳转核实名称、浅拷贝对象及 malloc 区的有效期和回收边界。目前不据此断言已证泄漏或搬迁缺陷。
 
-现有 nested-native 模块测试先注册 math，再直接调用导出，随后脚本转发 sqrt；断言只比较非空结果及类型一致，不验证数值 2。另一个 reference member-chain 用例实际编译执行 native_root_member_chain_pass.zr，调用 state() 并将 loadedModuleCount>0 转成返回1、断言1，r1该用例PASS；它仅支持正常单state计数投影。callbacks/probe项目脚本也会调用 loadedModules/state，但本批未运行 project suite；probe只断言阶段标记，Parser/LSP内同名源码仅供静态分析。上述范围不证明全部状态字段、惰性导入、GC压力、并发同步或分配故障。逐项定义、调用和证据见 [VM 台账](../../code-review/coverage/zr_vm_lib_system_vm.tsv) 与 [VM 批次](../../code-review/batches/20261014-system-vm-contracts.md)。
+现有 nested-native 模块测试先注册 math，再直接调用导出，随后脚本转发 sqrt；断言只比较非空结果及类型一致，不验证数值 2。另一个 reference member-chain 用例实际编译执行 native_root_member_chain_pass.zr，调用 state() 并将 loadedModuleCount>0 转成返回1、断言1，r1该用例PASS；它仅支持正常单state计数投影。callbacks/probe项目脚本也会调用 loadedModules/state，但本批未运行 project suite；probe只断言阶段标记，Parser/LSP内同名源码仅供静态分析。上述范围不证明全部状态字段、惰性导入、GC压力、并发同步或分配故障。逐项定义、调用和证据见 [VM 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_vm.tsv) 与 [VM 批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-system-vm-contracts.md)。
 
 本批与 Vector4 共用 `system-vm-vector4-final-r1-results.json` 的实际验证：四个实现对象强制重建、构建成功；模块测试 78 项为 70 PASS / 8 FAIL，全部 78 行与最近 r3 基线精确一致，provider 9 项全部 PASS。相对更早 76 PASS / 2 FAIL 的记录，六项二进制元数据失败仍保留，本批未新增失败。当前输入与 r3 有三个并发 core/Parser 文件差异；保守扩展的 2950 个输入在构建及两个 suite 期间稳定，八个冻结源码未变化。Parser 的两条 C4701 和其他配置测试的 CMAKE_OBJECT_PATH_MAX 警告另行记录，所选 target 构建成功；不据此授予 State/LoadedModules 根对象协议、并发或分配失败测试信用，也不声称整个 suite 通过。
 
@@ -364,8 +364,8 @@ callback 自身返回 null，反射调用者交付构造实例。省略消息写
 当前 CLI 的 `zr_cli_runtime_handle_failure` 与 REPL 的 `zr_cli_repl_session_handle_failure` 记录异常后重置状态；
 测试宿主 `zr_tests_runtime_try_invoke_unhandled_handler` 才负责实际调用，并把 bool true 解释为消费异常。
 **TODO:** 沿这两个生产失败出口核实 API 是否仅服务嵌入宿主，或 CLI/REPL 也应分派；同时确定重入及 handler 失败策略。
-完整定义、绑定、间接入口、测试证据和逐单元结论见 [Exception 台账](../../code-review/coverage/zr_vm_lib_system_exception.tsv)
-及 [审查批次](../../code-review/batches/20261014-system-exception-contracts.md)。
+完整定义、绑定、间接入口、测试证据和逐单元结论见 [Exception 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_exception.tsv)
+及 [审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-system-exception-contracts.md)。
 
 注册读取器还接受 VM closure 和原生函数指针，不校验 hint 的 `(Error) -> bool` 签名或原生地址。
 宿主调用原生指针前必须保证非空入口满足 `FZrNativeFunction` ABI；原生指针和 native closure 所指向的代码及关联资源均须在 global 槽
@@ -380,13 +380,13 @@ Fs 公共 helper 在当前 native 调用中借用 context、state、对象、字
 
 **BUG:** WriteStringField 与异常 message helper 的局部 fieldValue 未初始化。若待写短串未驻留、驻留表跨扩容阈值，且受控 allocator 仅让这一次 HASH_BUCKET 申请返回 NULL、其余分配成功，字符串创建可软返回 NULL，void SetString 不写槽；随后对象 setter 的 pin lane 读取未初始化的值。该结论有完整静态调用链，没有分配故障注入信用，也不概括所有 OOM 路径。
 
-**BUG:** FileStream 的 native owner 通过隐藏字段关联。限定隐藏 owner 键尚未驻留且其 HASH_BUCKET 扩容软失败，或相应 ignored-root ARRAY pin 扩容软失败，其余分配成功时，void setter 可跳过关联，而 NewStreamObject 仍交付非空 wrapper。File_Open 只在构造结果为 NULL 时关闭原句柄；finalizer 无隐藏 owner 时找不到 malloc 记录及句柄，因而无法释放。具体实施函数、间接入口与资源边界见 [Stream 逐单元台账](../../code-review/coverage/zr_vm_lib_system_fs_stream.tsv)。
+**BUG:** FileStream 的 native owner 通过隐藏字段关联。限定隐藏 owner 键尚未驻留且其 HASH_BUCKET 扩容软失败，或相应 ignored-root ARRAY pin 扩容软失败，其余分配成功时，void setter 可跳过关联，而 NewStreamObject 仍交付非空 wrapper。File_Open 只在构造结果为 NULL 时关闭原句柄；finalizer 无隐藏 owner 时找不到 malloc 记录及句柄，因而无法释放。具体实施函数、间接入口与资源边界见 [Stream 逐单元台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_stream.tsv)。
 
 StreamCloseInternal 由显式 close callback 调用；using 经注册的关闭入口进入。GC finalizer 独立尝试关闭并释放 native 记录，没有调用 StreamCloseInternal，也不向脚本报告 close 错误。显式 close 失败保留私有 closed=false；finalizer 忽略 close 结果后仍置 invalid/closed 并释放记录，字段不能证明宿主关闭成功，也不能承诺失败后可安全重试。
 
 **TODO:** PopulateEntryObject 的 originalPath/fullPathOverride 可能借用 VM 字符串，并跨 MakeInfoObject 和递归 parent 构造分配后再次使用。需沿实际 caller 的参数根、native lane 与字符串存储稳定性核查这一窗口；目前不宣称已观察悬空。未检索到仓内调用的 GetBoolField 也只登记用途待核，不能直接认定死代码。
 
-定义、实际 consumer、声明与实现范围、逐项测试边界和证据分别见 [Fs 公共支撑台账](../../code-review/coverage/zr_vm_lib_system_fs_common.tsv) 与 [批次记录](../../code-review/batches/20261014-system-fs-common-contracts.md)。此处没有赋予 allocator、GC、并发或异常重入的专项执行信用。
+定义、实际 consumer、声明与实现范围、逐项测试边界和证据分别见 [Fs 公共支撑台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_common.tsv) 与 [批次记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-system-fs-common-contracts.md)。此处没有赋予 allocator、GC、并发或异常重入的专项执行信用。
 
 **BUG:** ReadTextFromHandle 在短串驻留表 HASH_BUCKET 扩容软失败时，void SetString 可不写结果，helper 仍报告成功；正常 dispatcher 预置的 null 在 Stream 后续快照查询成功时到达脚本。module/File readText 经临时句柄 helper，关闭成功且回调正常返回时亦可 true/null；File 刷新普通 false 被忽略，非局部异常则不形成 true 返回。限定未驻留短文本、一次 bucket 软失败及其余步骤正常返回，完整路径见 Stream 台账；与首 NUL 截断不同，均无故障注入信用。
 
@@ -399,7 +399,7 @@ readText/readBytes 的 count 按字节计，0 不消费输入，所有负值目�
 
 NewStreamObject 在 initial StreamSyncFields 返回 false 时仍交付 wrapper，位置/长度查询失败的未知快照政策为 TODO。后续读写/seek/resize先执行宿主操作再同步；同步查询失败抛 IOException，不回滚已发生的副作用。setLength 忽略移动超尾游标的 seek 失败，因此返回成功不保证游标已经移到新长度。公开字段 setter 是 void，查询成功也不保证各字段均写入。
 
-显式 close 的成功路径幂等；宿主错误后的句柄状态及重试安全性待平台核验。完整周期和增量 sweep 均能经普通 OBJECT 释放调用 finalizer；wait-to-release 列表尚无已证入队入口，不作为额外调用信用。缺陷、TODO 与现有测试实际到达范围见 [Stream 台账](../../code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 和 [批次记录](../../code-review/batches/20261015-system-fs-stream-contracts.md)。
+显式 close 的成功路径幂等；宿主错误后的句柄状态及重试安全性待平台核验。完整周期和增量 sweep 均能经普通 OBJECT 释放调用 finalizer；wait-to-release 列表尚无已证入队入口，不作为额外调用信用。缺陷、TODO 与现有测试实际到达范围见 [Stream 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 和 [批次记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-system-fs-stream-contracts.md)。
 
 ## File、Folder 一次性操作的调用边界
 
@@ -407,7 +407,7 @@ File.create 对已存在普通文件保留内容，缺失时才创建空文件�
 
 **BUG:** 一次性ReadBytes/ReadText已取得缓冲与临时handle后，相关VM分配异常非局部退出越过free及close；WriteBytes另限定合法非空RAW_CANONICAL数组物化需要新pairpool，分配异常退出时同样跳过这些清理。WriteText helper没有该VM分配路径。目录枚举成功后，在条目/数组VM物化中非局部退出还会跳过File_List_Free；平台普通失败的部分列表清理仍执行。Exception/TryRun只恢复VM roots/scopes，不回收这些C局部资源。
 
-CurrentDirectory的限定短串HASH_BUCKET软失败可交付true/null；GetInfo、构造/刷新及目标对象字段写入受共享WriteStringField未初始化值BUG影响，结果未定义，不保证只是缺字段。上述均是静态调用链证据，本批没有allocator故障注入、GC压力、NUL或并发专项执行。参数保活、字符串存储有效期、File.open构造失败后close错误仍有具体TODO；Glob省略recursively的默认已由当前helper调用路径确认true。逐函数定义、全部调用坐标、证据与结论见[FsEntry台账](../../code-review/coverage/zr_vm_lib_system_fs_entry.tsv)和[批次记录](../../code-review/batches/20261015-system-fs-entry-contracts.md)。
+CurrentDirectory的限定短串HASH_BUCKET软失败可交付true/null；GetInfo、构造/刷新及目标对象字段写入受共享WriteStringField未初始化值BUG影响，结果未定义，不保证只是缺字段。上述均是静态调用链证据，本批没有allocator故障注入、GC压力、NUL或并发专项执行。参数保活、字符串存储有效期、File.open构造失败后close错误仍有具体TODO；Glob省略recursively的默认已由当前helper调用路径确认true。逐函数定义、全部调用坐标、证据与结论见[FsEntry台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_entry.tsv)和[批次记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-system-fs-entry-contracts.md)。
 
 写入、创建、复制、移动和递归删除都不承诺事务回滚。短写后报错可能已写出前缀；File.writeBytes虽先完整校验元素才写字节，却先以w打开，非法元素也可能已截断旧文件（appendBytes不追加非法内容，但可先创建缺失文件）。递归创建失败保留已建父目录，File创建后的close失败保留新文件；递归删除失败不恢复已删子项。overwrite复制/移动可先删除旧目标，随后失败留下部分目标；移动的复制后删源回退若删除失败，也可能两边仍有内容。这些是现有失败状态契约，本批没有故障注入或专项执行。
 

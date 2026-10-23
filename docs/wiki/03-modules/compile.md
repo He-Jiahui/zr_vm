@@ -141,7 +141,7 @@ artifact entry/hash 和 public contract；同长度源码改动也会失效。�
 
 编译器求值帧的绑定和临时根向量也计入 heap：空帧不预分配，扩容按完整候选容量
 计费，复用容量不重复收费，释放后不退回累计用量；失败保留旧帧和此前有效用量。
-详见[宏底层资源契约](../../parser-and-semantics/macro-token-foundation.md#comptime-frame-storage-admission)。
+详见[宏底层资源契约](https://github.com/He-Jiahui/zr_vm/blob/main/docs/parser-and-semantics/macro-token-foundation.md#comptime-frame-storage-admission)。
 
 ## CompileTool 依赖与 `.zrm`
 

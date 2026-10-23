@@ -124,7 +124,7 @@ system.console.printLine(text);
 报告结果，不保证附带异常。脚本 API 不返回裸指针或宿主 errno sentinel。首次成功 `close()`
 释放句柄并标记关闭，后续关闭可成功返回 null；宿主关闭失败时保留私有句柄号与 `closed=false`，
 底层句柄是否已释放待平台核验。终结器仅在能取回隐藏 owner 时，对私有状态仍未关闭的句柄尝试关闭后释放 `ZrSystemFsStreamData`，不保证关闭失败可重试。C 回调的普通 false 也可能在 VM
-无异常时变为 null；逐接口约束见 [Fs 公共接口台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
+无异常时变为 null；逐接口约束见 [Fs 公共接口台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
 
 ## GC、VM 和异常子模块
 
@@ -143,7 +143,7 @@ Core getter 只对部分域指标加锁；脚本统计对象的后续分配可�
 `gc` 的公开签名为 `enable(): null`、`disable(): null`、`collect(kind?: string): null`、
 `set_heap_limit(bytes: int): null`、`set_budget(microseconds: int): null` 和
 `get_stats(): SystemGcStats`。`kind` 的接口约定为 `minor`、`major` 或 `full`，省略时使用
-`full`；当前 C 字符串比较接受嵌入 NUL 前的合法前缀，已在 [GC 详细契约](system-api.md#gc-调用统计与失败边界)
+`full`；当前 C 字符串比较接受嵌入 NUL 前的合法前缀，已在 [GC 详细契约](system-api.md#gc-statistics)
 记录为缺陷。`0` 作为 heap limit 表示清除软阈值；collection 的成功 null 不证明周期完成。
 参数转换、预算、统计对象与并发限制见上述详细契约。
 
@@ -162,20 +162,20 @@ finalizer 才能找到记录并尝试关闭句柄、释放记录。`assembly` �
 
 `loadedModules` 只遍历 global 的已加载实例缓存，按哈希桶顺序投影注册元数据；它不是全部可用 descriptor 的枚举。`state` 的六字段混合缓存计数、全局 GC 与当前线程栈/帧取样，分配可能推进 GC，不保证原子一致；gcMode 不能替代 stopGC 启停标志。`callModuleExport` 通过共享调用器解析并转发模块导出，允许其惰性导入路径；malloc 参数区只浅拷贝 VM 值，正常返回负责 free。
 
-void 字段写入失败、短串驻留失败后未初始化值读取、被忽略的数组追加失败分别记录为 BUG；GC 搬迁与局部异常恢复前的资源边界保留为 TODO。见 [system API 的 VM 契约](system-api.md#vm-快照与跨层调用契约) 和 [VM 逐单元台账](../../code-review/coverage/zr_vm_lib_system_vm.tsv)；一次 nested-native 类型比较不能扩大为快照、数值或故障路径保证。
+void 字段写入失败、短串驻留失败后未初始化值读取、被忽略的数组追加失败分别记录为 BUG；GC 搬迁与局部异常恢复前的资源边界保留为 TODO。见 [system API 的 VM 契约](system-api.md#vm) 和 [VM 逐单元台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_vm.tsv)；一次 nested-native 类型比较不能扩大为快照、数值或故障路径保证。
 
 
 ### FileStream 结果与生命周期边界
 
 position/length 是尽力写入的快照；初始查询失败被构造器忽略，读写或 seek 后的查询失败则报异常且不回滚已发生的 I/O。setLength 尝试把超出末尾的游标移回，但该次 seek 的失败被忽略。读取 count 按字节计，0 不消费输入，负值均读至 EOF。
 
-readText 的首 NUL 截断、指定短串 HASH_BUCKET 扩容软失败下的 true/null，以及隐藏 owner 的 ARRAY pin 扩容软失败丢失，均有静态闭合路径。File 一次性 readText 需临时关闭成功且回调正常返回；File 刷新的普通 false 被忽略，Stream readText 还需后续快照查询成功。终结器只有能取回 owner 时才能尝试关闭/释放原生记录，关闭失败后的宿主状态仍待平台核实。详见 [Stream 逐单元台账](../../code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 与 [批次证据](../../code-review/batches/20261015-system-fs-stream-contracts.md)。
+readText 的首 NUL 截断、指定短串 HASH_BUCKET 扩容软失败下的 true/null，以及隐藏 owner 的 ARRAY pin 扩容软失败丢失，均有静态闭合路径。File 一次性 readText 需临时关闭成功且回调正常返回；File 刷新的普通 false 被忽略，Stream readText 还需后续快照查询成功。终结器只有能取回 owner 时才能尝试关闭/释放原生记录，关闭失败后的宿主状态仍待平台核实。详见 [Stream 逐单元台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 与 [批次证据](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-system-fs-stream-contracts.md)。
 
 ### File、Folder 的副作用与一次性资源
 
 File.create不截断已存在的普通文件；文本读写不验证UTF-8并在首NUL处截断。File copy/move尝试刷新源receiver却忽略普通false，Folder copy/move不刷新原receiver；move后的原对象仍指旧路径，目标包装失败不回滚宿主副作用。
 
-已取得C缓冲、一次性句柄或目录列表后，相关VM分配异常非局部退出会跳过这些资源的free/close；WriteBytes限定合法RAW_CANONICAL物化需新增pairpool，WriteText helper没有该VM分配路径。普通失败清理仍执行；TryRun只恢复VM roots/scopes。这些BUG及共享字段setter的未初始化值BUG都有静态闭链，本批无故障注入。借用/保活保留具体TODO，Glob省略recursively默认true已确认，详见[FsEntry台账](../../code-review/coverage/zr_vm_lib_system_fs_entry.tsv)与[验收记录](../../code-review/batches/20261015-system-fs-entry-contracts.md)。
+已取得C缓冲、一次性句柄或目录列表后，相关VM分配异常非局部退出会跳过这些资源的free/close；WriteBytes限定合法RAW_CANONICAL物化需新增pairpool，WriteText helper没有该VM分配路径。普通失败清理仍执行；TryRun只恢复VM roots/scopes。这些BUG及共享字段setter的未初始化值BUG都有静态闭链，本批无故障注入。借用/保活保留具体TODO，Glob省略recursively默认true已确认，详见[FsEntry台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_fs_entry.tsv)与[验收记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-system-fs-entry-contracts.md)。
 
 写入、创建、复制、移动和递归删除都不承诺事务回滚。短写后报错可能已写出前缀；File.writeBytes虽先完整校验元素才写字节，却先以w打开，非法元素也可能已截断旧文件（appendBytes不追加非法内容，但可先创建缺失文件）。递归创建失败保留已建父目录，File创建后的close失败保留新文件；递归删除失败不恢复已删子项。overwrite复制/移动可先删除旧目标，随后失败留下部分目标；移动的复制后删源回退若删除失败，也可能两边仍有内容。这些是现有失败状态契约，本批没有故障注入或专项执行。
 

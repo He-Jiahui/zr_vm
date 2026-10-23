@@ -21,20 +21,20 @@ ZR 是一门面向模块化应用、原生互操作与多后端执行的静态�
 
 ## 内容
 
-- [程序、模块与导入](#程序模块与导入)
-- [绑定、类型与解构](#绑定类型与解构)
-- [函数与 callable](#函数与-callable)
-- [类型、构造与属性](#类型构造与属性)
-- [表达式与控制流](#表达式与控制流)
-- [泛型、接口与 union](#泛型接口与-union)
-- [引用、参数传递与确定赋值](#引用参数传递与确定赋值)
-- [所有权、资源与 GC](#所有权资源与-gc)
-- [编译期执行、元数据与声明生成](#编译期执行元数据与声明生成)
-- [异步、Task、Job 与调度](#异步taskjob-与调度)
-- [迭代器与 yield](#迭代器与-yield)
-- [测试与 TestManifest](#测试与-testmanifest)
-- [反射、池化与 native FFI](#反射池化与-native-ffi)
-- [书写约定与延伸阅读](#书写约定与延伸阅读)
+- [程序、模块与导入](#modules)
+- [绑定、类型与解构](#bindings)
+- [函数与 callable](#callable)
+- [类型、构造与属性](#types)
+- [表达式与控制流](#expressions)
+- [泛型、接口与 union](#union)
+- [引用、参数传递与确定赋值](#references)
+- [所有权、资源与 GC](#gc)
+- [编译期执行、元数据与声明生成](#comptime)
+- [异步、Task、Job 与调度](#taskjob)
+- [迭代器与 yield](#yield)
+- [测试与 TestManifest](#testmanifest)
+- [反射、池化与 native FFI](#native-ffi)
+- [书写约定与延伸阅读](#further-reading)
 
 ## 语言概览
 
@@ -47,7 +47,7 @@ ZR 的核心概念可以概括为四类：
 
 普通 `class` 由精确 GC 管理。需要确定性释放的句柄、文件、图形资源或 native 资源使用 `resource class`，并通过所有权类型管理。语言会在编译期检查引用、移动、借用冲突、`out` 参数初始化和 ref-like 值逃逸；无法静态证明的边界，例如数组索引、动态 cast 或 native 输入，保留运行时检查。
 
-## 程序、模块与导入
+## 程序、模块与导入（Modules）
 
 每个源文件以模块声明开始。模块级绑定使用 `let` 或 `var`；静态导入由 `import(...)` 表达式创建只读模块命名空间。
 
@@ -80,7 +80,7 @@ pub fn main(): int {
 
 标准库使用 `zr.xxx` 命名空间。例如 `zr.container`、`zr.iteration`、`zr.math`、`zr.system`、`zr.task`、`zr.thread`、`zr.debug`、`zr.reflection`、`zr.pooling` 和 `zr.ffi`。`zr.compile`、`zr.compile.declaration` 与 `zr.testing` 分别只存在于编译期或测试期，不能作为普通运行时依赖导入。
 
-## 绑定、类型与解构
+## 绑定、类型与解构（Bindings）
 
 `let` 创建初始化后不可重新绑定的名称，`var` 创建可重新赋值的名称。两者都可以保存值、GC 对象句柄或所有权句柄；`let` 不代表对象图深度不可变。
 
@@ -160,7 +160,7 @@ struct Point {
 }
 ```
 
-## 类型、构造与属性
+## 类型、构造与属性（Types）
 
 ### 类、struct 与 resource class
 
@@ -228,7 +228,7 @@ class Meter {
 
 一个 property 至少包含一个 `get`、`set` 或 `init` accessor。`set` 与 `init` 在基础模型中互斥。ref-return property 只有 getter，它返回 Ref；对该 Ref 解引用后才成为可读写的 Place。
 
-## 表达式与控制流
+## 表达式与控制流（Expressions）
 
 ZR 使用常见的算术、比较、逻辑、成员访问、索引、条件与调用表达式。
 
@@ -338,7 +338,7 @@ pub fn create<T>(): T where T: class, new {
 
 常见约束包括 `class`、`struct`、`new`、interface/类型名，以及由标准库暴露的能力约束。泛型代码应依赖约束的公开 contract，而不是根据具体类型名称分派。
 
-## 引用、参数传递与确定赋值
+## 引用、参数传递与确定赋值（References）
 
 引用类型描述对一个 Place 的访问能力：
 
@@ -433,7 +433,7 @@ drop(shared);
 
 GC 与 ownership world 通过显式 bridge 交互。资源对象不能偷偷持有普通 GC 对象；需要跨越边界时使用受约束的 `Gc<T>` bridge 或明确的 pin/copy/marshalling contract。
 
-## 编译期执行、元数据与声明生成
+## 编译期执行、元数据与声明生成（Comptime）
 
 编译期代码复用普通 `fn`、`if`、`struct`、attribute 和 `init`，不引入独立 macro 语言。使用 `comptime fn` 计算类型化常量，使用 `comptime if` 裁剪声明或语句，使用 `comptime { ... }` 执行检查和诊断。
 
@@ -678,7 +678,7 @@ native extern("zr_native_math") {
 
 native block 中只包含 bodyless function、delegate 或 type mapping 声明。`in`、`ref` 与 `out` 同时参与语言借用规则和 ABI direction；GC reference、ref struct、Span、resource/owner 类型只有在存在明确 marshaller、pin 或 copy contract 时才能跨越 ABI。
 
-## 书写约定与延伸阅读
+## 书写约定与延伸阅读（Further reading）
 
 ZR 不采用自动分号插入：局部/字段/模块绑定、表达式、赋值、`return`、`throw`、`break`、`continue` 与 bodyless declaration 都要显式写 `;`。由 `{ ... }` 闭合的 type、function、property 等声明通常不需要尾随分号。
 
@@ -693,14 +693,14 @@ ZR 不采用自动分号插入：局部/字段/模块绑定、表达式、赋值
 
 深入阅读：
 
-- [语言规范](../zr_language_specification.md)
-- [语法与内存模型设计索引](../plans/syntax/README.md)
-- [编译期执行、元数据与声明生成](../plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)
-- [Task、Job 与调度](../plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md)
-- [迭代器与 yield](../plans/syntax/2026-07-20-13-iterator-enumerator-yield-design.md)
-- [测试与 TestManifest](../plans/syntax/2026-07-20-14-test-function-harness-design.md)
-- [模块与项目文档](../module-system/index.md)
-- [AOT 计划](../plans/aot/index.md)
-- [测试目录](../../tests/)
+- [语言规范](https://github.com/He-Jiahui/zr_vm/blob/main/docs/zr_language_specification.md)
+- [语法与内存模型设计索引](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/syntax/README.md)
+- [编译期执行、元数据与声明生成](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)
+- [Task、Job 与调度](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md)
+- [迭代器与 yield](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/syntax/2026-07-20-13-iterator-enumerator-yield-design.md)
+- [测试与 TestManifest](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/syntax/2026-07-20-14-test-function-harness-design.md)
+- [模块与项目文档](https://github.com/He-Jiahui/zr_vm/blob/main/docs/module-system/index.md)
+- [AOT 计划](https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/aot/index.md)
+- [测试目录](https://github.com/He-Jiahui/zr_vm/tree/main/tests)
 
 当 Wiki、语言规范、实现和测试的细节不一致时，以已确认的子设计、当前语言规范和已启用测试为准；未完成的语法能力不应仅凭示例视为已经可用于所有后端。

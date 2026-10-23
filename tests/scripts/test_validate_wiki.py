@@ -59,8 +59,8 @@ class WikiValidationTests(unittest.TestCase):
         result = validate_wiki.validate(REPO_ROOT)
 
         self.assertEqual(result.errors, ())
-        self.assertEqual(result.markdown_files, 116)
-        self.assertEqual(result.manifest_pages, 115)
+        self.assertEqual(result.markdown_files, 118)
+        self.assertEqual(result.manifest_pages, 117)
         self.assertGreaterEqual(result.local_links, 100)
 
     def test_missing_manifest_page_is_reported(self) -> None:
@@ -230,7 +230,7 @@ if __name__ == "__main__":
 # ## Constraints and lifecycle
 # REPO_ROOT 来自当前测试文件位置；本方法不创建或修改页面，但会读取当前 Wiki、manifest 和相关本地目标，调用期间内容需由运行方固定。
 # errors==() 在页数与链接计数之前检查；不能由后面的断言文字推断它们每次均已到达。
-# 116 Markdown、115 manifest pages 和至少100条本地链接是明确的固定断言，不是动态生成或容许任意新增页面的规则。
+# 118 Markdown、117 manifest pages 和至少100条本地链接是明确的固定断言，不是动态生成或容许任意新增页面的规则。
 # 没有传入 site_dir，因此不检查构建输出、index.html 或渲染器效果；结果不保留打开文件或需要本方法释放的资源。
 # ## References
 # tests/scripts/test_validate_wiki.py:58

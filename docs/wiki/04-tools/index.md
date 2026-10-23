@@ -40,6 +40,7 @@ doc_type: category-index
 | TestManifest、case id、并发与 child isolation | [test-manifest-runner-reference](test-manifest-runner-reference.md) | parser manifest + CLI runner |
 | Language Server | [language-server](language-server.md) | stdio JSON-RPC / WASM |
 | LSP 生命周期、能力注册、position codec 与 WASM ABI | [language-server-protocol-reference](language-server-protocol-reference.md) | `SZrLspContext` / stdio / WASM |
+| LSP 数组分配失败与资源清理 | [language-server-array-allocation-failure](language-server-array-allocation-failure.md) | semantic snapshot / symbol / reference |
 | VS Code/DAP | [editor-debugger](editor-debugger.md) | extension + debug agent |
 | 迁移与元数据 | [migration](migration.md) | `migrate syntax`, `--dump-zrp-metadata` |
 | 构建/验证 | [build-validation](build-validation.md) | CMake、CTest、sanitizer |
