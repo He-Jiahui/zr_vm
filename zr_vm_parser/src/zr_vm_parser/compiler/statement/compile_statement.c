@@ -2674,7 +2674,11 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 }
             }
 
-            initializerSlot = compile_expression_into_slot(cs, decl->value, reservedVarSlot);
+            /* A local init already owns a callable/receiver window. Keep its
+             * final destination place instead of staging it as a nested value. */
+            initializerSlot = valueConstructFunctionSlot != ZR_PARSER_SLOT_NONE
+                                      ? compile_struct_init_expression_into_slot(cs, decl->value, reservedVarSlot)
+                                      : compile_expression_into_slot(cs, decl->value, reservedVarSlot);
             compile_statement_trace("var decl initializer compile done hasError=%d stackCount=%llu initializerSlot=%u",
                                     (int)cs->hasError,
                                     (unsigned long long)cs->stackSlotCount,
@@ -3053,7 +3057,7 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
 }
 
 // 编译返回语句
-static TZrUInt32 compile_property_reference_return_value(
+TZrUInt32 compile_property_reference_place(
         SZrCompilerState *cs,
         SZrAstNode *expression,
         SZrFileRange location) {
@@ -3268,7 +3272,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
             cs->currentFunctionNode != ZR_NULL &&
             cs->currentFunctionNode->type ==
                     ZR_AST_PROPERTY_DECLARATION) {
-            resultSlot = compile_property_reference_return_value(
+            resultSlot = compile_property_reference_place(
                     cs, stmt->expr, stmt->referenceLocation);
         } else {
             ZrParser_Expression_Compile(cs, stmt->expr);

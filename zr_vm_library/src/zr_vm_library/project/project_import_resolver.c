@@ -839,6 +839,27 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                                           currentModuleKey,
                                                                           &currentDependencyModulePath);
 
+    if (project != ZR_NULL && project->manifestVersion == 2u &&
+        currentDependencyPackage == ZR_NULL && rawSpecifier[0] == '#') {
+        SZrLibrary_ModuleSpecifier alias;
+        SZrLibrary_ModuleSpecifier target;
+        if (!ZrLibrary_ModuleSpecifier_Parse(rawSpecifier, &alias, errorBuffer, errorBufferSize) ||
+            !ZrLibrary_Project_ResolveManifestAlias(project, &alias, &target)) {
+            project_resolver_set_error(errorBuffer, errorBufferSize, "unknown import alias '%s'", rawSpecifier);
+            return ZR_FALSE;
+        }
+        if (target.kind == ZR_LIBRARY_MODULE_SPECIFIER_KIND_OFFICIAL_NATIVE ||
+            target.kind == ZR_LIBRARY_MODULE_SPECIFIER_KIND_REGISTERED_NATIVE) {
+            return project_resolver_copy_text(target.identity.segments, buffer, bufferSize);
+        }
+        if (target.kind == ZR_LIBRARY_MODULE_SPECIFIER_KIND_WORKSPACE) {
+            return project_resolver_convert_dot_suffix(target.identity.segments, buffer, bufferSize);
+        }
+        project_resolver_set_error(errorBuffer, errorBufferSize,
+                                   "unsupported provider for import alias '%s'", rawSpecifier);
+        return ZR_FALSE;
+    }
+
     if (rawSpecifier[0] == '&') {
         const TZrChar *suffix = rawSpecifier + 1;
         TZrSize dependencyNameLength = 0;

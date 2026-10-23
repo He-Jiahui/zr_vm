@@ -3,10 +3,16 @@
 
 void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
 void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
+void test_w2_scalar_self_alias_stores_preserve_loop_results(void);
+void test_w2_constant_loops_have_compact_bodies(void);
+void test_w2_numeric_literal_folding_preserves_runtime_overflow(void);
+void test_w2_scalar_arguments_load_directly_into_call_window(void);
+
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
 void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void);
+void test_w2_signed_less_branch_reuses_less_equal_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
@@ -35,6 +41,7 @@ int main(void) {
     RUN_TEST(test_w2_signed_equality_branch_fuses_slot_operands);
     RUN_TEST(test_w2_signed_greater_equal_branch_reuses_greater_signed_jump);
     RUN_TEST(test_w2_signed_greater_branch_fuses_to_less_equal_jump);
+    RUN_TEST(test_w2_signed_less_branch_reuses_less_equal_jump);
     RUN_TEST(test_w2_static_iterator_move_next_branch_fuses);
     RUN_TEST(test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit);
     RUN_TEST(test_w2_super_array_add_variable_value_elides_dead_receiver_setup);
@@ -52,6 +59,11 @@ int main(void) {
     RUN_TEST(test_w2_public_four_array_zero_fill_loop_fuses);
     RUN_TEST(test_w2_public_array_add_live_result_is_preserved);
     RUN_TEST(test_w2_public_array_add_live_result_preserves_using_cleanup);
+
+    RUN_TEST(test_w2_scalar_self_alias_stores_preserve_loop_results);
+    RUN_TEST(test_w2_constant_loops_have_compact_bodies);
+    RUN_TEST(test_w2_numeric_literal_folding_preserves_runtime_overflow);
+    RUN_TEST(test_w2_scalar_arguments_load_directly_into_call_window);
 
     return UNITY_END();
 }

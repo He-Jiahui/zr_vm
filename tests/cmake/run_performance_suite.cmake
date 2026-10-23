@@ -980,13 +980,34 @@ foreach (PERF_EXECUTION_INDEX RANGE 0 ${PERF_EXECUTION_LAST_JOB})
             endif ()
 
             if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
+                set(correctness_command_list ${command_list})
+                set(gc_heap_summary "")
+                if (case_name MATCHES "^gc_fragment_(baseline|stress)$" AND
+                    implementation_id MATCHES "^zr_(interp|binary)$")
+                    set(gc_heap_summary "${PERF_REPORT_DIR}/${case_name}__${implementation_id}.heap.txt")
+                    file(REMOVE "${gc_heap_summary}")
+                    list(APPEND correctness_command_list "--heap-summary=${gc_heap_summary}")
+                endif ()
                 execute_process(
-                        COMMAND ${command_list}
+                        COMMAND ${correctness_command_list}
                         WORKING_DIRECTORY "${working_directory}"
                         RESULT_VARIABLE correctness_result
                         OUTPUT_VARIABLE correctness_stdout
                         ERROR_VARIABLE correctness_stderr
                         TIMEOUT 600)
+                if (correctness_result EQUAL 0 AND NOT gc_heap_summary STREQUAL "")
+                    set(gc_collections 0)
+                    if (EXISTS "${gc_heap_summary}")
+                        file(READ "${gc_heap_summary}" gc_heap_text)
+                        if (gc_heap_text MATCHES "gc collections minor=([0-9]+) major=([0-9]+) full=([0-9]+)")
+                            math(EXPR gc_collections "${CMAKE_MATCH_1} + ${CMAKE_MATCH_2} + ${CMAKE_MATCH_3}")
+                        endif ()
+                    endif ()
+                    if (gc_collections EQUAL 0)
+                        set(correctness_result 1)
+                        string(APPEND correctness_stderr "\nGC benchmark completed without any collection")
+                    endif ()
+                endif ()
                 perf_normalize_output("${correctness_stdout}" correctness_output)
                 perf_strip_contract_noise("${correctness_output}" correctness_output)
                 perf_normalize_output("${correctness_stderr}" correctness_error_output)

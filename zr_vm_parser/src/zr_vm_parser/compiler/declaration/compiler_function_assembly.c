@@ -161,7 +161,7 @@ static TZrBool compiler_copy_function_closures(SZrCompilerState *cs, SZrFunction
 
 /* The move has an exact source-to-child map, including functions with no
  * bytecode. Publish those aliases before the source buffers are detached. */
-void compiler_rebind_moved_child_constants(SZrFunction *function,
+void compiler_rebind_moved_child_constants(SZrState *state, SZrFunction *function,
                                            SZrFunction *const *sourceChildren) {
     for (TZrUInt32 constantIndex = 0; constantIndex < function->constantValueLength; ++constantIndex) {
         SZrTypeValue *constant = &function->constantValueList[constantIndex];
@@ -178,6 +178,10 @@ void compiler_rebind_moved_child_constants(SZrFunction *function,
         }
     }
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    /* Publish the new embedded addresses before detaching queued sources.
+     * Imports can compile modules during an incremental mark. */
+    for (TZrUInt32 i = 0; i < function->childFunctionLength; ++i)
+        ZrCore_RawObject_Barrier(state, &function->super, &function->childFunctionList[i].super);
 }
 
 static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction *function) {
@@ -206,7 +210,7 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
     compiler_relocate_copied_child_constants(function, sourceChildren);
-    compiler_rebind_moved_child_constants(function, sourceChildren);
+    compiler_rebind_moved_child_constants(cs->state, function, sourceChildren);
     /* Embedded children must retain the allocation that owns their storage. */
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
         if (sourceChildren[index] != ZR_NULL) {
@@ -691,6 +695,33 @@ static TZrBool compiler_return_slot_exists(const TZrUInt32 *slots, TZrUInt32 cou
     return ZR_FALSE;
 }
 
+/* Typed bindings have no PC range. Require a live local and an unambiguous
+ * scalar binding for this slot; reused or temporary slots stay conservative. */
+static TZrBool compiler_return_slot_is_plain_scalar(const SZrFunction *function,
+                                                    TZrUInt32 slot, TZrUInt32 pc) {
+    const SZrFunctionLocalVariable *active = ZR_NULL;
+    TZrBool found = ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->localVariableLength; ++i) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[i];
+        if (local->stackSlot == slot && local->offsetActivate <= (TZrMemoryOffset)pc &&
+            (TZrMemoryOffset)pc < local->offsetDead) {
+            if (active != ZR_NULL) return ZR_FALSE;
+            active = local;
+        }
+    }
+    if (active == ZR_NULL) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->typedLocalBindingLength; ++i) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[i];
+        if (binding->stackSlot != slot) continue;
+        if (binding->name != active->name || binding->type.ownershipQualifier != 0u || binding->type.isArray ||
+            !(ZR_VALUE_IS_TYPE_INT(binding->type.baseType) ||
+              ZR_VALUE_IS_TYPE_FLOAT(binding->type.baseType) ||
+              binding->type.baseType == ZR_VALUE_TYPE_BOOL)) return ZR_FALSE;
+        found = ZR_TRUE;
+    }
+    return found;
+}
+
 static TZrBool compiler_collect_return_escape_slots(SZrCompilerState *cs, SZrFunction *function) {
     SZrGlobalState *global;
     TZrUInt32 *collectedSlots;
@@ -728,6 +759,9 @@ static TZrBool compiler_collect_return_escape_slots(SZrCompilerState *cs, SZrFun
             continue;
         }
 
+        if (returnCount == 1u && compiler_return_slot_is_plain_scalar(function, resultSlot, instructionIndex)) {
+            continue;
+        }
         collectedSlots[slotCount++] = resultSlot;
     }
 

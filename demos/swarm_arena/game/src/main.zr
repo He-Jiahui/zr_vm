@@ -1,0 +1,66 @@
+let system = import("zr.system");
+let config = import("config");
+let game_session = import("game_session");
+let metrics = import("metrics");
+let host = import("zrgame.host");
+let exception = import("zr.system.exception");
+
+fn run(cfg: config.Config, session: game_session.Session): void {
+    var runtimeHost: object = host;
+    system.gc.set_budget(cfg.gcBudgetUs);
+    session.boot(cfg);
+    if (cfg.gcPolicy == "manual") { system.gc.disable(); }
+    var stats = new metrics.Metrics(cfg.frames);
+    var frame = 0;
+    while (frame < cfg.frames) {
+        var start = <int>runtimeHost.nowMicros();
+        runtimeHost.zoneBegin(0);
+        try { session.tick(frame); } finally { runtimeHost.zoneEnd(0); }
+        var tickEnd = <int>runtimeHost.nowMicros();
+        runtimeHost.zoneBegin(1);
+        try { session.render(frame); } finally { runtimeHost.zoneEnd(1); }
+        var renderEnd = <int>runtimeHost.nowMicros();
+        if (cfg.gcPolicy == "manual" && (frame + 1) % cfg.minorInterval == 0) {
+            system.gc.collect("minor");
+        } else if (cfg.gcPolicy == "slack" && cfg.gcBudgetUs > 0 && renderEnd - start < 16667) {
+            var budget = 16667 - (renderEnd - start);
+            if (budget > cfg.gcBudgetUs) { budget = cfg.gcBudgetUs; }
+            system.gc.set_budget(budget); system.gc.collect("minor"); system.gc.set_budget(cfg.gcBudgetUs);
+        }
+        stats.record(tickEnd - start, renderEnd - tickEnd);
+        frame += 1;
+    }
+    var hash = session.fullHash();
+    if (cfg.expectHash >= 0 && hash != cfg.expectHash) {
+        throw new exception.RuntimeError("hash mismatch: expected " + <string>cfg.expectHash + " got " + <string>hash);
+    }
+    system.console.printLine(session.summary(hash, "cli") + stats.summary());
+}
+
+// Calling this export imports/runs entry exactly once. Host drive returns
+// before argument parsing or construction of the CLI-owned Session.
+pub fn hostEntry(): int { return 1; }
+var entryHost: object = host;
+if (entryHost.isHostDriven()) { return 0; }
+
+var cfg = new config.Config();
+var session = new game_session.Session();
+var exitCode = 0;
+try {
+    cfg.parse();
+    if (cfg.help) { system.console.printLine(cfg.usage()); }
+    else {
+        run(cfg, session);
+    }
+} catch (e) {
+    system.console.printLine("SWARM_ERROR " + e.message);
+    system.console.printLine(cfg.usage());
+    exitCode = 2;
+} finally {
+    session.shutdown();
+    if (exitCode != 0) { system.console.printLine("SWARM_FINALLY cleanup=ok"); }
+}
+// A script return value is printed by the stock CLI; process.exit sets its
+// actual OS status after catch/finally have completed.
+if (exitCode != 0) { system.process.exit(exitCode); }
+return 0;

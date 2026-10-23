@@ -1,0 +1,1215 @@
+{
+  "schema": "zr-swarm-readiness/1",
+  "stopped_at": "GD-C5",
+  "reason": "GD-C5 complete: full v1 DOD gameplay and all five scenarios match CLI/host goldens with null/bulk. All 77 distinct demo CTests pass in Release, memory-error-detector and forced-GC (12 retained plus 65 resumed). Native 8/8, required probes 38/38, P22 18/18 and gameplay units 20/20 pass; core inventories remain 515. Engine source is unchanged at e1d3ab19. P19 reflection, P14 v2 package integration and all H/M milestones remain deferred; v1 $swarmcore / import(\"&swarmcore\") remains in use.",
+  "probes": [
+    {
+      "id": "P01",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Struct-array explicit writeback, direct field writes, copy isolation, nested constructors, and the 10k-loop pass; the host access-cost case also passes.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P02",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Vec2 add/sub/mul/neg and mixed Vec2 * float preserve inline operands and typed results; fixed by 5688215e.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P03",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Interface-typed field dispatch, virtual/override/super, properties and static counter all pass.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P04",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Union variants and payloads survive calls, arrays, generic storage, and full GC; fixed by 89e92cff.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P05",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Generic queue instance initializers, capacity/wrap behavior, and caller out-argument updates pass; fixed by 2a7b1b3e with readonly compatibility in 3c0b025a.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P06",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Array<float> for-in, C-style for with += and while return equal sums.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P07",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "User Enumerator/Iterable contracts match imported nominal types; default constructors run independent instance initializers; fixed by 4ccf219f.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P08",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Scope/using cleanup and host program-end destructor checks pass in all configurations; c97113cd re-reads operands after destructor stack growth.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P09",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Function-typed fields and arrays call escaping shared captures correctly, including after full GC; fixed by 8d575068.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P10",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Job<int> construction, currentScheduler.schedule and result return 17.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P11",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Pool deliver/borrow/write/close/recycle and tryBorrow(out view) pass in both modes; embedded function GC domain identity fixed by b398492b.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P12",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "GC stats, 500us budget, minor request and process.arguments pass. A request need not finish after one step; snapshot allocation can trigger a full GC in Debug, so last-request kind is not asserted.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P13",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "native extern into absolute libzrgame_ffi.so path passes i64 and f64 checks. Relative/search resolution not needed for the selected absolute-path contract.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P14",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Descriptor plugins pass both required search paths and optional #gfx metadata lookup in both modes; alias fixed by 206290fd. @swarmcore remains deferred because v2 package dependencies/exports are disconnected from production provider loading.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "optional_variants": {
+        "aliases": {
+          "release": {
+            "interp": "OK",
+            "binary": "OK"
+          },
+          "asan": {
+            "interp": "OK",
+            "binary": "OK"
+          },
+          "gcstress": {
+            "interp": "OK",
+            "binary": "OK"
+          }
+        },
+        "package": {
+          "release": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          },
+          "asan": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          },
+          "gcstress": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          }
+        }
+      }
+    },
+    {
+      "id": "P15",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Runtime template interpolation produces value=7.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P16",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Safe Park-Miller (10k steps), bounded mod-prime hash and wide uint pass. Separate runtime observations prove signed +/* overflow errors and uint addition wraps to zero.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P17",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Explicit f32 casts and field precision pass, including dynamic positive/negative rounding; serializable conversion fixed by 6deb6a3e.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P18",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Declared trace feature is recognized while disabled; traceCalls=0, disabled argument skipping, enabled feature calls, and comptime checks pass; fixed by 1b1666f0. Build-profile selection is not added.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P19",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Runtime zr.reflection import still reports import_load_unavailable. Bytecode TypeId rehydration and declaration field/attribute resolution remain deferred. The independent ordinary typeid argument-slot fix is 8b1a45c9.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
+    },
+    {
+      "id": "P20",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Native scalar struct construction, float precision, and InlineArgumentView pass in both modes; caller argument coordinates and native layout metadata fixed by da7eaa51.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P21",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    },
+    {
+      "id": "P22",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Required-case parity passes all 18 required P01-P20 pairs; only P19 and the optional package pair lack successful parity. P21 is gated independently.",
+      "asan": {
+        "interp": "OK",
+        "binary": "OK"
+      },
+      "gcstress": {
+        "interp": "OK",
+        "binary": "OK"
+      }
+    }
+  ],
+  "validated_engine_revision": "ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3",
+  "engine_merge_revision": "49428df9f880578e0ede99e8d254b95f91cf7c3c",
+  "validation": {
+    "release": {
+      "build": "build/demo-release",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 8.81
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 58,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p19-main",
+        "p14-package"
+      ],
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
+      "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+      "evidence": "/tmp/zr-swarm-opt-demo-release-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-release-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "c03d7cd24818be7741ebc2f39c8044fa57701d088403a76532afccf4dc85d51c",
+        "libzr_vm_parser.so": "4f2847d414bbc1e1a133edbcc4be1e0c51d98bb6093814458ffe5376a494e6ba",
+        "libzr_vm_library.so": "078a5c8587fbfd45e51b1ac68aaca189f71afc873703195b5ec933d0858c55ff",
+        "libzr_vm_lib_iteration.so": "0ee07f68c54f709d99427de590bca4e63f74a4ad3e67047e1579d5a65058fafc",
+        "libzr_vm_lib_system.so": "0c0c3c1680aa9139421a54bdd922760f184d2727672ca4819b4f542746aed4e8",
+        "libzr_vm_lib_container.so": "57ff3302e5d6ed92685371d719fe37b917efad93588dbadc4c49d4c9dfd7548c"
+      }
+    },
+    "asan": {
+      "build": "build/demo-asan",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 15.77
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 58,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p19-main",
+        "p14-package"
+      ],
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
+      "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+      "evidence": "/tmp/zr-swarm-opt-demo-asan-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-asan-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "0fe1b3e2b5e40190b75d24379bc8327a7ec63d97eac81a2aa3560537813e13ef",
+        "libzr_vm_parser.so": "2cc8f236173953bc45bb5eb2111594a250da49d12e4692e3a14a1f4a58e1534e",
+        "libzr_vm_library.so": "645679e6d4e32602c21a46ab0d6273229c101fa5fa3a102cfd5fa3961a29f130",
+        "libzr_vm_lib_iteration.so": "f5d51a95473d4daf38d6ed0f59d65af36971becc4af1b52ac3ca1f4c129409bb",
+        "libzr_vm_lib_system.so": "1df27c2b4389f9c69fd63e07d56f3b76df24b0226e39018f8c752649ed1c084f",
+        "libzr_vm_lib_container.so": "cffc992b80bbd02ed32784a1347c9fc0aed2f80ef4a97d6230d8b4ef12dc2419"
+      }
+    },
+    "gcstress": {
+      "build": "build/demo-gcstress",
+      "ctest": {
+        "passed": 64,
+        "total": 64,
+        "seconds": 15.33
+      },
+      "required_mode_checks": {
+        "passed": 38,
+        "total": 38
+      },
+      "all_mode_checks": {
+        "passed": 58,
+        "total": 62
+      },
+      "p22_required_pairs": 18,
+      "p22_optional_without_parity": [
+        "p19-main",
+        "p14-package"
+      ],
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
+      "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+      "evidence": "/tmp/zr-swarm-opt-demo-gcstress-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-gcstress-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "bf7c0136b14176910b3ed2bcd4eb2bb184555443824d8b58763327f1aceded98",
+        "libzr_vm_parser.so": "ca222a1d86a717376cea5bec655fba19edc525b737df69e4cce5ece566ba4d4e",
+        "libzr_vm_library.so": "7eb6f8d20cdf7188855515b628df5db6c9d8fa3df2513fe29107686e51acc1b7",
+        "libzr_vm_lib_iteration.so": "4d9858a511955d277f72331bd409a6877e4a2e7f57690a3b43a57c8bd7e54fe9",
+        "libzr_vm_lib_system.so": "9599f047649a77b2ec6891244ebf9f974b51679dec6e490458dd7398cc702ff7",
+        "libzr_vm_lib_container.so": "36052a1538e57b53f42a9e88d246737577fe23c0ed166f61347074afd334c8fe"
+      }
+    }
+  },
+  "parity_scope": "P22 gates 18 required P01-P20 pairs and reports optional parity separately. Only P19 and the package pair lack successful parity; P21 is checked by the feature gate.",
+  "optional_fix_commits": {
+    "P11": "b398492b",
+    "P02": "5688215e",
+    "P07": "4ccf219f",
+    "P17": "6deb6a3e",
+    "P20": "da7eaa51",
+    "P18": "1b1666f0",
+    "P14-alias": "206290fd",
+    "typeid-argument": "8b1a45c9"
+  },
+  "gd_c2": {
+    "status": "complete",
+    "backend": "null",
+    "mode_b_sprite_inst": true,
+    "content_golden_hash": 299488900,
+    "runtime_revision": "b2466ea3",
+    "modules_revision": "05f9fd17",
+    "engine_changes_required": false,
+    "validated_at_utc": "2026-10-20T22:22:06.465213+00:00",
+    "targets": [
+      "zrgame_runtime",
+      "zrgame_modules",
+      "zrgame_plugins",
+      "zrgame_ffi",
+      "zrgame_native_tests"
+    ],
+    "validation": {
+      "release": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172381612745,
+            "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+            "runtime_sha256": "5d913734575437e4d9cb48fb8756bf58e6ed588bef3a907c5b83f8522676acca"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172381638158,
+            "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+            "runtime_sha256": "5d913734575437e4d9cb48fb8756bf58e6ed588bef3a907c5b83f8522676acca"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "811a32685f2abc912b3c515d1765e30e7daf0cbc5b6d921a5cc54ed446f92d78",
+          "gfx": "758844e57c8cd47b2a3b5c253ebd803abbe1b95eaacf9f9eec20fec59a6e2b5a"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-merged-release",
+          "scope": "core inventory excluding performance_report",
+          "final_passed": 515,
+          "total": 515,
+          "environment_reruns_passed": 2,
+          "detector_findings": 0
+        }
+      },
+      "asan": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172383711229,
+            "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+            "runtime_sha256": "e3c137e12061e51a9e3a341fffc2637dc25b0d5ccd34b2a0b4aebfe40ccd06af"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172384864467,
+            "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+            "runtime_sha256": "e3c137e12061e51a9e3a341fffc2637dc25b0d5ccd34b2a0b4aebfe40ccd06af"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "f2d73410be0914c209589df1018272ec1bc715b2b16e593673456f3380bddf71",
+          "gfx": "55d0f58d37c8ab5f29a95690cfe5ceaba07c2de9c1602f68ad8a7190c9312924"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-asan",
+          "scope": "core inventory excluding performance_report",
+          "final_passed": 515,
+          "total": 515,
+          "environment_reruns_passed": 2,
+          "detector_findings": 0
+        }
+      },
+      "gcstress": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172383540922,
+            "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+            "runtime_sha256": "7d0fa84075d190daf9ae833c887c52c7441126b94f4a860d4194026ad7e02065"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172384855097,
+            "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+            "runtime_sha256": "7d0fa84075d190daf9ae833c887c52c7441126b94f4a860d4194026ad7e02065"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "dd6a63c6875bee80e606f166d45eb0645cd684db76cbcc1eef984a62d375e8af",
+          "gfx": "3f17bbca9b0cc59a9d2acc1f60d543a4c14f25a625bb5fa3f4240859e5cb9438"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-merged-gcstress",
+          "scope": "selected forced-GC inventory",
+          "final_passed": 129,
+          "total": 129,
+          "environment_reruns_passed": 1,
+          "detector_findings": 0
+        }
+      }
+    },
+    "detector_options": {
+      "ASAN_OPTIONS": "detect_leaks=0",
+      "UBSAN_OPTIONS": "halt_on_error=1",
+      "gcstress_define": "ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST"
+    },
+    "evidence_prefix": "/tmp/zr-swarm-gd-c2-",
+    "bulk_read_preparation_revision": "0e3c7965"
+  },
+  "gd_c3": {
+    "status": "OK",
+    "date": "2026-10-21",
+    "scope": "DOD lane, CLI smoke only",
+    "implementation_commits": [
+      "437f2dbc",
+      "a3fce261",
+      "745052a3"
+    ],
+    "engine_revision": "ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3",
+    "engine_changed": false,
+    "engine_release_core": {
+      "passed": 515,
+      "total": 515,
+      "seconds": 63.63
+    },
+    "golden": 224663030,
+    "checkpoint_60": 227689432,
+    "render_hash": 183257039,
+    "seed": 12345,
+    "frames": 120,
+    "package_import": "&swarmcore",
+    "manifest_version": 1,
+    "toolchain": {
+      "cmake": "cmake version 3.31.6",
+      "ninja": "1.12.1",
+      "clang": "Debian clang version 19.1.7 (3+b1)",
+      "llvm": "19.1.7",
+      "python": "Python 3.13.5",
+      "libffi": "3.4.8-2"
+    },
+    "configurations": {
+      "release": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 35.38,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "b9729468c8d211a7b4fca31de85db9f335a3a8030fdfe84d85f36bb08425b4df",
+        "runtime_sha256": "6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-rwh66crg"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-qjoygpie"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-ygbeyfbx",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-hyhu6g69"
+      },
+      "asan": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 717.65,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "de0166e930c0db157ed54f91bd23b963cc593aca95cfa5361cc498f41d6faa3b",
+        "runtime_sha256": "3fcad3f4d4ab02f1ad1f8d84e7e40f26cd4db5145d90e541f5f4ce957ab5b38a",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-znxt2uwu"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-2tv2vurs"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-s0ug9hrm",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-6x78rucz"
+      },
+      "gcstress": {
+        "demo_passed": 71,
+        "demo_total": 71,
+        "seconds": 703.46,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "zr_unit_tests": 10,
+        "bad_cases": 12,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "cli_sha256": "078cfc0ae32d9c3bd130fb53b464af2b15818ba0affc6143d0653cbf7fdf2201",
+        "runtime_sha256": "9d6b9f822c7510baec4a565649ceaff1ff226b2c9678bfee7c7cb671452d881a",
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-interp-7kzui2g1"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c3-game-binary-m5y7v8yg"
+          }
+        },
+        "unit_evidence": "/tmp/zr-swarm-gd-c3-units-3uzyggfr",
+        "bad_evidence": "/tmp/zr-swarm-gd-c3-game-bad-ffp5vv1g"
+      }
+    },
+    "deferred": [
+      "P19 runtime reflection",
+      "P14 v2 @swarmcore dependency/export integration",
+      "GD-C4 host drive and all later milestones"
+    ],
+    "limitations": [
+      "Debug/forced-GC detector smoke exceeds the five-second design aspiration; no performance-budget claim",
+      "Leak detection disabled; no leak-clean shutdown claim"
+    ],
+    "evidence": "/tmp/zr-swarm-gd-c3-final-evidence.json"
+  },
+  "gd_c4": {
+    "date": "2026-10-21",
+    "status": "OK",
+    "engine_revision": "e1d3ab190bf986841561807adbbdfabaa5215ab6",
+    "engine_changed": true,
+    "engine_merge_revision": "268b6864",
+    "preserved_baseline": "9885cb15",
+    "implementation_commits": [
+      "857e4456",
+      "d321437a"
+    ],
+    "usage_commit": "df8c84ba",
+    "deadline_commit": "944f81be",
+    "unit_deadline_commit": "58a5f1f7",
+    "unit_worker_deadline_commit": "d3e4c1e7",
+    "probe_deadline_commit": "c7c6b741",
+    "host_build_revision": "58a5f1f7",
+    "golden": 224663030,
+    "checkpoint_60": 227689432,
+    "seed": 12345,
+    "frames": 120,
+    "engine": {
+      "release": {
+        "passed": 515,
+        "total": 515,
+        "seconds": 70.93,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-release-core.log"
+      },
+      "memory-error-detector": {
+        "passed": 515,
+        "total": 515,
+        "seconds": 1982.22,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-memory-shared-core.log"
+      },
+      "forced-GC": {
+        "passed": 129,
+        "total": 129,
+        "seconds": 270.17,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/engine-forced-final-core.log"
+      }
+    },
+    "configurations": {
+      "release": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 87.87,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "8cef9675fdeeff8be4e0e20fd06fd0fa170c2ccb9673c7d98e33f46452816b4d",
+        "cli_sha256": "b9729468c8d211a7b4fca31de85db9f335a3a8030fdfe84d85f36bb08425b4df",
+        "runtime_sha256": "6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 73,
+        "full_run_total": 73,
+        "focused_passed": 1,
+        "focused_total": 1,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final4-release-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final5-release-units.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-dq0g5vjd"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-6timhkp0"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-py0wd0jg"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-d8kcnf_y"
+          }
+        }
+      },
+      "memory": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 3699.53,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "7d744841588e95ec8e2bedf924c79d26dfa9dde9f199f83ef9cf56ef197182f0",
+        "cli_sha256": "de0166e930c0db157ed54f91bd23b963cc593aca95cfa5361cc498f41d6faa3b",
+        "runtime_sha256": "3fcad3f4d4ab02f1ad1f8d84e7e40f26cd4db5145d90e541f5f4ce957ab5b38a",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 72,
+        "full_run_total": 73,
+        "focused_passed": 4,
+        "focused_total": 4,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final3-memory-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final4-memory-focused.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final5-memory-units.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-rc6fbre3"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-gy8g0p5u"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-8j7cxk2n"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-lq_a4t2t"
+          }
+        }
+      },
+      "forced": {
+        "passed": 73,
+        "total": 73,
+        "seconds": 2654.13,
+        "required_checks": 38,
+        "successful_checks": 58,
+        "required_parity_pairs": 18,
+        "native_c_tests": 8,
+        "core_inventory": 515,
+        "detector_findings": 0,
+        "host_sha256": "aaba8fd254aa43595d862441453e125a8b354cb40d3db81d78c287ee871fea32",
+        "cli_sha256": "078cfc0ae32d9c3bd130fb53b464af2b15818ba0affc6143d0653cbf7fdf2201",
+        "runtime_sha256": "9d6b9f822c7510baec4a565649ceaff1ff226b2c9678bfee7c7cb671452d881a",
+        "schema_summaries_valid": 7,
+        "final_per_test_outcomes": true,
+        "full_run_passed": 69,
+        "full_run_total": 73,
+        "focused_passed": 4,
+        "focused_total": 4,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c4-20261021/final4-forced-demo.log",
+          "/tmp/zr-swarm-gd-c4-20261021/final6-forced-focused.log"
+        ],
+        "host": {
+          "smoke": {
+            "status": "OK",
+            "hash": 224663030,
+            "bad_cases": 25,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-smoke-w_27tdau"
+          },
+          "parity": {
+            "status": "OK",
+            "hash": 224663030,
+            "pairs": [
+              {
+                "frames": 120,
+                "seed": 12345,
+                "hash": 224663030
+              },
+              {
+                "frames": 1,
+                "seed": 2147483646,
+                "hash": 216715243
+              }
+            ],
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c4-host-parity-z9_7_u60"
+          }
+        },
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": false,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-interp-lhr2g2aa"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 224663030,
+            "repetitions": 3,
+            "source_removed": true,
+            "evidence": "/tmp/zr-swarm-gd-c4-20261021/runtime/zr-swarm-gd-c3-game-binary-dlgl2fkv"
+          }
+        }
+      }
+    },
+    "raw_evidence_root": "/tmp/zr-swarm-gd-c4-20261021",
+    "retained_attempts": {
+      "final2-memory-demo": {
+        "exit": 8,
+        "seconds": 2254.8,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final2-memory-demo.log",
+        "passed": 72,
+        "total": 73
+      },
+      "final3-memory-demo": {
+        "exit": 8,
+        "seconds": 2213.95,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final3-memory-demo.log",
+        "passed": 72,
+        "total": 73
+      },
+      "final4-forced-demo": {
+        "exit": 8,
+        "seconds": 2538.17,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/final4-forced-demo.log",
+        "passed": 69,
+        "total": 73
+      },
+      "compile-timeout-replay": {
+        "exit": 0,
+        "seconds": 24.93,
+        "log": "/tmp/zr-swarm-gd-c4-20261021/compile-timeout-replay.log"
+      }
+    },
+    "upstream_main": "291be0cba00f185b4f7f70a7e3cf5c692905953d",
+    "schema_validation": {
+      "draft": "2020-12",
+      "passed": 21
+    },
+    "scope": "smoke/DOD host; null platform/backend; bulk; three GC policies; file metrics",
+    "forced_selection": {
+      "regex": "^(aot_|artifact_|binary_loader|compiled_function|frame_slot|session_checkpoint|interpreter_|core_gc|execution_|typed_opcode|debug_|runtime_value|function_instruction|call_binding|close_|struct_array_|swarm_|macro_syntax_hygiene_field_results$)",
+      "count": 129,
+      "original_temporary_list_available": false
+    },
+    "limitations": [
+      "leak detection disabled",
+      "Allocation deltas are estimates; exact pause p99 unavailable",
+      "No performance-budget acceptance"
+    ],
+    "deferred": [
+      "P19 runtime reflection",
+      "P14 v2 package dependency/export integration",
+      "GD-C5 and all later milestones"
+    ]
+  },
+  "gd_c5": {
+    "status": "complete",
+    "started_on": "2026-10-21",
+    "completed_on": "2026-10-22",
+    "rules": "gd-c5-v1/1",
+    "scope": "Full v1 DOD gameplay; five scenarios; CLI/host null/bulk",
+    "engine_revision": "e1d3ab190bf986841561807adbbdfabaa5215ab6",
+    "engine_changed": false,
+    "engine_release_core": {
+      "passed": 515,
+      "total": 515,
+      "seconds": 68.13
+    },
+    "implementation_commits": [
+      "968abf05",
+      "24324794",
+      "635e3850",
+      "693c6ef5",
+      "258dcffa",
+      "64b5e369"
+    ],
+    "package_import": "&swarmcore",
+    "manifest_version": 1,
+    "seed": 12345,
+    "smoke_golden_change_reason": "Full gameplay changes positions and RNG draws; progression, director, pickups and pierce enter the hash. Declared before regeneration.",
+    "upstream_main": "291be0cba00f185b4f7f70a7e3cf5c692905953d",
+    "scenarios": {
+      "smoke": {
+        "frames": 120,
+        "cli_hash": 552988638,
+        "host_hash": 552988638,
+        "checkpoint_60": 42922906
+      },
+      "arena_2k": {
+        "frames": 1800,
+        "cli_hash": 60149719,
+        "host_hash": 60149719,
+        "checkpoint_60": 131330391
+      },
+      "swarm_10k": {
+        "frames": 1800,
+        "cli_hash": 603625956,
+        "host_hash": 603625956,
+        "checkpoint_60": 422884711
+      },
+      "bullet_storm": {
+        "frames": 1800,
+        "cli_hash": 324791145,
+        "host_hash": 324791145,
+        "checkpoint_60": 433197618
+      },
+      "particle_burst": {
+        "frames": 1800,
+        "cli_hash": 203028298,
+        "host_hash": 203028298,
+        "checkpoint_60": 96337168
+      }
+    },
+    "stress_hashes": {
+      "arena_2k": 91709327,
+      "swarm_10k": 286636939,
+      "bullet_storm": 822063058,
+      "particle_burst": 202404383
+    },
+    "configurations": {
+      "release": {
+        "demo_passed": 77,
+        "demo_total": 77,
+        "seconds": 1942.37,
+        "native_c_tests": 8,
+        "zr_units": 20,
+        "required_probes": 38,
+        "successful_probes": 58,
+        "required_parity_pairs": 18,
+        "cli_bad_cases": 28,
+        "host_bad_cases": 28,
+        "core_inventory": 515,
+        "core_inventory_identical": true,
+        "scenario_frames": 1800,
+        "smoke_frames": 120,
+        "cli_sha256": "b9729468c8d211a7b4fca31de85db9f335a3a8030fdfe84d85f36bb08425b4df",
+        "host_sha256": "7485c2c628e42c107f902ea81835d5997fc74d8fcd4f0fcb2c0a9c6cb3cefcc4",
+        "runtime_sha256": "6a02529cdb5f88f109e9e58fd17c535391be2dcaa250c824008f499e390fea62"
+      },
+      "asan": {
+        "demo_passed": 77,
+        "demo_total": 77,
+        "seconds": 7469.56,
+        "native_c_tests": 8,
+        "zr_units": 20,
+        "required_probes": 38,
+        "successful_probes": 58,
+        "required_parity_pairs": 18,
+        "cli_bad_cases": 28,
+        "host_bad_cases": 28,
+        "core_inventory": 515,
+        "core_inventory_identical": true,
+        "scenario_frames": 4,
+        "smoke_frames": 120,
+        "cli_sha256": "de0166e930c0db157ed54f91bd23b963cc593aca95cfa5361cc498f41d6faa3b",
+        "host_sha256": "42aa24faf33603bd0395e9c23d331c5eddb4e60aeec152e0e27a2c4c26e9123c",
+        "runtime_sha256": "3fcad3f4d4ab02f1ad1f8d84e7e40f26cd4db5145d90e541f5f4ce957ab5b38a"
+      },
+      "gcstress": {
+        "demo_passed": 77,
+        "demo_total": 77,
+        "seconds": 7429.25,
+        "timing_scope": "Sum of 12 completed test durations before interruption and the 65-test resume invocation; excludes interrupted particle-burst work and session downtime.",
+        "complete_single_run": false,
+        "retained_passed": 12,
+        "resumed_passed": 65,
+        "resumed_detail_log": "Replaced by a concurrent CTest inventory query. Audited the saved 65-test stdout, fresh per-probe result files, P22 result and particle-burst CLI/host logs and schema-checked artifacts instead.",
+        "resumed_particle_evidence": "/tmp/zr-swarm-gd-c5-20261021/runtime/zr-swarm-gd-c5-particle_burst-cxyuozht/result.json",
+        "retained_completed_test_seconds": 6826.05,
+        "resume_seconds": 603.2,
+        "evidence_logs": [
+          "/tmp/zr-swarm-gd-c5-20261021/final77-gcstress-interrupted-tests.log",
+          "/tmp/zr-swarm-gd-c5-20261021/final77-gcstress-resume2-tests.log"
+        ],
+        "native_c_tests": 8,
+        "zr_units": 20,
+        "required_probes": 38,
+        "successful_probes": 58,
+        "required_parity_pairs": 18,
+        "cli_bad_cases": 28,
+        "host_bad_cases": 28,
+        "core_inventory": 515,
+        "core_inventory_identical": true,
+        "scenario_frames": 4,
+        "smoke_frames": 120,
+        "cli_sha256": "078cfc0ae32d9c3bd130fb53b464af2b15818ba0affc6143d0653cbf7fdf2201",
+        "host_sha256": "2d856d82a80d7bc0968de0c5a691d53f2651c0d9d087bfd715bb3878f5df1dda",
+        "runtime_sha256": "9d6b9f822c7510baec4a565649ceaff1ff226b2c9678bfee7c7cb671452d881a"
+      }
+    },
+    "raw_evidence_root": "/tmp/zr-swarm-gd-c5-20261021",
+    "limitations": [
+      "leak detection disabled",
+      "Allocation observations are estimates; exact pause p99 unavailable",
+      "No performance budget acceptance"
+    ],
+    "deferred": [
+      "P19 runtime reflection",
+      "P14 v2 package integration",
+      "Other lanes and sweep",
+      "Software/GL rendering and interactive input",
+      "Performance harnesses and all H/M milestones"
+    ]
+  }
+}

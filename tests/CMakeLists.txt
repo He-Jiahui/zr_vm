@@ -755,6 +755,7 @@ add_executable(zr_vm_test_runner ${CMAKE_SOURCE_DIR}/tests/test_runner.c)
 # targets/helpers have been declared.  This keeps future SSA slices isolated
 # from the large historical test list.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-argument-staging-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-analysis-fact-capacity-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-range-null-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-arithmetic-constraints-tests.cmake")
@@ -813,6 +814,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/artifact-row-boundary-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/math-input-boundary-tests.cmake")
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/interpreter-budget-tests.cmake")
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-string-publication-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/setter-caller-cleanup-tests.cmake")
@@ -853,3 +856,47 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/cli-repl-physical-line-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-call-binding-status-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-compiler-boundary-tests.cmake")
+
+if(TARGET zr_vm_cli_executable)
+    foreach(case IN ITEMS writeback field_write nested_init)
+        foreach(mode IN ITEMS interp binary)
+            add_test(NAME struct_array_${case}_${mode}
+                    COMMAND ${CMAKE_COMMAND}
+                    "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+                    "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/struct_array_${case}.zr"
+                    "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/struct_array_${case}_${mode}"
+                    "-DEXECUTION_MODE=${mode}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_struct_array.cmake")
+            set_tests_properties(struct_array_${case}_${mode} PROPERTIES TIMEOUT 90)
+        endforeach()
+    endforeach()
+endif()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/swarm-gd-c1-tests.cmake")
+
+if(TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
+    zr_vm_add_unity_test_target(zr_vm_interpreter_gc_test
+        ${CMAKE_SOURCE_DIR}/tests/core/test_interpreter_gc.c)
+    target_include_directories(zr_vm_interpreter_gc_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_interpreter_gc_test)
+    add_test(NAME interpreter_gc COMMAND zr_vm_interpreter_gc_test)
+    set_tests_properties(interpreter_gc PROPERTIES TIMEOUT 90 LABELS "core;gc")
+endif()
+
+if(TARGET zr_vm_compiler_w2_performance_quickening_test)
+    add_test(NAME interpreter_quickening COMMAND zr_vm_compiler_w2_performance_quickening_test)
+    set_tests_properties(interpreter_quickening PROPERTIES TIMEOUT 120 LABELS "core;benchmark")
+endif()
+
+if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
+    add_test(NAME interpreter_gc_cli
+        COMMAND ${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/benchmarks/run_interpreter_probes.py
+            --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --work-dir ${CMAKE_BINARY_DIR}/tests_generated/interpreter_gc_cli
+            --cases objauto,strdrop --repeat 1 --smoke)
+    set_tests_properties(interpreter_gc_cli PROPERTIES TIMEOUT 90 LABELS "core;gc;benchmark")
+endif()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/function-instruction-verification.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-value-layout.cmake")

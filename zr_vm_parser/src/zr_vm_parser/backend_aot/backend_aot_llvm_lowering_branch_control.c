@@ -152,6 +152,12 @@ static TZrBool backend_aot_llvm_lower_signed_compare_branch_instruction(
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
             runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSigned";
             break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfGreaterEqualSignedConst";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfGreaterSignedConst";
+            break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst";
             break;
@@ -224,6 +230,8 @@ TZrBool backend_aot_llvm_lower_branch_control_family(const SZrAotLlvmLoweringCon
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return backend_aot_llvm_lower_signed_compare_branch_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):

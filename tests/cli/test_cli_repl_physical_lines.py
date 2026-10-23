@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 
 
 CASES = (
@@ -49,8 +50,7 @@ def main() -> int:
         raise ValueError("temp-root must be absolute")
     root = args.temp_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    temporary = root / args.case
-    temporary.mkdir()  # Never reuse/delete a previous process's unknown files.
+    temporary = Path(tempfile.mkdtemp(prefix=args.case + "-", dir=root))
     environment = os.environ.copy()
     environment.update(TEMP=str(temporary), TMP=str(temporary),
                        TMPDIR=str(temporary), PYTHONDONTWRITEBYTECODE="1")

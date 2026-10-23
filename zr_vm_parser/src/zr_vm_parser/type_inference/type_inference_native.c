@@ -15,6 +15,7 @@
 #include "type_inference_semantic_facts.h"
 #include "type_inference_call_diagnostics.h"
 #include "type_inference_nominal_member.h"
+#include "type_inference_function_type.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -607,6 +608,43 @@ static void native_module_info_init_prototype(SZrState *state,
     info->allowBoxedConstruction =
             type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE && type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->constructorSignature = ZR_NULL;
+}
+
+/* Native POD descriptors use the same language field widths and alignment as
+ * source structs. Leave incomplete/generic layouts boxed. */
+static void native_module_info_finalize_scalar_struct_layout(
+        SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+    TZrUInt32 offset = 0u, alignment = 1u;
+    TZrUInt32 fieldCount = 0u;
+    if (info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT || info->genericParameters.length != 0u) return;
+    for (TZrSize index = 0u; index < info->members.length; index++) {
+        SZrTypeMemberInfo *field = ZrCore_Array_Get(&info->members, index);
+        SZrAstNode name = {0};
+        SZrType type = {0};
+        EZrValueType primitive;
+        if (field->memberType != ZR_AST_STRUCT_FIELD || field->isStatic) continue;
+        const TZrChar *text = field->fieldTypeName != ZR_NULL
+                ? ZrCore_String_GetNativeString(field->fieldTypeName) : ZR_NULL;
+        if (text == ZR_NULL ||
+            !inferred_type_try_map_primitive_name(text, strlen(text), &primitive) ||
+            !(ZR_VALUE_IS_TYPE_NUMBER(primitive) || primitive == ZR_VALUE_TYPE_BOOL)) return;
+        name.type = ZR_AST_IDENTIFIER_LITERAL;
+        name.data.identifier.name = field->fieldTypeName;
+        type.name = &name;
+        TZrUInt32 size = calculate_type_size(cs, &type);
+        TZrUInt32 align = get_type_alignment(cs, &type);
+        if (size == 0u || align == 0u || offset > UINT32_MAX - align - size) return;
+        offset = align_offset(offset, align);
+        field->fieldOffset = offset;
+        field->fieldSize = size;
+        offset += size;
+        if (align > alignment) alignment = align;
+        fieldCount++;
+    }
+    if (fieldCount != 0u && offset <= UINT32_MAX - alignment) {
+        info->layoutByteAlign = alignment;
+        info->layoutByteSize = align_offset(offset, alignment);
+    }
 }
 
 static void native_module_info_free_empty_prototype_arrays(
@@ -1253,6 +1291,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1539,6 +1578,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1600,6 +1640,7 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
                                     ? ZR_AST_STRUCT_META_FUNCTION
@@ -2116,7 +2157,7 @@ static TZrBool type_inference_resolve_member_segment_names(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-static SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
+SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
                                                                    SZrString *typeName,
                                                                    EZrMetaType metaType) {
     SZrTypePrototypeInfo *info;
@@ -3553,6 +3594,8 @@ translate_module_info:
             }
         }
 
+        native_module_info_finalize_scalar_struct_layout(cs, &typePrototype);
+
         for (TZrSize methodIndex = 0; methodIndex < native_module_info_array_length(methodsArray); methodIndex++) {
             SZrObject *methodEntry = native_module_info_array_get_object(cs->state, methodsArray, methodIndex);
             SZrString *methodName = native_module_info_get_string_field(cs->state, methodEntry, "name");
@@ -4298,7 +4341,34 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 }
 
                 ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
-                if (nextIsFunctionCall) {
+                if (nextIsFunctionCall && type_inference_function_field_type(memberInfo) != ZR_NULL) {
+                    SZrResolvedCallSignature signature = {0};
+                    SZrTypeMemberInfo callable = {0};
+                    TZrBool valid = type_inference_infer_function_type_signature(
+                            cs, type_inference_function_field_type(memberInfo),
+                            &signature.parameterTypes, &signature.parameterPassingModes, &signature.returnType);
+                    callable.name = memberInfo->name;
+                    callable.parameterCount = (TZrUInt32)signature.parameterTypes.length;
+                    callable.minArgumentCount = callable.parameterCount;
+                    if (valid) {
+                        valid = validate_member_call_arguments(
+                                cs, &callable, &signature, &members->nodes[i + 1]->data.functionCall,
+                                members->nodes[i + 1]->location);
+                    }
+                    if (!valid) {
+                        free_resolved_call_signature(cs->state, &signature);
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        return ZR_FALSE;
+                    }
+                    type_inference_record_resolved_member_reference_fact(
+                            cs, memberNode, memberInfo, &memberInfo->structuredReturnType,
+                            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+                    ZrParser_InferredType_Copy(cs->state, &nextType, &signature.returnType);
+                    free_resolved_call_signature(cs->state, &signature);
+                    i++;
+                    nextIsPrototypeReference = ZR_FALSE;
+                } else if (nextIsFunctionCall) {
                     SZrResolvedCallSignature resolvedMemberSignature;
                     TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
                     TZrBool ffiHandled = ZR_FALSE;

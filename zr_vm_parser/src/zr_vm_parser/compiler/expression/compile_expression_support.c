@@ -529,23 +529,6 @@ static TZrBool compiler_type_member_emits_runtime_descriptor(const SZrTypeMember
     }
 }
 
-static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    const TZrUInt64 contiguousViewProtocols =
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
-
-    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!prototypeInfo->isImportedNative) {
-        return ZR_TRUE;
-    }
-    return (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
-            prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
-           prototypeInfo->layoutByteSize > 0u &&
-           prototypeInfo->layoutByteAlign > 0u &&
-           (prototypeInfo->protocolMask & contiguousViewProtocols) != 0u;
-}
 
 static TZrBool compiler_resolve_type_member_runtime_descriptor_binding(SZrCompilerState *cs,
                                                                        const SZrTypeMemberInfo *memberInfo,
@@ -2006,7 +1989,32 @@ TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrComp
     return ZR_TRUE;
 }
 
+static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *, SZrAstNode *, TZrUInt32, TZrBool);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
+    return compile_expression_into_slot_impl(cs, node, targetSlot, ZR_FALSE);
+}
+TZrUInt32 compile_scalar_argument_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
+    TZrUInt32 resultSlot = compile_expression_into_slot_impl(cs, node, targetSlot, ZR_TRUE);
+    if (resultSlot == ZR_PARSER_SLOT_NONE || cs->hasError) return resultSlot;
+    if (!cs->preservePropertyReferenceResult) {
+        SZrInferredType type;
+        ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+        if (ZrParser_ExpressionType_Infer(cs, node, &type) &&
+            type.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+            type.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+            SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, type.typeName);
+            if (prototype != ZR_NULL && prototype->isImportedNative &&
+                prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+                prototype->layoutByteSize > 0u && prototype->genericParameters.length == 0u) {
+                (void)note_inline_struct_result_slot(cs, targetSlot, type.typeName);
+            }
+        }
+        ZrParser_InferredType_Free(cs->state, &type);
+    }
+    return resultSlot;
+}
+
+static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot, TZrBool scalarArgument) {
     TZrBool oldTailCallContext;
     TZrUInt32 directInlineSourceSlot = ZR_PARSER_SLOT_NONE;
 
@@ -2087,6 +2095,26 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
             cs->isInTailCallContext = oldTailCallContext;
             return targetSlot;
         }
+        if (scalarArgument && !cs->preservePropertyReferenceResult && sourceSlot != ZR_PARSER_SLOT_NONE && targetSlot != ZR_PARSER_SLOT_NONE &&
+            sourceType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+            (ZR_VALUE_IS_TYPE_INT(sourceType.baseType) || ZR_VALUE_IS_TYPE_FLOAT(sourceType.baseType) ||
+             sourceType.baseType == ZR_VALUE_TYPE_BOOL)) {
+            if (cs->stackSlotCount <= (TZrSize)targetSlot) {
+                cs->stackSlotCount = (TZrSize)targetSlot + 1u;
+                if (cs->maxStackSlotCount < cs->stackSlotCount) cs->maxStackSlotCount = cs->stackSlotCount;
+            }
+            TZrBool lowered = (TZrBool)(compiler_register_stack_slot_type_hint(cs, targetSlot, &sourceType) &&
+                    compiler_semantic_ir_lower_load(cs, sourceSlot, targetSlot, node->location));
+            ZrParser_InferredType_Free(cs->state, &sourceType);
+            cs->isInTailCallContext = oldTailCallContext;
+            if (!lowered) {
+                ZrParser_Compiler_Error(cs, "Failed to load scalar directly into result slot", node->location);
+                return ZR_PARSER_SLOT_NONE;
+            }
+            collapse_stack_to_slot(cs, targetSlot);
+            cs->lastExpressionSlot = targetSlot;
+            return targetSlot;
+        }
         ZrParser_InferredType_Free(cs->state, &sourceType);
         if (cs->hasError) {
             cs->isInTailCallContext = oldTailCallContext;
@@ -2127,10 +2155,22 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
         return slot;
     }
     if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
-        TZrUInt32 slot = compile_struct_init_expression_into_slot(
-                cs, node, targetSlot);
+        /* The constructor uses the slot before its receiver as the callable.
+         * An expression destination may belong to an enclosing call, so reserve
+         * a separate window before copying the completed value into that slot. */
+        TZrUInt32 functionSlot = allocate_fresh_stack_slot_after(cs, targetSlot);
+        TZrUInt32 slot = allocate_stack_slot(cs);
+        if (functionSlot == ZR_PARSER_SLOT_NONE || slot == ZR_PARSER_SLOT_NONE ||
+            slot != functionSlot + 1u ||
+            compile_struct_init_expression_into_slot(cs, node, slot) == ZR_PARSER_SLOT_NONE) {
+            cs->isInTailCallContext = oldTailCallContext;
+            return ZR_PARSER_SLOT_NONE;
+        }
+        emit_instruction(cs, create_instruction_1(
+                ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)targetSlot, (TZrInt32)slot));
+        collapse_stack_to_slot(cs, targetSlot);
         cs->isInTailCallContext = oldTailCallContext;
-        return slot;
+        return targetSlot;
     }
 
     compile_expression_non_tail(cs, node);

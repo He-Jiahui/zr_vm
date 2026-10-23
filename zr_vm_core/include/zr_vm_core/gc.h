@@ -204,7 +204,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrMemoryOffset gcDebtSize;
 
     TZrSize atomicMemories;
-    TZrSize aliveMemories;
+    TZrSize aliveMemories; /**< Old-space live bytes after the last major collection. */
     TZrSize ignoredObjectCount;
     TZrSize ignoredObjectCapacity;
     TZrSize gcLastStepWork;
@@ -266,6 +266,21 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrBool budgetPressure;
     TZrBool budgetFallback;
 
+    /* New allocations and survivors precede this consolidated old suffix.
+     * Major preparation invalidates it before any sweep can free its head. */
+    SZrRawObject **permanentRoots;
+    TZrSize permanentRootCount;
+    TZrSize permanentRootCapacity;
+    TZrBool permanentRootRegistryComplete;
+    SZrRawObject *minorOldBoundary;
+    SZrRawObject **minorRewriteObjects;
+    TZrSize minorRewriteCount;
+    TZrSize minorRewriteCapacity;
+    TZrBool minorRewriteOverflow;
+    TZrBool minorCollectionDeferred;
+    TZrUInt64 minorNurseryCapBytes;
+    TZrUInt64 minorYoungBytesBefore;
+    TZrUInt64 nextStepDebtBytes;
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
     SZrRawObject *circleOnceObjectList;

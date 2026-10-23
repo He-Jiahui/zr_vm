@@ -1,0 +1,21 @@
+let {Array} = import("zr.container");
+let iteration = import("zr.iteration");
+class Cursor: iteration.Enumerator<int> {
+    pub var current: int = 0;
+    pub fn moveNext(): bool { this.current += 1; return this.current <= 3; }
+}
+class Range: iteration.Iterable<int> {
+    pub fn getEnumerator(): iteration.Enumerator<int> { return new Cursor(); }
+}
+var range = new Range();
+var sum = 0;
+for (var value in range) { sum += value; }
+if (sum != 6) { throw "P07 iterable sum"; }
+var second = new Cursor();
+if (second.current != 0 || !second.moveNext() || second.current != 1) { throw "per-instance iterator defaults"; }
+class Defaults { pub var items: Array<int> = new Array<int>(); }
+var firstDefaults = new Defaults();
+var secondDefaults = new Defaults();
+firstDefaults.items.add(5);
+if (secondDefaults.items.length != 0) { throw "shared implicit initializer"; }
+return 42;

@@ -86,7 +86,7 @@ void backend_aot_write_c_frame_setup(FILE *file,
         fprintf(file,
                 "    TZrSize zr_aot_frame_byte_size = (TZrSize)%uu;\n"
                 "    TZrSize zr_aot_frame_byte_slot_count =\n"
-                "            (zr_aot_frame_byte_size + sizeof(SZrTypeValue) - 1u) / sizeof(SZrTypeValue);\n"
+                "            (zr_aot_frame_byte_size + sizeof(SZrTypeValueOnStack) - 1u) / sizeof(SZrTypeValueOnStack);\n"
                 "    if (zr_aot_frame_slot_count < zr_aot_frame_byte_slot_count) {\n"
                 "        zr_aot_frame_slot_count = zr_aot_frame_byte_slot_count;\n"
                 "    }\n",
@@ -113,6 +113,9 @@ void backend_aot_write_c_frame_setup(FILE *file,
             "        for (TZrSize zr_aot_slot = zr_aot_argument_count; zr_aot_slot < zr_aot_frame_slot_count; zr_aot_slot++) {\n"
             "            ZrCore_Value_ResetAsNull(&zr_aot_slot_base[zr_aot_slot].value);\n"
             "        }\n"
+            "        ZrCore_Function_InitializeFrameLayoutStorage(state, zr_aot_function_base,\n"
+            "                                                     zr_aot_context.metadataFunction, 0u);\n"
+            "        zr_aot_call_info->callStatus |= ZR_CALL_STATUS_GENERATED_FRAME_LAYOUT;\n"
             "    }\n"
             "    if (zr_aot_call_info->functionTop.valuePointer < zr_aot_frame_top) {\n"
             "        zr_aot_call_info->functionTop.valuePointer = zr_aot_frame_top;\n"

@@ -269,7 +269,11 @@
     Z(FUNCTION_CALL_SPREAD)                                                                                            \
     Z(PROPERTY_REF_CREATE_LOCAL)                                                                                       \
     Z(REQUIRE_NON_NULL)                                                                                                \
-    Z(MARK_CLOSE_PROXY)
+    Z(MARK_CLOSE_PROXY) \
+    Z(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) \
+    Z(JUMP_IF_GREATER_SIGNED_CONST) \
+    Z(ADD_FLOAT_CONST) \
+    Z(MUL_FLOAT_CONST)
 
 
 /** @brief 从指令联合体取分发编号，供执行器与诊断共享同一解码入口。
@@ -319,8 +323,9 @@
 #define ZR_INSTRUCTION_DISPATCH_TABLE_DECLARE(INSTRUCTION) &&LZrInstruction_##INSTRUCTION,
 
 /* GNU/Clang 原生构建使用 computed goto；MSVC/WASM 使用 switch，两路径共享 opcode 编号与解释语义。
- * TODO: computed goto 和 fastDispatchTable 均按 operationCode 直接索引；IO 直接装入指令字节，
- *       需继续确认 module 装载或执行入口对损坏/不可信 opcode 是否作范围校验。 */
+ * Serialized VM instructions are checked by io_bytecode_verify.h before publication,
+ * including opcode/operand/jump ranges. Hosts constructing functions directly must
+ * supply valid instructions; the exec-IR verifier has a separate opcode domain. */
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 #define ZR_INSTRUCTION_DISPATCH_TABLE                                                                                  \
     ZR_INSTRUCTION_DISPATCH_TABLE_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_DISPATCH_TABLE_DECLARE));

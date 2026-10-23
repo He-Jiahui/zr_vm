@@ -1,0 +1,8 @@
+// loop_lt (swap the condition to `i <= 20000000 - 1` for loop_le)
+var i = 0;
+var sum = 0;
+while (i < 20000000) {
+    sum = sum + i;
+    i = i + 1;
+}
+return sum;

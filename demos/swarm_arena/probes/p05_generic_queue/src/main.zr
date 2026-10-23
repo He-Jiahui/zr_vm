@@ -1,0 +1,39 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+class RingQueue<T> {
+    pri var items: Array<T>;
+    pri var head: int = 0;
+    pri var size: int = 0;
+    pri var cap: int;
+    pub @constructor(cap: int, fill: T) {
+        this.cap = cap;
+        this.items = new Array<T>();
+        var i = 0;
+        while (i < cap) { this.items.add(fill); i += 1; }
+    }
+    pub fn push(item: T): bool {
+        if (this.size == this.cap) { return false; }
+        this.items[(this.head + this.size) % this.cap] = item;
+        this.size += 1;
+        return true;
+    }
+    pub fn tryPop(item: out T): bool {
+        item = this.items[this.head];
+        if (this.size == 0) { return false; }
+        this.head = (this.head + 1) % this.cap;
+        this.size -= 1;
+        return true;
+    }
+}
+fn concrete(value: out int): void { value = 23; }
+var queue = new RingQueue<int>(2, 0);
+if (!queue.push(7) || !queue.push(9) || queue.push(11)) { throw "P05 capacity"; }
+var item = 0;
+if (!queue.tryPop(out item) || item != 7) { throw "P05 first out"; }
+queue.push(11);
+if (!queue.tryPop(out item) || item != 9) { throw "P05 second out"; }
+if (!queue.tryPop(out item) || item != 11 || queue.tryPop(out item)) { throw "P05 wrap/empty"; }
+concrete(out item);
+if (item != 23) { throw "P05 concrete out"; }
+system.console.printLine("PROBE_OK P05 RingQueue<int> generic-out concrete-out wrap capacity empty");
+return 0;

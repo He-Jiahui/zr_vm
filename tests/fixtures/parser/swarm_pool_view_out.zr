@@ -1,0 +1,20 @@
+let {Pool, PoolRef, PoolReadRef} = import("zr.pooling");
+struct Item { pub var value: int = 0; }
+fn check(): int {
+    var pool = new Pool<Item>();
+    var item = init Item();
+    item.value = 17;
+    var handle = pool.deliver(item);
+    var view: PoolRef<Item>;
+    if (!pool.tryBorrow(handle, out view)) { throw "borrow"; }
+    view.value.value = 42;
+    view.close();
+    var reader: PoolReadRef<Item>;
+    if (!pool.tryRead(handle, out reader)) { throw "read"; }
+    var result = reader.value.value;
+    reader.close();
+    if (!pool.recycle(handle)) { throw "recycle"; }
+    if (pool.tryRead(handle, out reader)) { throw "stale handle"; }
+    return result;
+}
+return check();

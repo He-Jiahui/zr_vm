@@ -1,0 +1,117 @@
+let container = import("zr.container");
+let exception = import("zr.system.exception");
+
+pub class World {
+    pub var nextId: int = 1;
+    pub var shots: int = 0;
+    pub var hits: int = 0;
+    pub var kills: int = 0;
+    pub var score: int = 0;
+    pub var drops: int = 0;
+    pub var count: int = 0;
+    pub var cap: int;
+    pub var px: zr.container.Array<float>;
+    pub var py: zr.container.Array<float>;
+    pub var vx: zr.container.Array<float>;
+    pub var vy: zr.container.Array<float>;
+    pub var ax: zr.container.Array<float>;
+    pub var ay: zr.container.Array<float>;
+    pub var hp: zr.container.Array<int>;
+    pub var kind: zr.container.Array<int>;
+    pub var id: zr.container.Array<int>;
+    pub var boss: zr.container.Array<int>;
+    pub var radius: zr.container.Array<float>;
+    pub var speed: zr.container.Array<float>;
+    pri var idSlots: zr.container.Array<int>;
+    pub @constructor(cap: int) {
+        this.cap = cap;
+        this.px = new container.Array<float>(); this.py = new container.Array<float>();
+        this.vx = new container.Array<float>(); this.vy = new container.Array<float>();
+        this.ax = new container.Array<float>(); this.ay = new container.Array<float>();
+        this.hp = new container.Array<int>(); this.kind = new container.Array<int>();
+        this.id = new container.Array<int>();
+        this.boss = new container.Array<int>(); this.radius = new container.Array<float>();
+        this.speed = new container.Array<float>(); this.idSlots = new container.Array<int>();
+        var i = 0;
+        while (i < cap) {
+            this.px.add(0.0); this.py.add(0.0); this.vx.add(0.0); this.vy.add(0.0);
+            this.ax.add(0.0); this.ay.add(0.0);
+            this.hp.add(0); this.kind.add(0); this.id.add(0);
+            this.boss.add(0); this.radius.add(0.0); this.speed.add(0.0); i += 1;
+        }
+    }
+    pub fn add(x: float, y: float, id: int): void {
+        if (this.count == this.cap) { throw new exception.RuntimeError("enemy capacity exceeded"); }
+        var i = this.count;
+        this.px[i] = x; this.py[i] = y;
+        this.vx[i] = 0.0; this.vy[i] = 0.0;
+        this.ax[i] = 0.0; this.ay[i] = 0.0;
+        this.hp[i] = 2; this.kind[i] = 0; this.id[i] = id;
+        this.boss[i] = 0; this.radius[i] = 10.0; this.speed[i] = 72.0;
+        while (this.idSlots.length <= id) { this.idSlots.add(-1); }
+        this.idSlots[id] = i;
+        this.count += 1;
+    }
+    pub fn spawn(x: float, y: float, id: int, kind: int, boss: int): void {
+        if (kind < 0 || kind > 2 || (boss != 0 && kind != 2)) {
+            throw new exception.RuntimeError("enemy kind or boss flag is invalid");
+        }
+        this.add(x, y, id);
+        var i = this.count - 1; this.kind[i] = kind; this.boss[i] = boss;
+        if (kind == 1) { this.hp[i] = 1; this.radius[i] = 7.0; this.speed[i] = 120.0; }
+        if (kind == 2) { this.hp[i] = 8; this.radius[i] = 16.0; this.speed[i] = 42.0; }
+        if (boss != 0) { this.hp[i] = 40; }
+    }
+    pub fn find(id: int): int {
+        if (id < 0 || id >= this.idSlots.length) { return -1; }
+        return this.idSlots[id];
+    }
+    pub fn swapRemove(slot: int): void {
+        var last = this.count - 1;
+        this.idSlots[this.id[slot]] = -1;
+        this.px[slot] = this.px[last]; this.py[slot] = this.py[last];
+        this.vx[slot] = this.vx[last]; this.vy[slot] = this.vy[last];
+        this.ax[slot] = this.ax[last]; this.ay[slot] = this.ay[last];
+        this.hp[slot] = this.hp[last]; this.kind[slot] = this.kind[last];
+        this.id[slot] = this.id[last]; this.boss[slot] = this.boss[last];
+        this.radius[slot] = this.radius[last]; this.speed[slot] = this.speed[last];
+        if (slot < last) { this.idSlots[this.id[slot]] = slot; }
+        this.count = last;
+    }
+}
+
+// Bullets and cosmetic particles share a fixed-capacity numeric layout.
+pub class MovingSoA {
+    pub var count: int = 0;
+    pub var cap: int;
+    pub var px: zr.container.Array<float>;
+    pub var py: zr.container.Array<float>;
+    pub var vx: zr.container.Array<float>;
+    pub var vy: zr.container.Array<float>;
+    pub var life: zr.container.Array<int>;
+    pub @constructor(cap: int) {
+        this.cap = cap;
+        this.px = new container.Array<float>(); this.py = new container.Array<float>();
+        this.vx = new container.Array<float>(); this.vy = new container.Array<float>();
+        this.life = new container.Array<int>();
+        var i = 0;
+        while (i < cap) {
+            this.px.add(0.0); this.py.add(0.0); this.vx.add(0.0); this.vy.add(0.0);
+            this.life.add(0); i += 1;
+        }
+    }
+    pub fn add(x: float, y: float, vx: float, vy: float, life: int): bool {
+        if (this.count == this.cap) { return false; }
+        var i = this.count;
+        this.px[i] = x; this.py[i] = y;
+        this.vx[i] = vx; this.vy[i] = vy; this.life[i] = life;
+        this.count += 1;
+        return true;
+    }
+    pub fn swapRemove(slot: int): void {
+        var last = this.count - 1;
+        this.px[slot] = this.px[last]; this.py[slot] = this.py[last];
+        this.vx[slot] = this.vx[last]; this.vy[slot] = this.vy[last];
+        this.life[slot] = this.life[last]; this.count = last;
+    }
+}

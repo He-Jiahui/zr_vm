@@ -1,0 +1,93 @@
+let container = import("zr.container");
+let core = import("&swarmcore");
+let math = import("zr.math");
+
+// Wave definitions and requests are preallocated SoA columns, consumed in phase 3.
+pub class Director {
+    pub var pending: int = 0;
+    pub var xs: zr.container.Array<float>;
+    pub var ys: zr.container.Array<float>;
+    pub var kinds: zr.container.Array<int>;
+    pub var bosses: zr.container.Array<int>;
+    pub var waveIndex: int = 0;
+    pub var waveStart: int = 0;
+    pub var nextSpawn: int = 0;
+    pub var transitions: int = 0;
+    pub var bossWaves: int = 0;
+    pub var burstSpawns: int = 0;
+    pub var totalSpawned: int = 0;
+    pri var cap: int;
+    pri var waveFrames: int;
+    pri var ringRadius: int;
+    pri var reserve: int;
+    pri var circleX: zr.container.Array<float>;
+    pri var circleY: zr.container.Array<float>;
+    pri var intervals: zr.container.Array<int>;
+    pri var amounts: zr.container.Array<int>;
+    pri var grunts: zr.container.Array<int>;
+    pri var runners: zr.container.Array<int>;
+    pri var offsets: zr.container.Array<int>;
+    pub @constructor(cap: int, waveFrames: int, ringRadius: int) {
+        let math = import("zr.math");
+        this.cap = cap; this.waveFrames = waveFrames; this.ringRadius = ringRadius;
+        this.reserve = cap / 20; if (this.reserve > 32) { this.reserve = 32; }
+        this.xs = new container.Array<float>(); this.ys = new container.Array<float>();
+        this.kinds = new container.Array<int>(); this.bosses = new container.Array<int>();
+        this.circleX = new container.Array<float>(); this.circleY = new container.Array<float>();
+        this.intervals = new container.Array<int>(); this.amounts = new container.Array<int>();
+        this.grunts = new container.Array<int>(); this.runners = new container.Array<int>();
+        this.offsets = new container.Array<int>();
+        this.intervals.add(6); this.intervals.add(5); this.intervals.add(4);
+        this.intervals.add(4); this.intervals.add(3); this.intervals.add(3);
+        this.amounts.add(4); this.amounts.add(6); this.amounts.add(8);
+        this.amounts.add(10); this.amounts.add(12); this.amounts.add(14);
+        this.grunts.add(60); this.grunts.add(50); this.grunts.add(40);
+        this.grunts.add(45); this.grunts.add(35); this.grunts.add(25);
+        this.runners.add(90); this.runners.add(85); this.runners.add(80);
+        this.runners.add(85); this.runners.add(80); this.runners.add(75);
+        this.offsets.add(0); this.offsets.add(64); this.offsets.add(0);
+        this.offsets.add(-64); this.offsets.add(32); this.offsets.add(-128);
+        var i = 0;
+        while (i < cap) { this.xs.add(0.0); this.ys.add(0.0); this.kinds.add(0); this.bosses.add(0); i += 1; }
+        i = 0;
+        while (i < 256) {
+            var angle = <float>i * 6.283185307179586 / 256.0;
+            this.circleX.add(math.cos(angle)); this.circleY.add(math.sin(angle)); i += 1;
+        }
+    }
+    pub fn advance(frame: int, alive: int, rng: core.Rng, x: float, y: float): void {
+        this.pending = 0;
+        var bossWave = false;
+        while (frame >= this.waveStart + this.waveFrames) {
+            this.waveStart += this.waveFrames; this.waveIndex = (this.waveIndex + 1) % 6;
+            this.nextSpawn = frame; this.transitions += 1;
+            if (this.waveIndex == 2 || this.waveIndex == 5) { bossWave = true; this.bossWaves += 1; }
+        }
+        if (frame < this.nextSpawn && !bossWave) { return; }
+        this.nextSpawn = frame + this.intervals[this.waveIndex];
+        var limit = this.cap - this.reserve;
+        var amount = this.amounts[this.waveIndex] * (this.cap / 200);
+        if (frame == 0) { amount = limit; }
+        if (bossWave) { amount = this.reserve; limit = this.cap; }
+        if (amount > limit - alive) { amount = limit - alive; }
+        if (amount < 0) { amount = 0; }
+        var i = 0;
+        while (i < amount) {
+            var angle = rng.next() % 256;
+            var radius = this.ringRadius + this.offsets[this.waveIndex] + rng.next() % 257;
+            var mix = rng.next() % 100; var kind = 2;
+            if (mix < this.grunts[this.waveIndex]) { kind = 0; }
+            else if (mix < this.runners[this.waveIndex]) { kind = 1; }
+            var sx = x + <float>radius * this.circleX[angle];
+            var sy = y + <float>radius * this.circleY[angle];
+            if (sx < 0.0) { sx = 0.0; } if (sx > 4095.0) { sx = 4095.0; }
+            if (sy < 0.0) { sy = 0.0; } if (sy > 4095.0) { sy = 4095.0; }
+            this.xs[i] = sx; this.ys[i] = sy; this.kinds[i] = kind; this.bosses[i] = 0;
+            if (bossWave && i == 0) { this.kinds[i] = 2; this.bosses[i] = 1; }
+            i += 1;
+        }
+        this.pending = amount;
+        this.totalSpawned += amount;
+        if (bossWave) { this.burstSpawns += amount; }
+    }
+}

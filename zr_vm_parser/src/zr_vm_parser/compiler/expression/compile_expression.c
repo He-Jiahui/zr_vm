@@ -8,6 +8,8 @@
 #include "type_inference/type_inference_semantic_facts.h"
 #include "type_inference/type_inference_internal.h"
 #include "zr_vm_parser/const_assignment.h"
+#include "zr_vm_core/integer.h"
+#include <math.h>
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
                                                     TZrUInt32 stackSlot,
@@ -263,6 +265,12 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
 
+            SZrInferredType resultType;
+            if (ZrParser_UnaryExpressionType_Infer(cs, node, &resultType)) {
+                (void)note_inline_struct_result_slot(cs, destSlot, resultType.typeName);
+                ZrParser_InferredType_Free(cs->state, &resultType);
+            }
+
             // 取负
             TZrInstruction inst = create_instruction_2(
                     negOpcode,
@@ -368,6 +376,27 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
             }
             // 转换为 uint
             compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
+            return;
+        } else if (nameLen == 3 && strncmp(typeNameStr, "f32", 3) == 0) {
+            SZrClosureNative *helper = ZrCore_ClosureNative_New(cs->state, 0);
+            SZrTypeValue callable;
+            if (helper == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "failed to create f32 conversion helper", node->location);
+                return;
+            }
+            helper->nativeFunction = ZrCore_Value_Float32NativeEntry;
+            ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(helper));
+            ZrCore_Value_InitAsRawObject(cs->state, &callable, ZR_CAST_RAW_OBJECT_AS_SUPER(helper));
+            callable.isNative = ZR_TRUE;
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+            TZrUInt32 functionSlot = allocate_stack_slot(cs);
+            emit_constant_to_slot(cs, functionSlot, &callable);
+            TZrUInt32 argumentSlot = allocate_stack_slot(cs);
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    ZR_COMPILE_SLOT_U16(argumentSlot), (TZrInt32)destSlot));
+            emit_instruction(cs, create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                    ZR_COMPILE_SLOT_U16(destSlot), ZR_COMPILE_SLOT_U16(functionSlot), 1));
+            cs->lastExpressionSlot = destSlot;
             return;
         } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
@@ -504,6 +533,7 @@ typedef struct SZrAssignmentInlineStructParentWriteback {
     TZrUInt32 parentSlot;
     TZrUInt32 childSlot;
     TZrUInt32 memberId;
+    TZrUInt32 indexSlot;
     TZrBool propertyReference;
     SZrFileRange location;
 } SZrAssignmentInlineStructParentWriteback;
@@ -533,6 +563,17 @@ static TZrBool emit_assignment_inline_struct_writebacks(
 
     for (TZrSize index = writebackCount; index > 0u; index--) {
         const SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[index - 1u];
+        if (writeback->indexSlot != ZR_PARSER_SLOT_NONE) {
+            emit_instruction(cs, create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                    (TZrUInt16)writeback->childSlot,
+                    (TZrUInt16)writeback->parentSlot,
+                    (TZrUInt16)writeback->indexSlot));
+            if (cs->hasError) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
         TZrBool stored = writeback->propertyReference
                                  ? compiler_property_reference_store(
                                            cs,
@@ -811,6 +852,7 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         writebacks[*outWritebackCount].childSlot = valueSlot;
                         writebacks[*outWritebackCount].memberId =
                                 ZR_PARSER_MEMBER_ID_NONE;
+                        writebacks[*outWritebackCount].indexSlot = ZR_PARSER_SLOT_NONE;
                         writebacks[*outWritebackCount].propertyReference =
                                 ZR_TRUE;
                         writebacks[*outWritebackCount].location =
@@ -899,6 +941,7 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         writebacks[*outWritebackCount].parentSlot = parentSlot;
                         writebacks[*outWritebackCount].childSlot = destinationSlot;
                         writebacks[*outWritebackCount].memberId = memberId;
+                        writebacks[*outWritebackCount].indexSlot = ZR_PARSER_SLOT_NONE;
                         writebacks[*outWritebackCount].propertyReference =
                                 ZR_FALSE;
                         writebacks[*outWritebackCount].location = memberNode->location;
@@ -925,27 +968,69 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                             memberNode->location);
                     return ZR_FALSE;
                 }
-                TZrUInt32 keyTargetSlot =
-                        compile_assignment_safe_member_key_target_slot(cs, currentSlot + 1, preservedSlot);
+                /* Keep the evaluated index alive until all nested value fields
+                 * have been copied back, including compound assignments. */
+                TZrUInt32 keyTargetSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
                 TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                 if (keySlot == ZR_PARSER_SLOT_NONE) {
                     return ZR_FALSE;
                 }
 
                 {
+                    TZrUInt32 parentSlot = currentSlot;
                     TZrUInt32 destinationSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                    SZrAstNode prefixNode = {0};
+                    SZrAstNodeArray prefixMembers = *primary->members;
+                    SZrInferredType elementType;
+                    TZrBool inlineElement;
 
                     if (destinationSlot == ZR_PARSER_SLOT_NONE) {
                         return ZR_FALSE;
                     }
+                    /* Infer this prefix, not the final field's scalar type. */
+                    prefixMembers.count = memberIndex + 1u;
+                    prefixNode.type = ZR_AST_PRIMARY_EXPRESSION;
+                    prefixNode.location = memberNode->location;
+                    prefixNode.data.primaryExpression = *primary;
+                    prefixNode.data.primaryExpression.members = &prefixMembers;
+                    ZrParser_InferredType_Init(cs->state, &elementType, ZR_VALUE_TYPE_OBJECT);
+                    if (!ZrParser_PrimaryExpressionType_Infer(cs, &prefixNode, &elementType)) {
+                        ZrParser_InferredType_Free(cs->state, &elementType);
+                        return ZR_FALSE;
+                    }
+                    inlineElement = compiler_find_inline_type_layout_for_inferred(
+                            cs, &elementType, ZR_NULL, ZR_NULL, ZR_NULL);
+                    rootTypeName = inlineElement ? get_type_name_from_inferred_type(cs, &elementType) : ZR_NULL;
+                    if (inlineElement && !compiler_register_stack_slot_type_hint(cs, destinationSlot, &elementType)) {
+                        ZrParser_InferredType_Free(cs->state, &elementType);
+                        return ZR_FALSE;
+                    }
+                    ZrParser_InferredType_Free(cs->state, &elementType);
                     emit_instruction(cs,
                                      create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
                                                           (TZrUInt16)destinationSlot,
                                                           (TZrUInt16)currentSlot,
                                                           (TZrUInt16)keySlot));
+                    if (inlineElement && writebacks != ZR_NULL && outWritebackCount != ZR_NULL) {
+                        if (*outWritebackCount >= writebackCapacity) {
+                            ZrParser_Compiler_Error(cs, "Too many nested struct elements in assignment target", memberNode->location);
+                            return ZR_FALSE;
+                        }
+                        writebacks[*outWritebackCount].parentSlot = parentSlot;
+                        writebacks[*outWritebackCount].childSlot = destinationSlot;
+                        writebacks[*outWritebackCount].memberId = ZR_PARSER_MEMBER_ID_NONE;
+                        writebacks[*outWritebackCount].indexSlot = keySlot;
+                        writebacks[*outWritebackCount].propertyReference = ZR_FALSE;
+                        writebacks[*outWritebackCount].location = memberNode->location;
+                        (*outWritebackCount)++;
+                    }
                     currentSlot = destinationSlot;
                     collapse_stack_to_slot(cs, currentSlot);
                 }
+                rootIsTypeReference = ZR_FALSE;
+                rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                usesSuperLookup = ZR_FALSE;
+                continue;
             }
 
             if (declaredFieldMatch) {

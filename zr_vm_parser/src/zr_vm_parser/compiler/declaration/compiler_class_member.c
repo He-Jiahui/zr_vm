@@ -313,6 +313,10 @@ static SZrFunction *compile_type_member_function(
         body = structMethod->body;
         declaredReturnType = structMethod->returnType;
         functionName = structMethod->name != ZR_NULL ? structMethod->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_CLASS_DECLARATION) {
+        /* An implicit constructor still evaluates per-instance initializers. */
+        functionName = ZrCore_String_CreateFromNative(cs->state, "constructor");
+        isConstructor = ZR_TRUE;
     } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
         SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
         params = metaFunc->params;
@@ -742,6 +746,16 @@ static SZrFunction *compile_type_member_function(
         }
     }
 
+    if (!cs->hasError && isConstructor && injectThis &&
+        node->type == ZR_AST_CLASS_DECLARATION && superTypeName != ZR_NULL &&
+        compiler_type_has_constructor(cs, superTypeName)) {
+        emit_super_constructor_call(cs, superTypeName, ZR_NULL);
+    }
+
+    if (!cs->hasError && isConstructor && injectThis) {
+        emit_class_instance_field_initializers(cs, cs->currentTypeNode);
+    }
+
     if (body != ZR_NULL && isPropertyExpressionBody &&
         propertyAccessorNode != ZR_NULL &&
         propertyAccessorNode->data.propertyAccessor.kind ==
@@ -970,7 +984,7 @@ class_member_type_scope_cleanup:
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
             compiler_relocate_copied_child_constants(newFunc, srcArray);
-            compiler_rebind_moved_child_constants(newFunc, srcArray);
+            compiler_rebind_moved_child_constants(cs->state, newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
                     ZrCore_Function_DetachOwnedBuffers(srcArray[i]);

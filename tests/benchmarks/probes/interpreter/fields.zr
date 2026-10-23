@@ -1,0 +1,17 @@
+// fields
+class P {
+    pub var x: int;
+    pub var y: int;
+    pub @constructor(a: int, b: int) {
+        this.x = a;
+        this.y = b;
+    }
+}
+var p = new P(1, 2);
+var i = 0;
+while (i < 3000000) {
+    p.x = p.x + p.y;
+    p.y = (p.x & 15) + 1;
+    i = i + 1;
+}
+return p.x;

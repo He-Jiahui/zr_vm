@@ -781,9 +781,27 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     /* Runtime-only host root token. A shallow inline copy does not own the
      * source object's root: ownership is valid only when this points to self. */
     struct SZrFunction *hostRootOwner;
+    /* Derived GC coverage, rebuilt with frame metadata; never serialized.
+     * A null bitmap with a valid summary denotes one contiguous slot range. */
+    const SZrFunctionFrameSlotLayout *frameGcSummaryLayouts;
+    TZrUInt32 frameGcSummaryLength;
+    TZrUInt32 frameGcSummaryByteSize;
+    TZrUInt32 frameGcFirstSlot;
+    TZrUInt32 frameGcEndSlot;
+    TZrUInt8 *frameGcSlotBitmap;
+    TZrBool frameGcSummaryValid;
+    TZrBool frameGcLayoutsPresent;
+    TZrBool frameGcInlineLayoutsPresent;
+    /* Runtime-only. Instructions/operand metadata are immutable while verified.
+     * Hosts must clear this flag before modifying a published function. */
+    TZrBool instructionsVerified;
 };
 
 typedef struct SZrFunction SZrFunction;
+
+/* Nonallocating structural verifier. It does not mutate the const function or
+ * prove runtime value types. The caller records success before publication. */
+ZR_CORE_API TZrBool ZrCore_Function_VerifyInstructions(const SZrFunction *function);
 
 typedef const SZrTypeLayout *(*FZrFunctionFrameTypeLayoutResolver)(const SZrFunction *function,
                                                                    TZrUInt32 typeLayoutId,
@@ -881,6 +899,8 @@ ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFuncti
  */
 ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
           TZrUInt32 stackSlot);
+ZR_CORE_API void ZrCore_Function_FinalizeFrameGcCoverage(SZrFunction *function);
+ZR_CORE_API TZrBool ZrCore_Function_HasFrameGcLayouts(const SZrFunction *function);
 ZR_CORE_API void ZrCore_Function_FinalizeDirectFrameValueSlots(
         SZrFunction *function);
 static ZR_FORCE_INLINE TZrBool ZrCore_Function_IsDirectFrameValueSlotLayout(
@@ -968,6 +988,12 @@ ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
         SZrFunction *callerFunction,
         const SZrFunction *providerFunction,
         SZrMetadataTypeRefBindStatus *status);
+/* Validate exact storage, or the declared capacity of an open generic
+ * prototype resolved through its unique concrete instance. */
+ZR_CORE_API TZrBool ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+        const SZrFunction *function, TZrUInt32 typeLayoutId,
+        TZrUInt32 byteSize, TZrUInt32 byteAlign, struct SZrState *state);
+
 ZR_CORE_API const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                                  TZrUInt32 typeLayoutId,
                                                                                  TZrPtr userData);
@@ -1362,6 +1388,13 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct S
                                                                  struct SZrTypeValue *callableValue,
                                                                  TZrSize resultCount,
                                                                  TZrStackValuePointer returnDestination);
+
+/* Retain the caller's physical inline argument storage for descriptor callbacks. */
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(
+        struct SZrState *state, TZrStackValuePointer stackPointer,
+        struct SZrTypeValue *callableValue, TZrSize resultCount,
+        TZrStackValuePointer returnDestination, TZrStackValuePointer argumentSourceFrameBase,
+        TZrUInt32 argumentSourceStartSlot);
 
 ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
                                                    struct SZrCallInfo *callInfo,

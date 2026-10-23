@@ -5,6 +5,7 @@
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/expression/compile_expression_contiguous_view.h"
 #include "type_inference/type_inference_internal.h"
+#include "type_inference/type_inference_function_type.h"
 #include "compiler/compiler_native_call_binding.h"
 #include "compiler/compiler_call_binding.h"
 #include "compiler/compiler_typed_call_binding.h"
@@ -938,7 +939,7 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                       i)
                             : ZR_NULL;
             if (argNode != ZR_NULL &&
-                compile_expression_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE) {
+                compile_scalar_argument_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE) {
                 return ZR_FALSE;
             }
             if (expectedType != ZR_NULL && !compiler_register_stack_slot_type_hint(cs, argSlot, expectedType)) {
@@ -1523,6 +1524,17 @@ static TZrBool stack_slot_is_in_active_readonly_call_window(
     return ZR_FALSE;
 }
 
+static TZrBool call_parameter_uses_managed_reference(const SZrAstNodeArray *parameters, TZrSize index) {
+    const SZrAstNode *node = parameters != ZR_NULL && index < parameters->count
+            ? parameters->nodes[index] : ZR_NULL;
+    if (node != ZR_NULL && node->type == ZR_AST_PARAMETER) {
+        EZrParameterSourcePassingForm form = node->data.parameter.sourcePassingForm;
+        return (TZrBool)(form != ZR_PARAMETER_SOURCE_REF_READONLY &&
+                         form != ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY);
+    }
+    return ZR_TRUE;
+}
+
 static TZrUInt32 compile_call_argument_into_slot(
         SZrCompilerState *cs,
         SZrAstNode *argument,
@@ -1541,6 +1553,13 @@ static TZrUInt32 compile_call_argument_into_slot(
          passingMode == ZR_PARAMETER_PASSING_MODE_OUT) &&
         (sourceSlot = call_argument_direct_local_slot(cs, argument)) !=
                 ZR_PARSER_SLOT_NONE) {
+        if (compiler_stack_slot_is_reference_parameter(cs, sourceSlot)) {
+            /* Forward the original target, rather than a reference to the
+             * parameter's carrier slot. */
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    (TZrUInt16)targetSlot, (TZrInt32)sourceSlot));
+            return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+        }
         emit_instruction(
                 cs,
                 create_instruction_1(
@@ -1548,6 +1567,30 @@ static TZrUInt32 compile_call_argument_into_slot(
                         (TZrUInt16)targetSlot,
                         (TZrInt32)sourceSlot));
         return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+    }
+    if (createManagedLocalReference &&
+        (passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+         passingMode == ZR_PARAMETER_PASSING_MODE_OUT) &&
+        argument->type == ZR_AST_PRIMARY_EXPRESSION) {
+        SZrInferredType argumentType;
+        TZrBool needsReference;
+        ZrParser_InferredType_Init(cs->state, &argumentType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, argument, &argumentType)) {
+            ZrParser_InferredType_Free(cs->state, &argumentType);
+            return ZR_PARSER_SLOT_NONE;
+        }
+        needsReference = argumentType.referenceAccess == ZR_REFERENCE_ACCESS_NONE;
+        ZrParser_InferredType_Free(cs->state, &argumentType);
+        if (needsReference) {
+            sourceSlot = compile_property_reference_place(cs, argument, argument->location);
+            if (sourceSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+                return ZR_PARSER_SLOT_NONE;
+            }
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    (TZrUInt16)targetSlot, (TZrInt32)sourceSlot));
+            collapse_stack_to_slot(cs, targetSlot);
+            return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+        }
     }
     if (!call_argument_is_owner_in_reborrow(
                 cs,
@@ -1587,7 +1630,7 @@ static TZrUInt32 compile_call_argument_into_slot(
         cs->preservePropertyReferenceResult =
                 passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
                 passingMode == ZR_PARAMETER_PASSING_MODE_OUT;
-        resultSlot = compile_expression_into_slot(
+        resultSlot = compile_scalar_argument_into_slot(
                 cs, argument, evaluationSlot);
         cs->preservePropertyReferenceResult =
                 oldPreservePropertyReferenceResult;
@@ -1698,7 +1741,7 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                ZR_FALSE);
+                call_parameter_uses_managed_reference(parameterList, index));
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -2249,7 +2292,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                         argSlot,
                         passingMode,
                         expectedType,
-                        ZR_TRUE) == ZR_PARSER_SLOT_NONE ||
+                        call_parameter_uses_managed_reference(
+                                member_call_parameter_list(memberInfo), index)) == ZR_PARSER_SLOT_NONE ||
                 cs->hasError) {
                 goto cleanup;
             }
@@ -2473,8 +2517,8 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                resolved_function_call_uses_meta_call_opcode(
-                        resolvedFunctionType));
+                call_parameter_uses_managed_reference(
+                        function_call_parameter_list(resolvedFunctionType), index));
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -3490,6 +3534,25 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                 }
             }
 
+            if (type_inference_function_field_type(activeCallMemberInfo) != ZR_NULL) {
+                hasResolvedFunctionSignature = type_inference_infer_function_type_signature(
+                        cs, type_inference_function_field_type(activeCallMemberInfo),
+                        &resolvedFunctionSignature.parameterTypes, &resolvedFunctionSignature.parameterPassingModes,
+                        &resolvedFunctionSignature.returnType);
+                if (!hasResolvedFunctionSignature) {
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    goto cleanup;
+                }
+                typedCallableValue.isCallableValueBinding = ZR_TRUE;
+                typedCallableValue.returnType = resolvedFunctionSignature.returnType;
+                typedCallableValue.paramTypes = resolvedFunctionSignature.parameterTypes;
+                typedCallableValue.parameterPassingModes = resolvedFunctionSignature.parameterPassingModes;
+                resolvedFunctionType = &typedCallableValue;
+                activeCallMemberInfo = ZR_NULL;
+            }
+
             if (activeCallMemberInfo == ZR_NULL &&
                 !rootIsTypeReference && rootTypeName != ZR_NULL) {
                 activeCallMemberInfo = find_compiler_type_meta_member(cs, rootTypeName, ZR_META_CALL);
@@ -3671,6 +3734,54 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         isolatedCallableSlot;
             }
 
+            /* A native inline argument needs its own physical slot for the
+             * whole function. Earlier scalar temporaries may reuse an ordinary
+             * call window and force that slot's layout back to a value. */
+            TZrBool hasNativeInlineArgument = ZR_FALSE;
+            if (!usesIsolatedReadonlyAggregateCallWindow &&
+                pendingReceiverSlot == ZR_PARSER_SLOT_NONE && !hasSpreadArgument &&
+                argsToCompile != ZR_NULL) {
+                for (TZrSize index = 0u; index < argsToCompile->count; index++) {
+                    SZrInferredType type;
+                    ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+                    if (ZrParser_ExpressionType_Infer(cs, argsToCompile->nodes[index], &type)) {
+                        SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, type.typeName);
+                        hasNativeInlineArgument |= prototype != ZR_NULL && prototype->isImportedNative &&
+                                prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+                                compiler_type_prototype_serializes_to_runtime(prototype) &&
+                                type.referenceAccess == ZR_REFERENCE_ACCESS_NONE;
+                    }
+                    ZrParser_InferredType_Free(cs->state, &type);
+                }
+            }
+            if (hasNativeInlineArgument) {
+                TZrSize isolatedSlot = cs->maxStackSlotCount;
+                if (isolatedSlot + argsToCompile->count > UINT16_MAX) {
+                    ZrParser_Compiler_Error(cs, "Native aggregate call window exceeds the stack slot limit", member->location);
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    goto cleanup;
+                }
+                for (TZrSize index = 0u; index <= argsToCompile->count; index++) {
+                    if (!compiler_register_isolated_call_window_slot(cs,
+                            (TZrUInt32)(isolatedSlot + index), (TZrUInt32)isolatedSlot,
+                            (TZrUInt32)argsToCompile->count)) {
+                        ZrParser_Compiler_Error(cs, "Failed to reserve native aggregate call window", member->location);
+                        free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                        goto cleanup;
+                    }
+                }
+                emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                        (TZrUInt16)isolatedSlot, (TZrInt32)currentSlot));
+                currentSlot = (TZrUInt32)isolatedSlot;
+                argBaseSlot = currentSlot + 1u;
+                usesIsolatedReadonlyAggregateCallWindow = ZR_TRUE;
+                isolatedReadonlyAggregateCallableSlot = currentSlot;
+            }
+
             if (activeCallMemberInfo != ZR_NULL &&
                 pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 activeCallMemberInfo->receiverEffect !=
@@ -3765,7 +3876,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                         argSlot,
                                         passingMode,
                                         expectedType,
-                                        ZR_FALSE) == ZR_PARSER_SLOT_NONE ||
+                                        call_parameter_uses_managed_reference(
+                                                resolvedFunctionType != ZR_NULL
+                                                        ? function_call_parameter_list(resolvedFunctionType)
+                                                        : member_call_parameter_list(activeCallMemberInfo), j)) == ZR_PARSER_SLOT_NONE ||
                                 cs->hasError) {
                                 break;
                             }
@@ -3878,7 +3992,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         if (argNode != ZR_NULL) {
                             compiler_ensure_stack_slot_available(cs, argBaseSlot + (TZrUInt32)j);
                             TZrUInt32 argSlot =
-                                    compile_expression_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
+                                    compile_scalar_argument_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
                             if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
                                 if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
                                     ZrParser_AstNodeArray_Free(cs->state, argsToCompile);

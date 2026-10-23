@@ -11,6 +11,15 @@
 #include "zr_vm_parser/semantic_calls.h"
 #include "semantic/semantic_scope_facts.h"
 
+/* Children finish quickening before their owner. A source graph is published
+ * only when every final instruction array satisfies the VM contract. */
+static TZrBool compiler_instruction_graph_verified(const SZrFunction *function) {
+    if (!function->instructionsVerified) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->childFunctionLength; ++i)
+        if (!compiler_instruction_graph_verified(&function->childFunctionList[i])) return ZR_FALSE;
+    return ZR_TRUE;
+}
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -216,7 +225,7 @@ static void compiler_log_failure_summary(SZrCompilerState *cs) {
                            reason);
 }
 
-static TZrBool compiler_prototype_serializes_to_function_metadata(
+TZrBool compiler_type_prototype_serializes_to_runtime(
         const SZrTypePrototypeInfo *info) {
     const TZrUInt64 contiguousViewProtocols =
             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
@@ -228,11 +237,27 @@ static TZrBool compiler_prototype_serializes_to_function_metadata(
     if (!info->isImportedNative) {
         return ZR_TRUE;
     }
+    TZrBool scalarStruct = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+            info->genericParameters.length == 0u && info->allowValueConstruction &&
+            (info->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) == 0u;
+    TZrSize fieldCount = 0u;
+    for (TZrSize index = 0u; scalarStruct && index < info->members.length; index++) {
+        const SZrTypeMemberInfo *member = ZrCore_Array_Get((SZrArray *)&info->members, index);
+        EZrValueType primitive;
+        const TZrChar *text;
+        if (member->memberType != ZR_AST_STRUCT_FIELD || member->isStatic) continue;
+        text = member->fieldTypeName != ZR_NULL ? ZrCore_String_GetNativeString(member->fieldTypeName) : ZR_NULL;
+        scalarStruct = text != ZR_NULL && member->fieldSize > 0u &&
+                inferred_type_try_map_primitive_name(text, strlen(text), &primitive) &&
+                (ZR_VALUE_IS_TYPE_NUMBER(primitive) || primitive == ZR_VALUE_TYPE_BOOL);
+        fieldCount++;
+    }
     return (TZrBool)((info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
                       info->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
                      info->layoutByteSize > 0u &&
                      info->layoutByteAlign > 0u &&
-                     (info->protocolMask & contiguousViewProtocols) != 0u);
+                     ((info->protocolMask & contiguousViewProtocols) != 0u ||
+                      (scalarStruct && fieldCount > 0u)));
 }
 
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
@@ -917,7 +942,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             // 序列化每个 prototype 信息
             for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
                 SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
-                if (!compiler_prototype_serializes_to_function_metadata(info)) {
+                if (!compiler_type_prototype_serializes_to_runtime(info)) {
                     prototypeDataArray[i] = ZR_NULL;
                     prototypeDataSizes[i] = 0;
                     continue;
@@ -1115,7 +1140,8 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     }
     zr_parser_compile_trace("build semir metadata ok func=%p", (void *)func);
 
-    if (!compiler_quicken_execbc_function(state, func)) {
+    if (!compiler_quicken_execbc_function(state, func) ||
+        !compiler_instruction_graph_verified(func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;

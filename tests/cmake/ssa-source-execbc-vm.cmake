@@ -440,6 +440,7 @@ if (NOT TARGET zr_vm_ssa_primitive_source_frame_oom_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
     target_compile_definitions(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE

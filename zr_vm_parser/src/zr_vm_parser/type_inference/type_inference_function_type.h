@@ -10,5 +10,6 @@ TZrBool type_inference_infer_function_type_signature(
         SZrCompilerState *cs, const SZrFunctionType *funcType,
         SZrArray *paramTypes, SZrArray *parameterPassingModes,
         SZrInferredType *returnType);
+const SZrFunctionType *type_inference_function_field_type(const SZrTypeMemberInfo *memberInfo);
 
 #endif

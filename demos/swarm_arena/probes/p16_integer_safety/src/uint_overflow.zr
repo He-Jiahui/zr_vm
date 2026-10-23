@@ -1,0 +1,6 @@
+let system = import("zr.system");
+var maximum: uint = <uint> -1;
+var wrapped = maximum + <uint> 1;
+if (wrapped != <uint> 0) { throw "P16 uint addition did not wrap"; }
+system.console.printLine("PROBE_OK P16 uint-addition-wraps-to-zero");
+return 0;

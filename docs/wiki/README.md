@@ -48,6 +48,7 @@ Wiki 不替代代码中的公共头文件。签名、枚举值、结构体布局
 1. [系统概览](01-overview.md)
 2. [构建与第一个项目](02-getting-started.md)
 3. [语言语法参考](03-language-syntax.md)
+   - [ZR 语言概览与用例](language-guide.md)
    - [ZR 语言手册（逐条语法、用例与实现）](02-language/index.md)
      - [语义与执行模型](02-language/semantics-implementation.md)
      - [运算符、元方法与类型转换](02-language/operators-conversions.md)
@@ -91,6 +92,7 @@ Wiki 不替代代码中的公共头文件。签名、枚举值、结构体布局
   - [CLI 完整命令参考](04-tools/cli-command-reference.md)
 - [语言服务器与 VS Code](04-tools/language-server.md)
   - [Language Server 协议与嵌入式接口](04-tools/language-server-protocol-reference.md)
+  - [LSP 数组分配失败与资源清理](04-tools/language-server-array-allocation-failure.md)
 - [测试与验证](04-tools/testing.md)
   - [TestManifest 与 Runner](04-tools/test-manifest-runner-reference.md)
 

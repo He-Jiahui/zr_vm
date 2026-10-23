@@ -339,12 +339,12 @@ static TZrBool function_type_layout_primitive_pod_type_size(const TZrChar *typeN
         *outSize = (TZrUInt32)sizeof(TZrUInt64);
         return ZR_TRUE;
     }
-    if (function_type_layout_native_text_equals(typeNameText, "float") ||
-        function_type_layout_native_text_equals(typeNameText, "f32")) {
+    if (function_type_layout_native_text_equals(typeNameText, "f32")) {
         *outSize = (TZrUInt32)sizeof(TZrFloat32);
         return ZR_TRUE;
     }
-    if (function_type_layout_native_text_equals(typeNameText, "double") ||
+    if (function_type_layout_native_text_equals(typeNameText, "float") ||
+        function_type_layout_native_text_equals(typeNameText, "double") ||
         function_type_layout_native_text_equals(typeNameText, "f64") ||
         function_type_layout_native_text_equals(typeNameText, "f")) {
         *outSize = (TZrUInt32)sizeof(TZrDouble);
@@ -400,10 +400,10 @@ static TZrBool function_type_layout_primitive_pod_value_type(const TZrChar *type
                function_type_layout_native_text_equals(typeNameText, "u64") ||
                function_type_layout_native_text_equals(typeNameText, "uint64")) {
         valueType = ZR_VALUE_TYPE_UINT64;
-    } else if (function_type_layout_native_text_equals(typeNameText, "float") ||
-               function_type_layout_native_text_equals(typeNameText, "f32")) {
+    } else if (function_type_layout_native_text_equals(typeNameText, "f32")) {
         valueType = ZR_VALUE_TYPE_FLOAT;
-    } else if (function_type_layout_native_text_equals(typeNameText, "double") ||
+    } else if (function_type_layout_native_text_equals(typeNameText, "float") ||
+        function_type_layout_native_text_equals(typeNameText, "double") ||
                function_type_layout_native_text_equals(typeNameText, "f64") ||
                function_type_layout_native_text_equals(typeNameText, "f")) {
         valueType = ZR_VALUE_TYPE_DOUBLE;
@@ -1843,6 +1843,29 @@ zr_function_type_layout_retry_record:
     }
     entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_READY;
     return &entryFunction->prototypeFrameTypeLayouts[typeLayoutId];
+}
+
+TZrBool ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+        const SZrFunction *function, TZrUInt32 typeLayoutId,
+        TZrUInt32 byteSize, TZrUInt32 byteAlign, SZrState *state) {
+    const SZrTypeLayout *layout =
+            ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, state);
+    const SZrFunction *entry = function_type_layout_entry_function(state, function);
+    SZrFunctionPrototypeRecord declared;
+    SZrFunctionPrototypeRecord instance;
+    if (layout == ZR_NULL || layout->byteAlign != byteAlign || layout->byteSize > byteSize) {
+        return ZR_FALSE;
+    }
+    if (layout->byteSize == byteSize) return ZR_TRUE;
+    return (TZrBool)(
+            function_type_layout_find_prototype_record(entry, typeLayoutId, &declared, ZR_NULL) &&
+            declared.prototype != ZR_NULL &&
+            declared.prototype->layoutByteSize == byteSize &&
+            declared.prototype->layoutByteAlign == byteAlign &&
+            function_type_layout_find_unambiguous_generic_instance_record(
+                    state, entry, typeLayoutId, &instance, ZR_NULL) &&
+            instance.prototype->layoutByteSize == layout->byteSize &&
+            instance.prototype->layoutByteAlign == layout->byteAlign);
 }
 
 TZrBool ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(

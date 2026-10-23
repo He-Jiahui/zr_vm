@@ -1,0 +1,14 @@
+let system = import("zr.system");
+class Counts { pub static var destroyed: int = 0; }
+resource class EndHandle {
+    pub @constructor() { }
+    pub @destructor() {
+        Counts.destroyed += 1;
+    }
+}
+pub fn finished(): int { return Counts.destroyed; }
+pub fn afterGC(): int { system.gc.collect("full"); return Counts.destroyed; }
+var handle: Unique<EndHandle> = own EndHandle();
+if (Counts.destroyed != 0) { throw "P08 premature program-end destructor"; }
+system.console.printLine("PROBE_OK P08 program-end pending");
+return 0;

@@ -601,6 +601,8 @@ static const TZrChar *backend_aot_llvm_binary_value_helper_name(TZrUInt32 opcode
         case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_STRING):
             return "ZrLibrary_AotRuntime_Add";
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST): return "ZrLibrary_AotRuntime_AddFloatConst";
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST): return "ZrLibrary_AotRuntime_MulFloatConst";
         case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
             return "ZrLibrary_AotRuntime_AddFloat";
         case ZR_INSTRUCTION_ENUM(SUB):

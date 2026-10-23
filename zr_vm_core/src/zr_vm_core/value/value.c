@@ -22,6 +22,19 @@
 #include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "execution/execution_internal.h"
 
+TZrInt64 ZrCore_Value_Float32NativeEntry(SZrState *state) {
+    TZrStackValuePointer functionBase = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *argument = ZrCore_Stack_GetValue(functionBase + 1);
+    if (state->stackTop.valuePointer <= functionBase + 1 ||
+        !ZR_VALUE_IS_TYPE_FLOAT(argument->type)) {
+        ZrCore_Debug_RunError(state, "f32 conversion requires a floating value");
+    }
+    TZrFloat32 rounded = (TZrFloat32)argument->value.nativeObject.nativeDouble;
+    ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(functionBase), (TZrFloat64)rounded);
+    state->stackTop.valuePointer = functionBase + 1;
+    return 1;
+}
+
 static TZrBool value_has_barrier_object(const SZrTypeValue *value) {
     if (value == ZR_NULL ||
         !value->isGarbageCollectable ||

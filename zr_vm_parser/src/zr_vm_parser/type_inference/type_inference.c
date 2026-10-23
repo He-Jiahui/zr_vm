@@ -1671,6 +1671,24 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
             return ZR_TRUE;
         }
 
+        /* A user operator's declared return type controls chained expressions,
+         * including mixed struct/scalar operands. Numeric common-type promotion
+         * cannot describe that contract. */
+        EZrMetaType metaType = strcmp(op, "+") == 0 ? ZR_META_ADD :
+                strcmp(op, "-") == 0 ? ZR_META_SUB :
+                strcmp(op, "*") == 0 ? ZR_META_MUL :
+                strcmp(op, "/") == 0 ? ZR_META_DIV :
+                strcmp(op, "%") == 0 ? ZR_META_MOD : ZR_META_POW;
+        SZrTypeMemberInfo *operatorMember = find_compiler_type_meta_member_inference(
+                cs, leftType.typeName, metaType);
+        if (operatorMember != ZR_NULL && operatorMember->returnTypeName != ZR_NULL) {
+            TZrBool inferred = inferred_type_from_type_name(
+                    cs, operatorMember->returnTypeName, result);
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            ZrParser_InferredType_Free(cs->state, &rightType);
+            return inferred;
+        }
+
         // 算术运算符：获取公共类型（类型提升）
         if (!ZrParser_InferredType_GetCommonType(cs->state, result, &leftType, &rightType)) {
             // 对类成员访问、动态调用等暂未精确建模的表达式，降级为 object，

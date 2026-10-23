@@ -7,7 +7,7 @@
 
 #include "zr_vm_common/zr_type_conf.h"
 
-#if defined(ZR_DEBUG)
+#if defined(ZR_DEBUG) && !defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
 #define ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST
 #endif
 

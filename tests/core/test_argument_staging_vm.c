@@ -2,6 +2,7 @@
 #include <string.h>
 #include "runtime_support.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/profile.h"
 #include "zr_vm_core/stack.h"
 
@@ -47,7 +48,7 @@ int main(void) {
     callerFunctionBase=ZrCore_Function_CheckStackAndGc(state,40,state->stackTop.valuePointer);
     REQUIRE(callerFunctionBase != ZR_NULL);
     callerFrameBase=callerFunctionBase+1;
-    callBase=callerFrameBase+2;
+    callBase=callerFrameBase+12;
     for(unsigned i=0;i<20;++i) ZrCore_Value_ResetAsNull(&callerFunctionBase[i].value);
     ZrCore_Value_InitAsRawObject(state,&callerFunctionBase[0].value,ZR_CAST_RAW_OBJECT_AS_SUPER(caller));
     ZrCore_Value_InitAsRawObject(state,&callBase[0].value,ZR_CAST_RAW_OBJECT_AS_SUPER(callee));
@@ -79,6 +80,30 @@ int main(void) {
     REQUIRE(((SZrTypeValue *)destinationPlace.address)->value.nativeObject.nativeInt64 == 137);
     REQUIRE(call->functionBase.valuePointer[1].value.type == ZR_VALUE_TYPE_INT64);
     REQUIRE(call->functionBase.valuePointer[1].value.value.nativeObject.nativeInt64 == 137);
+    /* A prepared window can contain a stale scalar; FromFrame remains the
+     * authoritative source in that case, even for packed scalar callees. */
+    state->callInfoList=previous;
+    state->stackTop.valuePointer=callBase+2;
+    ZrCore_Value_InitAsInt(state,&callBase[1].value,999);
+    call=ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
+            state,callBase,callee,1,1,ZR_NULL,callerFrameBase,3);
+    REQUIRE(call != ZR_NULL);
+    REQUIRE(((SZrTypeValue *)destinationPlace.address)->value.nativeObject.nativeInt64 == 137);
+    REQUIRE(call->functionBase.valuePointer[1].value.value.nativeObject.nativeInt64 == 137);
+    /* An ordinary receiver is already rooted by the source frame. Reusing
+     * the exact entry must preserve both mirrors without generic staging. */
+    SZrObject *receiver = ZrCore_Object_New(state, ZR_NULL);
+    REQUIRE(receiver != ZR_NULL);
+    ZrCore_Object_Init(state, receiver);
+    ZrCore_Value_InitAsRawObject(state, sourcePlace.address, ZR_CAST_RAW_OBJECT_AS_SUPER(receiver));
+    state->callInfoList = previous;
+    state->stackTop.valuePointer = callBase + 2;
+    callBase[1].value = *(SZrTypeValue *)sourcePlace.address;
+    call = ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
+            state, callBase, callee, 1, 1, ZR_NULL, callerFrameBase, 3);
+    REQUIRE(call != ZR_NULL && !call->hasArgumentSourceFrame);
+    REQUIRE(((SZrTypeValue *)destinationPlace.address)->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(receiver));
+    REQUIRE(callBase[1].value.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(receiver));
     state->global->profileRuntime=oldProfile;
     ZrCore_Profile_SetCurrentState(state);
     ZrTests_Runtime_State_Destroy(state);

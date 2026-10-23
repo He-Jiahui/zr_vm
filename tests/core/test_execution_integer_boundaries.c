@@ -152,14 +152,12 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:13
  * - tests/core/test_execution_integer_boundaries.c:63
  * - tests/core/test_execution_integer_boundaries.c:67
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5101
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5110
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5120
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5127
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5145
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5156
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5165
- * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:388
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_LOAD_STACK_CONST_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_LOAD_STACK_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_MOD_CONST_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_SUB_SIGNED_LOAD_CONST_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_SUB_SIGNED_LOAD_STACK_CONST_BODY
+ * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:393
  */
 
 /**
@@ -228,8 +226,8 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:66
  * - tests/core/test_execution_integer_boundaries.c:96
  * - tests/core/test_execution_integer_boundaries.c:97
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5127
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5142
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_MOD_CONST_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_LOAD_STACK_LOAD_CONST_BODY
  */
 
 /**
@@ -250,8 +248,7 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:32
  * - tests/core/test_execution_integer_boundaries.c:101
  * - tests/core/test_execution_integer_boundaries.c:102
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5156
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5165
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_SUB_SIGNED_LOAD_STACK_CONST_BODY
  */
 
 /**
@@ -278,7 +275,7 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:62
  * - tests/core/test_execution_integer_boundaries.c:63
  * - tests/core/test_execution_integer_boundaries.c:72
- * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:388
+ * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:393
  */
 
 /**
@@ -319,9 +316,8 @@ int main(void) {
  * - tests/harness/runtime_support.c:272
  * - tests/harness/runtime_support.c:435
  * - tests/harness/runtime_support.c:447
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5114
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5149
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5151
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_LOAD_STACK_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_SUB_SIGNED_LOAD_CONST_BODY
  * - zr_vm_core/src/zr_vm_core/function/function.c:1390
  * - zr_vm_core/src/zr_vm_core/function/function.c:1396
  * - zr_vm_core/src/zr_vm_core/function/function.c:1668
@@ -353,7 +349,7 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:103
  * - tests/core/test_execution_integer_boundaries.c:104
  * - tests/core/test_execution_integer_boundaries.c:132
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5101
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_ADD_SIGNED_LOAD_STACK_CONST_BODY
  * - zr_vm_core/include/zr_vm_core/integer.h:9
  * - zr_vm_core/include/zr_vm_core/integer.h:26
  */
@@ -376,9 +372,8 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:112
  * - tests/core/test_execution_integer_boundaries.c:113
  * - tests/core/test_execution_integer_boundaries.c:133
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5024
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:7254
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:7269
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — EXECUTE_TYPED_NEG_SIGNED_BODY
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — ZR_INSTRUCTION_LABEL(NEG)
  * - zr_vm_core/include/zr_vm_core/integer.h:43
  */
 
@@ -405,10 +400,10 @@ int main(void) {
  * - tests/core/test_execution_integer_boundaries.c:125
  * - tests/core/test_execution_integer_boundaries.c:126
  * - tests/core/test_execution_integer_boundaries.c:134
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:7746
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:7790
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:8098
- * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:8113
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — ZR_INSTRUCTION_LABEL(SHIFT_LEFT_INT)
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — ZR_INSTRUCTION_LABEL(SHIFT_RIGHT_INT)
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT)
+ * - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c — ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT)
  * - zr_vm_core/include/zr_vm_core/integer.h:96
  * - zr_vm_core/include/zr_vm_core/integer.h:100
  */
@@ -437,6 +432,6 @@ int main(void) {
  * - tests/third_party/zr_unity/Unity/src/unity.c:2299
  * - tests/third_party/zr_unity/Unity/src/unity.c:2303
  * - tests/third_party/zr_unity/Unity/src/unity.c:2359
- * - tests/cmake/runtime-compiler-boundary-tests.cmake:3
- * - tests/cmake/runtime-compiler-boundary-tests.cmake:7
+ * - tests/CMakeLists.txt:8926
+ * - tests/CMakeLists.txt:8930
  */

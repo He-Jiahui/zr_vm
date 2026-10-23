@@ -180,14 +180,14 @@ static void test_aot_c_known_dynamic_i64_return_refines_only_c_signature(void) {
     TZrBool passed;
 
     dynamic_return_representation_compile("var value: int = 7;\nreturn -value;\n");
+    TEST_ASSERT_TRUE(g_dynamicReturnRepresentation.function->hasCallableReturnType);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64,
+                         g_dynamicReturnRepresentation.function->callableReturnType.baseType);
+    /* Exercise the backend's dynamic representation refinement explicitly;
+     * the compiler can already prove this source's scalar representation. */
     init_signature_type_ref(&plainDynamic, ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_DYNAMIC);
-    /* Script return publication zero-initializes this field, unlike layout metadata. */
     plainDynamic.staticCTypeId = 0u;
-    TEST_ASSERT_TRUE_MESSAGE(
-            g_dynamicReturnRepresentation.function->hasCallableReturnType == ZR_TRUE &&
-            dynamic_return_representation_type_equal(
-                    &plainDynamic, &g_dynamicReturnRepresentation.function->callableReturnType),
-            "fixture prerequisite: compiled i64 return must retain plain DYNAMIC metadata");
+    g_dynamicReturnRepresentation.function->callableReturnType = plainDynamic;
     snapshot = dynamic_return_representation_snapshot();
     expected = snapshot.returnType;
     expected.staticCType = ZR_STATIC_C_TYPE_I64;

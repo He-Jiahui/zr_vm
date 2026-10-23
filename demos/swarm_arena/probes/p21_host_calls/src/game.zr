@@ -1,0 +1,2 @@
+pub fn tick(frame: int): int { return frame + 1; }
+pub fn fail(): int { throw "P21 expected exception"; }

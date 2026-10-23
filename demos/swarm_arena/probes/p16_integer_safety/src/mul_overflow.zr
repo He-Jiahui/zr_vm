@@ -1,0 +1,2 @@
+var maximum: int = 9223372036854775807;
+return maximum * 2;

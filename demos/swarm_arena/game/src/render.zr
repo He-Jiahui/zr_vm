@@ -1,0 +1,23 @@
+let pickup_store = import("lanes/dod/pickup_store");
+let container = import("zr.container");
+let gfx = import("zrgame.gfx");
+let host = import("zrgame.host");
+let world = import("lanes/dod/world");
+let player = import("player");
+
+let render_buffer = import("render_buffer");
+
+// Plugin calls live in an ordinary module function, outside imported class
+// methods, so binary loading can discover the module's native providers.
+pub fn submit(w: world.World, b: world.MovingSoA, particles: world.MovingSoA,
+              pickups: pickup_store.Pickups, p: player.Bot, batch: render_buffer.Buffer, frame: int): int {
+    batch.build(w, b, particles, pickups, p);
+    var backend: object = gfx;
+    backend.beginFrame(frame); backend.camera(p.x, p.y);
+    backend.submitSoA(batch.xs, batch.ys, batch.sizes, batch.colors, 0, batch.count);
+    // In host drive, C owns backend submit/present after game.render returns.
+    var runtimeHost: object = host;
+    if (runtimeHost.isHostDriven()) { return batch.count; }
+    var submitted = <int>backend.endFrame(); batch.lastHash = <int>backend.snapshot("");
+    return submitted;
+}

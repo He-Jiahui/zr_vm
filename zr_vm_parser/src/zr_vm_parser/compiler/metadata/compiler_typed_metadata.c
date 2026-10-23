@@ -1680,21 +1680,6 @@ static TZrBool compiler_prototype_has_inline_frame_layout(const SZrTypePrototype
                      prototypeInfo->layoutByteAlign > 0u);
 }
 
-static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    const TZrUInt64 contiguousViewProtocols =
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
-
-    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!prototypeInfo->isImportedNative) {
-        return ZR_TRUE;
-    }
-    return (TZrBool)(compiler_prototype_has_inline_frame_layout(prototypeInfo) &&
-                     (prototypeInfo->protocolMask &
-                      contiguousViewProtocols) != 0u);
-}
 
 static TZrUInt32 compiler_serialized_type_prototype_count(SZrCompilerState *cs) {
     TZrUInt32 serializedCount = 0u;
@@ -2110,8 +2095,9 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        /* GET_BY_INDEX can copy a boxed struct into an inline destination.
+         * Keep its type hint so subsequent member writes see the full payload. */
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
@@ -2147,7 +2133,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
             return (TZrBool)(instruction->instruction.operand.operand1[0] == slot ||
                              instruction->instruction.operand.operand1[1] == slot);
-        case ZR_INSTRUCTION_ENUM(NEG):
         case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
         case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
@@ -2176,7 +2161,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(SUB):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
         case ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
@@ -2184,7 +2168,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(MUL):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
@@ -2241,6 +2224,8 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
                    compiler_instruction_binary_operands_match_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -2286,6 +2271,8 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
                    compiler_instruction_operand0_triple_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
@@ -2352,7 +2339,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         return ZR_FALSE;
     }
 
-    cursor = frame_layout_align_offset((TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack)), ZR_ALIGN_SIZE);
+    cursor = (TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack));
 
     for (TZrUInt32 slot = 0; slot < slotCount; slot++) {
         SZrFunctionTypedLocalBinding *binding =
@@ -2370,7 +2357,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         SZrFunctionTypedTypeRef hintTypeRef;
         const SZrFunctionTypedTypeRef *slotTypeRef = binding != ZR_NULL ? &binding->type : ZR_NULL;
         TZrUInt32 byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-        TZrUInt32 byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+        TZrUInt32 byteAlign = (TZrUInt32)_Alignof(SZrTypeValueOnStack);
         TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
         TZrUInt32 inlineFieldCount = 0u;
         TZrUInt8 slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
@@ -2496,7 +2483,8 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             slotTypeRef = &hintTypeRef;
         }
 
-        if (compiler_find_inline_type_layout(cs, slotTypeRef,
+        if (!(slotIsParameter && compiler_stack_slot_is_reference_parameter(cs, slot)) &&
+            compiler_find_inline_type_layout(cs, slotTypeRef,
                                              &typeLayoutId,
                                              &byteSize,
                                              &byteAlign,
@@ -2544,7 +2532,12 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             continue;
         }
 
-        cursor = frame_layout_align_offset(cursor, byteAlign);
+        /* VALUE storage participates in the stack close/upvalue chains. Its
+         * address must be a physical slot boundary, even when the slot stride
+         * is not a power of two or follows a smaller inline payload. */
+        cursor = frame_layout_align_offset(cursor,
+                slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_VALUE
+                        ? (TZrUInt32)sizeof(SZrTypeValueOnStack) : byteAlign);
         ZrCore_Memory_RawSet(&layouts[slot], 0, sizeof(layouts[slot]));
         layouts[slot].stackSlot = slot;
         layouts[slot].byteOffset = cursor;
@@ -2564,7 +2557,8 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
                         ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
             }
         }
-        cursor += byteSize;
+        cursor += slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_VALUE
+                          ? (TZrUInt32)sizeof(SZrTypeValueOnStack) : byteSize;
     }
 
     if (frameAlign == 0) {

@@ -2,6 +2,8 @@
 #define ZR_VM_PARSER_COMPILER_INTERNAL_H
 
 #include "zr_vm_parser/compiler.h"
+TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *info);
+
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
@@ -851,7 +853,7 @@ ZR_PARSER_API TZrBool compiler_assemble_final_function(SZrCompilerState *cs,
                                                        TZrBool copyCurrentFunctionBuffers,
                                                        TZrBool preserveExistingSignature);
 
-void compiler_rebind_moved_child_constants(SZrFunction *function,
+void compiler_rebind_moved_child_constants(SZrState *state, SZrFunction *function,
                                            SZrFunction *const *sourceChildren);
 
 TZrBool compiler_attach_detached_function_prototype_context(SZrState *state,
@@ -995,6 +997,12 @@ void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          SZrAstNode *expression) ;
 
 void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode) ;
+void emit_class_instance_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode);
+
+/* ref/out parameters carry a managed reference to caller storage. */
+TZrBool compiler_stack_slot_is_reference_parameter(SZrCompilerState *cs, TZrUInt32 stackSlot);
+TZrUInt32 compile_property_reference_place(
+        SZrCompilerState *cs, SZrAstNode *expression, SZrFileRange location);
 
 void compiler_begin_constructor_const_field_tracking(SZrCompilerState *cs) ;
 
@@ -1464,4 +1472,5 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
                                                                   SZrAstNode *operand,
                                                                   SZrFileRange location);
 
+TZrUInt32 compile_scalar_argument_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 #endif // ZR_VM_PARSER_COMPILER_INTERNAL_H

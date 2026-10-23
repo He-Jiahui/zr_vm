@@ -213,6 +213,11 @@ TZrBool compiler_submission_seed_context(
         closureVariable.declarationEndLine = (TZrUInt32)binding->declarationRange.end.line;
         closureVariable.declarationEndColumn = (TZrUInt32)binding->declarationRange.end.column;
         ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVariable);
+        {
+            SZrCompilerBindingIdentity identity;
+            identity.syntaxContext = ZrParser_SyntaxContext_Root();
+            ZrCore_Array_Push(cs->state, &cs->closureBindingIdentities, &identity);
+        }
         cs->closureVarCount++;
     }
 

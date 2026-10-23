@@ -26,10 +26,15 @@ typedef struct SZrRegressionTestTimer {
 
 void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
 void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
+void test_w2_scalar_self_alias_stores_preserve_loop_results(void);
+void test_w2_numeric_literal_folding_preserves_runtime_overflow(void);
+void test_w2_scalar_arguments_load_directly_into_call_window(void);
+
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
 void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void);
+void test_w2_signed_less_branch_reuses_less_equal_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
@@ -888,6 +893,28 @@ void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void) {
     ZR_TEST_DIVIDER();
 }
 
+void test_w2_signed_less_branch_reuses_less_equal_jump(void) {
+    const char *source =
+            "fn work(limit: int): int { var sum = 0; var i = 0;"
+            "while (i < limit) { sum = sum + i; i = i + 1; } return sum; }"
+            "return work(5) + work(0) + work(-3);";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TZrInt64 result = 0;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
+            ZrCore_String_CreateFromNative(state, "w2_signed_less_branch.zr"));
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)));
+    TEST_ASSERT_EQUAL_UINT32(0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(10, result);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void test_w2_static_iterator_move_next_branch_fuses(void) {
     static const char *source =
             "let container = import(\"zr.container\");\n"
@@ -1587,4 +1614,99 @@ void test_w2_late_forward_get_stack_after_member_call_specialization(void) {
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
+}
+
+
+static SZrFunction *w2_compile_scalar_fixture(SZrState *state, const char *source) {
+    return ZrParser_Source_Compile(state, source, strlen(source),
+            ZrCore_String_CreateFromNative(state, "w2_scalar_results.zr"));
+}
+
+void test_w2_scalar_self_alias_stores_preserve_loop_results(void) {
+    const char *source = "var sum = 0; var acc: float = 0.5; var i = 0; "
+            "while (i < 100) { sum = sum + i; acc = acc + 1.25 * 2.0; i = i + 1; } "
+            "return sum + <int>acc;";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    SZrFunction *function = w2_compile_scalar_fixture(state, source);
+    TEST_ASSERT_NOT_NULL(function);
+    for (TZrUInt32 i = 0u; i + 1u < function->instructionsLength; ++i) {
+        TZrUInt16 op = function->instructionsList[i].instruction.operationCode;
+        if (op == ZR_INSTRUCTION_ENUM(ADD_SIGNED) || op == ZR_INSTRUCTION_ENUM(ADD_FLOAT))
+            TEST_ASSERT_NOT_EQUAL(ZR_INSTRUCTION_ENUM(SET_STACK), function->instructionsList[i + 1u].instruction.operationCode);
+    }
+    TZrInt64 result;
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(5200, result);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+void test_w2_numeric_literal_folding_preserves_runtime_overflow(void) {
+    const char *sources[] = {"return (20000000 - 1) + 2;", "return <int>((0.5 + 0.25) * 4.0);",
+                            "return 9223372036854775807 + 1;"};
+    const TZrInt64 expected[] = {20000001, 3, 0};
+    for (unsigned i = 0u; i < ZR_ARRAY_COUNT(sources); ++i) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        TEST_ASSERT_NOT_NULL(state);
+        SZrFunction *function = w2_compile_scalar_fixture(state, sources[i]);
+        TEST_ASSERT_NOT_NULL(function);
+        SZrTypeValue result;
+        TZrBool success = ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &result);
+        if (i < 2u) {
+            TEST_ASSERT_TRUE(success);
+            TEST_ASSERT_EQUAL_INT64(expected[i], result.value.nativeObject.nativeInt64);
+            TEST_ASSERT_EQUAL_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED)));
+            TEST_ASSERT_EQUAL_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MUL_FLOAT)));
+            if (i == 0u) TEST_ASSERT_LESS_OR_EQUAL_UINT32(3u, function->instructionsLength);
+        } else TEST_ASSERT_FALSE(success);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+void test_w2_scalar_arguments_load_directly_into_call_window(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    SZrFunction *function = w2_compile_scalar_fixture(state,
+            "fn next(n: int): int { return n + 1; } var sum = 41; var result = next(sum); return result;");
+    TEST_ASSERT_NOT_NULL(function);
+    for (TZrUInt32 i = 1u; i < function->instructionsLength; ++i) {
+        if (function->instructionsList[i].instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_STACK))
+            TEST_ASSERT_NOT_EQUAL(ZR_INSTRUCTION_ENUM(GET_STACK), function->instructionsList[i - 1u].instruction.operationCode);
+    }
+    TZrInt64 result;
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+void test_w2_constant_loops_have_compact_bodies(void) {
+    const char *sources[] = {
+        "var sum = 0; var i = 0; while (i < 100) { sum = sum + i; i = i + 1; } return sum;",
+        "var sum = 0; var i = 0; while (i <= 100 - 1) { sum = sum + i; i = i + 1; } return sum;",
+        "var i = 0; var x: float = 0.5; var acc: float = 0.0; while (i < 100) { "
+        "acc = acc + x * 1.0001; x = x * 0.99999 + 0.00001; i = i + 1; } return <int>acc;"
+    };
+    for (unsigned n = 0u; n < ZR_ARRAY_COUNT(sources); ++n) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        TEST_ASSERT_NOT_NULL(state);
+        SZrFunction *function = w2_compile_scalar_fixture(state, sources[n]);
+        TEST_ASSERT_NOT_NULL(function);
+        unsigned backEdges = 0u;
+        for (TZrUInt32 i = 0u; i < function->instructionsLength; ++i) {
+            const SZrInstruction *ins = &function->instructionsList[i].instruction;
+            if (ins->operationCode != ZR_INSTRUCTION_ENUM(JUMP) || ins->operand.operand2[0] >= 0) continue;
+            TZrInt32 length = -ins->operand.operand2[0];
+            TEST_ASSERT_LESS_OR_EQUAL_INT32(n < 2u ? 4 : 8, length);
+            ++backEdges;
+        }
+        TEST_ASSERT_EQUAL_UINT32(1u, backEdges);
+        TEST_ASSERT_GREATER_THAN_UINT32(0u, count_opcode_recursive(function,
+                n == 1u ? ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) :
+                          ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST)));
+        if (n == 2u) TEST_ASSERT_EQUAL_UINT32(2u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST)));
+        TZrInt64 result;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(n < 2u ? 4950 : 50, result);
+        ZrTests_Runtime_State_Destroy(state);
+    }
 }

@@ -1,0 +1,18 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+class Listener {
+    pub var callback: fn(int) -> int;
+    pub @constructor(callback: fn(int) -> int) { this.callback = callback; }
+    pub fn call(x: int): int { return this.callback(x); }
+}
+fn factory(seed: int): fn(int) -> int {
+    var captured = seed;
+    return fn(x: int) => { captured += x; return captured; };
+}
+var callback = factory(5);
+var listener = new Listener(callback);
+var callbacks = new Array<fn(int) -> int>();
+callbacks.add(callback);
+if (listener.call(2) != 7 || callbacks[0](3) != 10 || listener.call(1) != 11) { throw "P09 captured state/field/array"; }
+system.console.printLine("PROBE_OK P09 escaping shared capture field array");
+return 0;

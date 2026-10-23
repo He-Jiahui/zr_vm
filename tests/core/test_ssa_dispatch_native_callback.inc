@@ -89,6 +89,7 @@ static TZrInt64 dispatch_test_native_grow_stack_and_collect(SZrState *state) {
     capture->minorCollectionCountBefore = collector->statsSnapshot.minorCollectionCount;
     collector->gcDebtSize = 4096;
     collector->gcLastStepWork = 0;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
     ZrCore_GarbageCollector_GcStep(state);
     capture->minorCollectionCountAfter = collector->statsSnapshot.minorCollectionCount;
     capture->collectionKindAfterGc = collector->statsSnapshot.lastCollectionKind;

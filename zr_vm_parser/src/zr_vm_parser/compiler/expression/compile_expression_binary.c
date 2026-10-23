@@ -1,4 +1,6 @@
 #include "compiler/expression/compile_expression_binary.h"
+#include "zr_vm_core/integer.h"
+#include <math.h>
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/semantic/compiler_semantic_compare.h"
 #include "type_inference/type_inference_internal.h"
@@ -323,7 +325,7 @@ static void compile_binary_expression_from_slots(
 
 /* Cached pure operator trees have already been inferred. Compile operands in
  * a small frame before retaining the three large inferred types for emission. */
-void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
+static void compile_binary_expression_unfolded(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 leftSlot;
     TZrUInt32 rightSlot;
 
@@ -340,5 +342,74 @@ void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     rightSlot = cs->lastExpressionSlot;
     if (cs->hasError || rightSlot == ZR_PARSER_SLOT_NONE) return;
     compile_binary_expression_from_slots(cs, node, leftSlot, rightSlot);
+}
+
+
+/* Evaluate only pure numeric literal trees. Failed/overflowing operations
+ * retain their original bytecode and checked runtime errors. */
+static TZrBool compile_try_literal_number(const SZrAstNode *node, unsigned depth, SZrTypeValue *out) {
+    if (node == ZR_NULL || depth > 64u) return ZR_FALSE;
+    memset(out, 0, sizeof(*out));
+    out->isNative = ZR_TRUE;
+    if (node->type == ZR_AST_INTEGER_LITERAL) {
+        out->type = ZR_VALUE_TYPE_INT64;
+        out->value.nativeObject.nativeInt64 = node->data.integerLiteral.value;
+        return ZR_TRUE;
+    }
+    if (node->type == ZR_AST_FLOAT_LITERAL) {
+        out->type = ZR_VALUE_TYPE_DOUBLE;
+        out->value.nativeObject.nativeDouble = node->data.floatLiteral.value;
+        return (TZrBool)isfinite(out->value.nativeObject.nativeDouble);
+    }
+    if (node->type != ZR_AST_BINARY_EXPRESSION) return ZR_FALSE;
+    SZrTypeValue left, right;
+    const char *op = node->data.binaryExpression.op.op;
+    if (op == ZR_NULL || !compile_try_literal_number(node->data.binaryExpression.left, depth + 1u, &left) ||
+        !compile_try_literal_number(node->data.binaryExpression.right, depth + 1u, &right)) return ZR_FALSE;
+    if (left.type == ZR_VALUE_TYPE_INT64 && right.type == ZR_VALUE_TYPE_INT64) {
+        TZrInt64 a = left.value.nativeObject.nativeInt64, b = right.value.nativeObject.nativeInt64, result;
+        if (strcmp(op, "+") == 0) { if (!ZrCore_Integer_TryAdd(a, b, &result)) return ZR_FALSE; }
+        else if (strcmp(op, "-") == 0) { if (!ZrCore_Integer_TrySubtract(a, b, &result)) return ZR_FALSE; }
+        else if (strcmp(op, "*") == 0) { if (!ZrCore_Integer_TryMultiply(a, b, &result)) return ZR_FALSE; }
+        else if (strcmp(op, "/") == 0) {
+            if (b == 0 || (a == INT64_MIN && b == -1)) return ZR_FALSE;
+            result = a / b;
+        } else if (strcmp(op, "%") == 0) {
+            if (b == 0) return ZR_FALSE;
+            result = b == -1 ? 0 : a % b;
+        } else return ZR_FALSE;
+        out->type = ZR_VALUE_TYPE_INT64;
+        out->value.nativeObject.nativeInt64 = result;
+        return ZR_TRUE;
+    }
+    TZrFloat64 a = left.type == ZR_VALUE_TYPE_DOUBLE ? left.value.nativeObject.nativeDouble : (TZrFloat64)left.value.nativeObject.nativeInt64;
+    TZrFloat64 b = right.type == ZR_VALUE_TYPE_DOUBLE ? right.value.nativeObject.nativeDouble : (TZrFloat64)right.value.nativeObject.nativeInt64;
+    TZrFloat64 result;
+    if (strcmp(op, "+") == 0) result = a + b;
+    else if (strcmp(op, "-") == 0) result = a - b;
+    else if (strcmp(op, "*") == 0) result = a * b;
+    else if (strcmp(op, "/") == 0 && b != 0.) result = a / b;
+    else return ZR_FALSE;
+    if (!isfinite(result)) return ZR_FALSE;
+    out->type = ZR_VALUE_TYPE_DOUBLE;
+    out->value.nativeObject.nativeDouble = result;
+    return ZR_TRUE;
+}
+
+/* Keep source SemIR intact for CFG/ExecIR admission. Fold only the emitted VM
+ * literal tree; quickening compacts these NOPs and relocates every metadata map. */
+void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) return;
+    TZrSize first = cs->instructionCount;
+    compile_binary_expression_unfolded(cs, node);
+    SZrTypeValue folded;
+    if (cs->hasError || cs->instructionCount <= first || !compile_try_literal_number(node, 0u, &folded)) return;
+    TZrUInt32 constant = add_constant(cs, &folded);
+    for (TZrSize i = first; i + 1u < cs->instructionCount; ++i) {
+        TZrInstruction *instruction = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, i);
+        *instruction = create_instruction_1(ZR_INSTRUCTION_ENUM(NOP), 0u, 0);
+    }
+    TZrInstruction *result = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, cs->instructionCount - 1u);
+    *result = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)cs->lastExpressionSlot, (TZrInt32)constant);
 }
 

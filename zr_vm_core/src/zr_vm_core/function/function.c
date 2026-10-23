@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/function.h"
+#include <stdlib.h>
 #include "zr_vm_core/function_identity.h"
 
 #include "zr_vm_core/closure.h"
@@ -237,6 +238,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->ownerFunction = ZR_NULL;
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
+    function->instructionsVerified = ZR_FALSE;
     function->executionLocationInfoList = ZR_NULL;
     function->executionLocationInfoLength = 0;
     function->catchClauseList = ZR_NULL;
@@ -254,6 +256,15 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->frameByteAlign = 0;
     function->frameSlotLayoutLength = 0;
     function->frameSlotLayouts = ZR_NULL;
+    function->frameGcSummaryLayouts = ZR_NULL;
+    function->frameGcSlotBitmap = ZR_NULL;
+    function->frameGcSummaryLength = 0u;
+    function->frameGcSummaryByteSize = 0u;
+    function->frameGcFirstSlot = 0u;
+    function->frameGcEndSlot = 0u;
+    function->frameGcSummaryValid = ZR_FALSE;
+    function->frameGcLayoutsPresent = ZR_FALSE;
+    function->frameGcInlineLayoutsPresent = ZR_FALSE;
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
@@ -782,6 +793,8 @@ static TZrUInt32 function_scan_generated_frame_slot_count(
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;
@@ -851,6 +864,7 @@ void ZrCore_Function_FinalizeDirectFrameValueSlots(SZrFunction *function) {
     if (function == ZR_NULL) {
         return;
     }
+    ZrCore_Function_FinalizeFrameGcCoverage(function);
     function->directValueParameterCountPlusOne = 0u;
     function->directValueParameterScanLength = 0u;
     function->directValueFrameSlotCountPlusOne = 0u;
@@ -1177,6 +1191,7 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     ZrCore_Function_ForgetIrOwnersAfterMove(function);
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
+    function->instructionsVerified = ZR_FALSE;
     function->childFunctionList = ZR_NULL;
     function->childFunctionLength = 0;
     function->childFunctionGraphIsBorrowed = ZR_FALSE;
@@ -1277,6 +1292,15 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->frameByteAlign = 0;
     function->frameSlotLayoutLength = 0;
     function->frameSlotLayouts = ZR_NULL;
+    function->frameGcSummaryLayouts = ZR_NULL;
+    function->frameGcSlotBitmap = ZR_NULL;
+    function->frameGcSummaryLength = 0u;
+    function->frameGcSummaryByteSize = 0u;
+    function->frameGcFirstSlot = 0u;
+    function->frameGcEndSlot = 0u;
+    function->frameGcSummaryValid = ZR_FALSE;
+    function->frameGcLayoutsPresent = ZR_FALSE;
+    function->frameGcInlineLayoutsPresent = ZR_FALSE;
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
@@ -1306,6 +1330,11 @@ static void function_reset_to_tombstone(SZrFunction *function) {
 
 void ZrCore_Function_CopyToInline(SZrFunction *destination, const SZrFunction *source) {
     *destination = *source;
+    /* The moved function has a new address and must be queued independently
+     * of a source that may already be gray in an active collection. */
+    destination->super.garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+    destination->super.garbageCollectMark.minorScanEpoch = 0u;
+    destination->super.gcList = ZR_NULL;
     /* Registry slots and reference counts belong to the original allocation. */
     destination->super.garbageCollectMark.temporaryRootRefCount = 0;
     destination->super.garbageCollectMark.nativeCallPinRefCount = 0;
@@ -1357,6 +1386,8 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
     ZrCore_Function_ReleaseIrOwners(function);
+    free(function->frameGcSlotBitmap);
+    function->frameGcSlotBitmap = ZR_NULL;
 #define ZR_FUNCTION_FREE_METADATA_PARAMETERS(PARAMETERS, COUNT)                                                      \
     do {                                                                                                             \
         if ((PARAMETERS) != ZR_NULL && (COUNT) > 0) {                                                                \
@@ -2646,6 +2677,12 @@ TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState 
         return ZR_NULL;
     }
 
+    /* Native/AOT entries reserve a dense window, which may exceed their VM
+     * metadata's storage. A child must start beyond that whole live window. */
+    if (!ZR_CALL_INFO_IS_VM(callInfo)) {
+        return callInfo->functionTop.valuePointer;
+    }
+
     frameBase = function_inline_frame_base_from_call_info(callInfo);
     if (frameBase == ZR_NULL) {
         return ZR_NULL;
@@ -2770,6 +2807,10 @@ static ZR_FORCE_INLINE const SZrTypeValue *function_get_frame_return_source_valu
         return ZR_NULL;
     }
 
+    /* Native/AOT entry frames use dense stack values. Merely carrying a VM
+     * metadata function does not activate its byte-frame VALUE mirrors. */
+    if (!ZR_CALL_INFO_IS_VM(callInfo)) return ZrCore_Stack_GetValue(returnSource);
+
     calleeFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
     calleeFrameBase = function_inline_frame_base_from_call_info(callInfo);
     if (calleeFunction == ZR_NULL || calleeFrameBase == ZR_NULL) {
@@ -2814,6 +2855,8 @@ static ZR_FORCE_INLINE SZrTypeValue *function_get_frame_return_destination_value
         returnDestination == ZR_NULL) {
         return returnDestination != ZR_NULL ? ZrCore_Stack_GetValue(returnDestination) : ZR_NULL;
     }
+
+    if (!ZR_CALL_INFO_IS_VM(callInfo->previous)) return ZrCore_Stack_GetValue(returnDestination);
 
     callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
     callerFrameBase = function_inline_frame_base_from_call_info(callInfo->previous);
@@ -3617,12 +3660,14 @@ void ZrCore_Function_TryCopyInlineConstructorReceiverBack(SZrState *state,
 }
 
 
-static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(struct SZrState *state,
+static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame_with_argument_source(struct SZrState *state,
                                                                             TZrStackValuePointer stackPointer,
                                                                             TZrStackValuePointer preparedFunctionTop,
                                                                             TZrSize resultCount,
                                                                             FZrNativeFunction function,
-                                                                            TZrStackValuePointer returnDestination) {
+                                                                            TZrStackValuePointer returnDestination,
+                                                                            TZrStackValuePointer argumentSourceFrameBase,
+                                                                            TZrUInt32 argumentSourceStartSlot) {
     TZrSize returnCount = 0;
     SZrCallInfo *callInfo = ZR_NULL;
     SZrFunctionStackAnchor callInfoBaseAnchor;
@@ -3649,6 +3694,9 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
                                    preparedFunctionTop,
                                    resultCount,
                                    returnDestination);
+    if (argumentSourceFrameBase != ZR_NULL) {
+        ZrCore_Function_SetCallInfoArgumentSourceFrame(callInfo, argumentSourceFrameBase, argumentSourceStartSlot);
+    }
     state->callInfoList = callInfo;
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     ZrCore_Function_StackAnchorInit(state, callInfo->functionBase.valuePointer, &callInfoBaseAnchor);
@@ -3695,6 +3743,15 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
     ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(state, returnCount);
     ZrCore_Function_PostCall(state, callInfo, returnCount);
     return returnCount;
+}
+
+static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(
+        SZrState *state, TZrStackValuePointer stackPointer,
+        TZrStackValuePointer preparedFunctionTop, TZrSize resultCount,
+        FZrNativeFunction function, TZrStackValuePointer returnDestination) {
+    return function_call_resolved_native_prepared_frame_with_argument_source(
+            state, stackPointer, preparedFunctionTop, resultCount, function,
+            returnDestination, ZR_NULL, 0u);
 }
 
 static ZR_FORCE_INLINE TZrBool function_can_use_resolved_native_single_result_fast_path(
@@ -4927,6 +4984,43 @@ SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource
         TZrStackValuePointer returnDestination,
         TZrStackValuePointer argumentSourceFrameBase,
         TZrUInt32 argumentSourceStartSlot) {
+    SZrCallInfo *caller = state->callInfoList;
+    SZrFunction *callerFunction = caller != ZR_NULL ? caller->metadataFunction : ZR_NULL;
+    /* The interpreter already staged these arguments in a fresh dense window.
+     * They require no source-place transaction, ownership transfer or inline
+     * binding. Reuse the exact-argument entry path instead of staging twice. */
+    if (caller != ZR_NULL && caller->functionBase.valuePointer != ZR_NULL &&
+        argumentSourceFrameBase == caller->functionBase.valuePointer + 1u &&
+        ZrCore_Function_HasDirectValueFrameSlotSummary(callerFunction) &&
+        ZrCore_Function_HasDirectValueFrameSlotSummary(function) &&
+        argumentSourceStartSlot <= callerFunction->frameSlotLayoutLength &&
+        argumentsCount <= callerFunction->frameSlotLayoutLength - argumentSourceStartSlot) {
+        TZrStackValuePointer source = argumentSourceFrameBase + callerFunction->stackSize +
+                                     argumentSourceStartSlot;
+        TZrSize index = 0u;
+        for (; index < argumentsCount; ++index) {
+            const SZrTypeValue *argument = &source[index].value;
+            const SZrTypeValue *staged = &stackPointer[1u + index].value;
+            TZrBool receiver = (TZrBool)(index == 0u &&
+                    argument->type == ZR_VALUE_TYPE_OBJECT && staged->type == ZR_VALUE_TYPE_OBJECT &&
+                    argument->isGarbageCollectable && staged->isGarbageCollectable &&
+                    !argument->isNative && !staged->isNative &&
+                    argument->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+                    staged->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+                    argument->ownershipControl == ZR_NULL && staged->ownershipControl == ZR_NULL &&
+                    argument->ownershipWeakRef == ZR_NULL && staged->ownershipWeakRef == ZR_NULL);
+            if ((!receiver && (!function_precall_value_is_plain_scalar(argument) ||
+                               !function_precall_value_is_plain_scalar(staged))) ||
+                source[index].value.type != stackPointer[1u + index].value.type ||
+                source[index].value.value.nativeObject.nativeUInt64 !=
+                        stackPointer[1u + index].value.value.nativeObject.nativeUInt64) break;
+        }
+        if (index == argumentsCount) {
+            SZrCallInfo *prepared = function_try_pre_call_prepared_resolved_vm_packed_direct_exact_args(
+                    state, stackPointer, function, argumentsCount, resultCount, returnDestination);
+            if (prepared != ZR_NULL) return prepared;
+        }
+    }
     return function_pre_call_resolved_vm_internal(
             state,
             stackPointer,
@@ -5160,6 +5254,51 @@ SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
             returnDestination);
 }
 
+SZrCallInfo *ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(struct SZrState *state,
+                                                 TZrStackValuePointer stackPointer,
+                                                 SZrTypeValue *callableValue,
+                                                 TZrSize resultCount,
+                                                 TZrStackValuePointer returnDestination,
+                                                 TZrStackValuePointer argumentSourceFrameBase,
+                                                 TZrUInt32 argumentSourceStartSlot) {
+    FZrNativeFunction nativeFunction = ZR_NULL;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
+    ZR_ASSERT(callableValue != ZR_NULL);
+
+    switch (callableValue->type) {
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE: {
+            SZrClosureNative *nativeClosure;
+
+            ZR_ASSERT(callableValue->isNative);
+            nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, callableValue->value.object);
+            ZR_ASSERT(nativeClosure != ZR_NULL);
+            nativeFunction = nativeClosure->nativeFunction;
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            nativeFunction = ZR_CAST_FUNCTION_POINTER(callableValue);
+            break;
+        default:
+            ZR_ASSERT(ZR_FALSE && "known native call requires native callable");
+            return ZR_NULL;
+    }
+
+    ZR_ASSERT(nativeFunction != ZR_NULL);
+    SZrFunctionStackAnchor sourceAnchor;
+    ZrCore_Function_StackAnchorInit(state, argumentSourceFrameBase, &sourceAnchor);
+    function_restore_call_pointers_after_stack_check(state, ZR_STACK_NATIVE_CALL_RESERVED_MIN,
+            state->stackTop.valuePointer, &stackPointer, &returnDestination);
+    argumentSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &sourceAnchor);
+    TZrStackValuePointer preparedTop = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
+    function_reset_stack_slots_to_null(state->stackTop.valuePointer, preparedTop);
+    function_call_resolved_native_prepared_frame_with_argument_source(
+            state, stackPointer, preparedTop, resultCount, nativeFunction,
+            returnDestination, argumentSourceFrameBase, argumentSourceStartSlot);
+    return ZR_NULL;
+}
+
 SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,
                                 TZrStackValuePointer returnDestination) {
     SZrProfileRuntime *profileRuntime =
@@ -5387,4 +5526,59 @@ void ZrCore_Function_PostCallPreparedSingleResultFast(struct SZrState *state,
                                                       struct SZrCallInfo *callInfo,
                                                       TZrSize resultCount) {
     function_post_call_single_result_no_debug_fast(state, callInfo, resultCount);
+}
+
+#include "bytecode/bytecode_verify.h"
+#include "function/function_bytecode_internal.h"
+
+static TZrBool function_verify_constant_function(const void *context, TZrSize index) {
+    const SZrTypeValue *value = &((const SZrFunction *)context)->constantValueList[index];
+    return (TZrBool)((value->type == ZR_VALUE_TYPE_FUNCTION || value->type == ZR_VALUE_TYPE_CLOSURE) &&
+            !value->isNative && value->value.object != ZR_NULL &&
+            value->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION);
+}
+static TZrSize function_verify_call_arguments(const void *context, TZrSize index) {
+    return ((const SZrFunction *)context)->callSiteCaches[index].argumentCount;
+}
+static TZrBool function_verify_instructions(const SZrFunction *f, TZrBool guarded) {
+    SZrBytecodeVerificationView view = {0};
+    if (f == ZR_NULL || f->parameterCount > f->stackSize ||
+        (f->constantValueLength && !f->constantValueList) ||
+        (f->callSiteCacheLength && !f->callSiteCaches) ||
+        (f->catchClauseCount && !f->catchClauseList) ||
+        (f->exceptionHandlerCount && !f->exceptionHandlerList)) return ZR_FALSE;
+    view.allowGuardedFallthrough = guarded;
+    view.instructions = f->instructionsList;
+    view.instructionsLength = f->instructionsLength;
+    view.stackSize = f->stackSize;
+    view.constantVariablesLength = f->constantValueLength;
+    view.closureVariablesLength = f->closureValueLength;
+    view.memberEntriesLength = f->memberEntryLength;
+    view.callSiteCacheLength = f->callSiteCacheLength;
+    view.prototypesLength = f->prototypeCount;
+    view.exceptionHandlerCount = f->exceptionHandlerCount;
+    view.arrayInitialLengthAllowed = ZR_TRUE;
+    view.arrayInitialLengthLimit = ((TZrSize)512u * 1024u * 1024u) / sizeof(SZrTypeValue);
+    view.context = f;
+    view.constantIsFunction = function_verify_constant_function;
+    view.callArgumentCount = function_verify_call_arguments;
+    if (!bytecode_verify_body(&view)) return ZR_FALSE;
+    for (TZrSize n = 0; n < f->catchClauseCount; ++n)
+        if (f->catchClauseList[n].targetInstructionOffset >= f->instructionsLength) return ZR_FALSE;
+    for (TZrSize n = 0; n < f->exceptionHandlerCount; ++n) {
+        const SZrFunctionExceptionHandlerInfo *h = &f->exceptionHandlerList[n];
+        if (h->protectedStartInstructionOffset >= f->instructionsLength ||
+            h->catchClauseStartIndex > f->catchClauseCount ||
+            h->catchClauseCount > f->catchClauseCount - h->catchClauseStartIndex ||
+            (h->hasFinally && (h->finallyTargetInstructionOffset >= f->instructionsLength ||
+                              h->afterFinallyInstructionOffset >= f->instructionsLength))) return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_VerifyInstructions(const SZrFunction *f) {
+    return function_verify_instructions(f, ZR_FALSE);
+}
+TZrBool function_verify_guarded_instructions(const SZrFunction *f) {
+    return function_verify_instructions(f, ZR_TRUE);
 }

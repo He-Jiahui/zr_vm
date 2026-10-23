@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/io.h"
+#include "zr_vm_core/log.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"
@@ -1623,6 +1624,20 @@ static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debu
     }
 }
 
+/* Decode on indices before multiplying by the current physical slot size. */
+static void io_read_frame_coordinate(SZrIo *io, TZrUInt32 *result) {
+    *result = 0u;
+    TZrUInt32 slot = 0u, intraSlot = 0u;
+    const TZrUInt32 stride = (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    ZR_IO_READ_NATIVE_TYPE(io, slot, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, intraSlot, TZrUInt32);
+    if (io->hasReadError || intraSlot >= stride || slot > (UINT32_MAX - intraSlot) / stride) {
+        io->hasReadError = ZR_TRUE;
+        return;
+    }
+    *result = slot * stride + intraSlot;
+}
+
 /* 帧布局侧表按版本读取；此处保留原始槽位，运行时投影前另执行严格验证。 */
 static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
 
@@ -1630,7 +1645,7 @@ static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
         return;
     }
 
-    ZR_IO_READ_NATIVE_TYPE(io, function->frameByteSize, TZrUInt32);
+    io_read_frame_coordinate(io, &function->frameByteSize);
     ZR_IO_READ_NATIVE_TYPE(io, function->frameByteAlign, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, function->frameSlotLayoutsLength, TZrSize);
     if (function->frameSlotLayoutsLength == 0) {
@@ -1645,7 +1660,7 @@ static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
         SZrIoFunctionFrameSlotLayout ignoredLayout;
         for (TZrSize index = 0; !io->hasReadError && (index < function->frameSlotLayoutsLength); index++) {
             ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.stackSlot, TZrUInt32);
-            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteOffset, TZrUInt32);
+            io_read_frame_coordinate(io, &ignoredLayout.byteOffset);
             ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteSize, TZrUInt32);
             ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteAlign, TZrUInt32);
             ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.typeLayoutId, TZrUInt32);
@@ -1660,7 +1675,7 @@ static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
     for (TZrSize index = 0; !io->hasReadError && (index < function->frameSlotLayoutsLength); index++) {
         SZrIoFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
         ZR_IO_READ_NATIVE_TYPE(io, layout->stackSlot, TZrUInt32);
-        ZR_IO_READ_NATIVE_TYPE(io, layout->byteOffset, TZrUInt32);
+        io_read_frame_coordinate(io, &layout->byteOffset);
         ZR_IO_READ_NATIVE_TYPE(io, layout->byteSize, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, layout->byteAlign, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, layout->typeLayoutId, TZrUInt32);
@@ -2352,12 +2367,23 @@ static void io_read_source(SZrIo *io, SZrIoSource *source) {
     ZR_IO_READ_NATIVE_TYPE(io, source->isBigEndian, TZrBool);
     ZR_IO_READ_NATIVE_TYPE(io, source->isDebug, TZrBool);
     ZrCore_Io_Read(io, (TZrBytePtr)source->optional, sizeof(source->optional));
+    io->sourceVersionPatch = source->versionPatch;
+    if (!io->hasReadError &&
+        memcmp(source->signature, ZR_IO_SOURCE_SIGNATURE, sizeof(source->signature)) == 0 &&
+        source->versionMajor == ZR_VM_MAJOR_VERSION && source->versionMinor == ZR_VM_MINOR_VERSION &&
+        source->versionPatch < ZR_IO_SOURCE_PATCH_MIN_SUPPORTED) {
+        ZrCore_Log_Error(io->state,
+                "unsupported .zro format patch %u (minimum %u): recompile from source for the current value/stack ABI\n",
+                (unsigned)source->versionPatch, (unsigned)ZR_IO_SOURCE_PATCH_MIN_SUPPORTED);
+        io->hasReadError = ZR_TRUE;
+        return;
+    }
     /* The historical isBigEndian field actually stores the writer's little-
      * endian flag. No native-width or byte-order conversion is implemented. */
     if (io->hasReadError ||
         memcmp(source->signature, ZR_IO_SOURCE_SIGNATURE, sizeof(source->signature)) != 0 ||
         source->versionMajor != ZR_VM_MAJOR_VERSION || source->versionMinor != ZR_VM_MINOR_VERSION ||
-        source->versionPatch < ZR_IO_SOURCE_PATCH_HAS_MODULE_INIT_METADATA ||
+        source->versionPatch < ZR_IO_SOURCE_PATCH_MIN_SUPPORTED ||
         source->versionPatch > ZR_IO_SOURCE_PATCH_CURRENT ||
         source->format != (((TZrUInt64)source->versionMajor << ZR_IO_VERSION_FORMAT_SHIFT_BITS) | source->versionMinor) ||
         source->nativeIntSize != sizeof(TZrInt64) || source->typeSizeSize != sizeof(TZrSize) ||

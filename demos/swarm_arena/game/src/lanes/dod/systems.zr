@@ -1,0 +1,239 @@
+let pickup_store = import("lanes/dod/pickup_store");
+let bullet_store = import("lanes/dod/bullet_store");
+let world = import("lanes/dod/world");
+let grid = import("lanes/dod/grid");
+let player = import("player");
+let events = import("events");
+let math = import("zr.math");
+let core = import("&swarmcore");
+let exception = import("zr.system.exception");
+let director = import("director");
+
+pub fn steer(w: world.World, p: player.Bot, g: grid.Grid): void {
+    var px = w.px; var py = w.py; var vx = w.vx; var vy = w.vy;
+    var ax = w.ax; var ay = w.ay;
+    var starts = g.starts; var slots = g.slots; var speeds = w.speed; var ids = w.id;
+    var i = 0;
+    while (i < w.count) {
+        var dx = p.x - px[i]; var dy = p.y - py[i];
+        var d = math.sqrt(dx * dx + dy * dy);
+        var tx = 0.0; var ty = 0.0;
+        if (d > 0.000001) { tx = dx / d * speeds[i]; ty = dy / d * speeds[i]; }
+        var first = g.cell(px[i] - 24.0, py[i] - 24.0);
+        var last = g.cell(px[i] + 24.0, py[i] + 24.0);
+        var row = first / 64;
+        while (row <= last / 64) {
+            var col = first % 64;
+            while (col <= last % 64) {
+                var cell = row * 64 + col; var j = starts[cell]; var end = starts[cell + 1];
+                while (j < end) {
+                    var other = slots[j];
+                    if (other != i) {
+                        var sx = px[i] - px[other]; var sy = py[i] - py[other];
+                        var d2 = sx * sx + sy * sy;
+                        if (d2 <= 0.000001) {
+                            if (ids[i] < ids[other]) { tx -= 24.0; } else { tx += 24.0; }
+                        } else if (d2 <= 576.0) {
+                            var weight = (576.0 - d2) / 576.0 * 600.0;
+                            tx += sx / d2 * weight; ty += sy / d2 * weight;
+                        }
+                    }
+                    j += 1;
+                }
+                col += 1;
+            }
+            row += 1;
+        }
+        ax[i] = (tx - vx[i]) * 6.0; ay[i] = (ty - vy[i]) * 6.0;
+        i += 1;
+    }
+}
+
+pub fn integrate(w: world.World): void {
+    var px = w.px; var py = w.py; var vx = w.vx; var vy = w.vy;
+    var ax = w.ax; var ay = w.ay; var dt = 1.0 / 60.0;
+    var speeds = w.speed;
+    var i = 0;
+    while (i < w.count) {
+        var x = vx[i] + ax[i] * dt; var y = vy[i] + ay[i] * dt;
+        var speed = math.sqrt(x * x + y * y);
+        if (speed > speeds[i]) { x = x / speed * speeds[i]; y = y / speed * speeds[i]; }
+        vx[i] = x; vy[i] = y;
+        var nx = px[i] + x * dt; var ny = py[i] + y * dt;
+        if (nx < 0.0) { nx = 0.0; } if (nx > 4095.0) { nx = 4095.0; }
+        if (ny < 0.0) { ny = 0.0; } if (ny > 4095.0) { ny = 4095.0; }
+        px[i] = nx; py[i] = ny; i += 1;
+    }
+}
+
+pub fn move(pool: world.MovingSoA): void {
+    var px = pool.px; var py = pool.py; var vx = pool.vx; var vy = pool.vy;
+    var life = pool.life; var dt = 1.0 / 60.0;
+    var i = 0;
+    while (i < pool.count) {
+        px[i] = px[i] + vx[i] * dt; py[i] = py[i] + vy[i] * dt;
+        life[i] = life[i] - 1;
+        if (life[i] <= 0) { pool.swapRemove(i); }
+        else { i += 1; }
+    }
+}
+
+pub fn moveBullets(b: bullet_store.Bullets): void {
+    var pool = b.motion;
+    var px = pool.px; var py = pool.py; var vx = pool.vx; var vy = pool.vy;
+    var life = pool.life; var i = 0; var dt = 1.0 / 60.0;
+    while (i < pool.count) {
+        px[i] = px[i] + vx[i] * dt; py[i] = py[i] + vy[i] * dt;
+        life[i] = life[i] - 1;
+        if (life[i] <= 0) { b.swapRemove(i); } else { i += 1; }
+    }
+}
+
+pub fn collide(w: world.World, b: bullet_store.Bullets, g: grid.Grid,
+               q: events.EventQueue, p: player.Bot, frame: int): void {
+    var ex = w.px; var ey = w.py; var ids = w.id;
+    var motion = b.motion;
+    var bx = motion.px; var by = motion.py; var starts = g.starts; var slots = g.slots;
+    var radii = w.radius;
+    var i = 0;
+    while (i < motion.count) {
+        var first = g.cell(bx[i] - 20.0, by[i] - 20.0);
+        var last = g.cell(bx[i] + 20.0, by[i] + 20.0);
+        var row = first / 64;
+        while (row <= last / 64 && b.pierce[i] > 0) {
+            var col = first % 64;
+            while (col <= last % 64 && b.pierce[i] > 0) {
+                var cell = row * 64 + col; var j = starts[cell]; var end = starts[cell + 1];
+                while (j < end && b.pierce[i] > 0) {
+                    var slot = slots[j]; var dx = ex[slot] - bx[i]; var dy = ey[slot] - by[i];
+                    var radius = radii[slot] + 2.0;
+                    if (dx * dx + dy * dy <= radius * radius && !b.alreadyHit(i, ids[slot])) {
+                        if (!q.hit(ids[slot], b.damage[i])) { throw new exception.RuntimeError("event queue capacity exceeded"); }
+                        b.recordHit(i, ids[slot]);
+                    }
+                    j += 1;
+                }
+                col += 1;
+            }
+            row += 1;
+        }
+        if (b.pierce[i] <= 0) { b.swapRemove(i); } else { i += 1; }
+    }
+    i = 0;
+    while (i < w.count && frame >= p.immuneUntil) {
+        var dx = ex[i] - p.x; var dy = ey[i] - p.y;
+        var radius = radii[i] + 10.0;
+        if (dx * dx + dy * dy <= radius * radius) {
+            if (!q.playerHit(1)) { throw new exception.RuntimeError("event queue capacity exceeded"); }
+            p.immuneUntil = frame + 30;
+        }
+        i += 1;
+    }
+}
+
+pub fn drain(w: world.World, particles: world.MovingSoA, q: events.EventQueue, p: player.Bot,
+             pickups: pickup_store.Pickups, rng: int, burst: int): int {
+    while (q.pop()) {
+        if (q.tag == 1) {
+            var slot = w.find(q.id);
+            // Earlier queued hits may already have removed this stable ID.
+            if (slot >= 0) {
+                w.hp[slot] = w.hp[slot] - q.damage; w.hits += 1;
+                if (w.hp[slot] <= 0) {
+                    if (!q.killedKind(w.id[slot], w.kind[slot], w.boss[slot], w.px[slot], w.py[slot])) {
+                        throw new exception.RuntimeError("event queue capacity exceeded");
+                    }
+                    w.swapRemove(slot);
+                }
+            }
+        } else if (q.tag == 2) {
+            w.kills += 1; w.score += 10;
+            var i = 0;
+            if (burst == 64) {
+                var request = new world.MovingSoA(64);
+                while (i < 64) {
+                    request.add(q.x, q.y, p.circleX[i] * 24.0, p.circleY[i] * 24.0, 24); i += 1;
+                }
+                i = 0;
+                while (i < 64) {
+                    particles.add(request.px[i], request.py[i], request.vx[i], request.vy[i], request.life[i]); i += 1;
+                }
+            }
+            i = 0;
+            while (i < burst && burst != 64) {
+                var vx = 0.0; var vy = 0.0;
+                if (i == 0) { vx = 24.0; } else if (i == 1) { vx = -24.0; }
+                else if (i == 2) { vy = 24.0; } else { vy = -24.0; }
+                // Cosmetic overflow is allowed to drop a particle, never RNG.
+                particles.add(q.x, q.y, vx, vy, 24); i += 1;
+            }
+            rng = core.nextState(rng);
+            if (rng % 2 == 0 || q.boss != 0) {
+                var value = 1;
+                if (q.kind == 1) { value = 2; } else if (q.kind == 2) { value = 4; }
+                if (q.boss != 0) { value = 8; }
+                pickups.add(q.x, q.y, value); w.drops += 1;
+            }
+        } else if (q.tag == 3) { p.hp -= q.damage; if (p.hp < 0) { p.hp = 0; } }
+    }
+    return rng;
+}
+
+pub fn magnet(pickups: pickup_store.Pickups, p: player.Bot, rng: int): int {
+    var px = pickups.px; var py = pickups.py; var i = 0;
+    while (i < pickups.count) {
+        var dx = p.x - px[i]; var dy = p.y - py[i]; var d2 = dx * dx + dy * dy;
+        if (d2 <= p.magnetRadius * p.magnetRadius && d2 > 0.000001) {
+            var distance = math.sqrt(d2); var step = 240.0 / 60.0;
+            if (step > distance) { step = distance; }
+            px[i] = px[i] + dx / distance * step; py[i] = py[i] + dy / distance * step;
+            dx = p.x - px[i]; dy = p.y - py[i]; d2 = dx * dx + dy * dy;
+        }
+        if (d2 <= 256.0) {
+            p.collected += 1; rng = player.gain(p, pickups.value[i], rng); pickups.swapRemove(i);
+        } else { i += 1; }
+    }
+    return rng;
+}
+
+pub fn cheapHash(w: world.World, b: bullet_store.Bullets, p: player.Bot, wave: director.Director,
+                 pickups: pickup_store.Pickups, rng: int, frame: int, hash: int): int {
+    var h = core.mix(hash, frame); h = core.mix(h, rng); h = core.mix(h, w.nextId);
+    h = core.mix(h, w.count); h = core.mix(h, b.motion.count); h = core.mix(h, p.hp);
+    h = core.mix(h, p.immuneUntil); h = core.mix(h, w.shots); h = core.mix(h, w.hits);
+    h = core.mix(h, w.kills); h = core.mix(h, w.score); h = core.mix(h, w.drops);
+    h = core.mix(h, p.collected); h = core.mix(h, p.level); h = core.mix(h, p.xp);
+    h = core.mix(h, p.threshold); h = core.mix(h, p.damage); h = core.mix(h, p.pierce);
+    h = core.mix(h, p.aimedCount); h = core.mix(h, p.radialCount); h = core.mixPosition(h, p.magnetRadius);
+    h = core.mix(h, p.nextBurst); h = core.mix(h, p.upgradesHash);
+    h = core.mix(h, wave.waveIndex); h = core.mix(h, wave.waveStart); h = core.mix(h, wave.nextSpawn);
+    h = core.mix(h, wave.transitions); h = core.mix(h, wave.bossWaves); h = core.mix(h, wave.burstSpawns);
+    h = core.mix(h, wave.totalSpawned); return core.mix(h, pickups.count);
+}
+
+pub fn positionsHash(w: world.World, b: bullet_store.Bullets, p: player.Bot, pickups: pickup_store.Pickups, hash: int): int {
+    var h = core.mixPosition(hash, p.x); h = core.mixPosition(h, p.y);
+    var i = 0;
+    while (i < w.count) {
+        h = core.mix(h, w.id[i]); h = core.mix(h, w.kind[i]); h = core.mix(h, w.boss[i]); h = core.mix(h, w.hp[i]);
+        h = core.mixPosition(h, w.px[i]); h = core.mixPosition(h, w.py[i]);
+        h = core.mixPosition(h, w.vx[i]); h = core.mixPosition(h, w.vy[i]);
+        h = core.mixPosition(h, w.ax[i]); h = core.mixPosition(h, w.ay[i]); i += 1;
+    }
+    i = 0;
+    var motion = b.motion;
+    while (i < motion.count) {
+        h = core.mixPosition(h, motion.px[i]); h = core.mixPosition(h, motion.py[i]);
+        h = core.mixPosition(h, motion.vx[i]); h = core.mixPosition(h, motion.vy[i]);
+        h = core.mix(h, motion.life[i]); h = core.mix(h, b.damage[i]); h = core.mix(h, b.pierce[i]);
+        h = core.mix(h, b.hitCount[i]); var j = 0;
+        while (j < b.hitCount[i]) { h = core.mix(h, b.history[i * 8 + j]); j += 1; }
+        i += 1;
+    }
+    i = 0;
+    while (i < pickups.count) {
+        h = core.mixPosition(h, pickups.px[i]); h = core.mixPosition(h, pickups.py[i]);
+        h = core.mix(h, pickups.value[i]); i += 1;
+    }
+    return h;
+}

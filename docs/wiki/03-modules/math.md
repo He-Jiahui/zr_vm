@@ -123,14 +123,14 @@ descriptor 的签名文字仍误写为 `fillValue: float`。get(indices) 与 set
 矩阵构造器支持零参数（生成 identity）或恰好 9/16 个 `float` 参数。
 Matrix3x3 的 `inverse` 在 `abs(det) <= 1e-9` 时以 native false 表示失败；VM 无异常时 dispatcher 返回
 null，虽然 descriptor 仍写 `Matrix3x3`。其阈值/类型契约、极值运算及字段写入失败的限制见
-[Matrix3x3 API](math-api.md#matrix3x3-调用与失败边界)。
+[Matrix3x3 API](math-api.md#matrix3x3)。
 Matrix4x4 则逐枢轴检查 `abs(pivot) <= 1e-9`，失败时同样可能交付 null；固定阈值的政策疑点、
-行列式静态反例及字段写入失败路径见 [Matrix4x4 API](math-api.md#matrix4x4-调用与失败边界)。
+行列式静态反例及字段写入失败路径见 [Matrix4x4 API](math-api.md#matrix4x4)。
 
 Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
 **BUG:** 极大有限分量的平方溢出使 magnitude 返回无穷、normalized 返回零；两个不同有限模长可能在 compare 中同返 0，复乘的可表示实部也可能因 Inf-Inf 变为 NaN。
-**BUG:** 未驻留短串 HASH_BUCKET 扩容失败可使 toString 成功却保留 NULL 结果；新对象 factory 的首次 ignored-root ARRAY pin 扩容软失败可交付缺字段对象。**TODO:** NaN / unordered 的 compare tri-state 策略和 Construct target 借用仍待核实，已证缺陷的窄化前提见 [Complex 审查记录](../../code-review/batches/20261014-complex-contracts.md)。
-调用约束及现有乘法公式见 [Complex API](math-api.md#complex-和-quaternion)。
+**BUG:** 未驻留短串 HASH_BUCKET 扩容失败可使 toString 成功却保留 NULL 结果；新对象 factory 的首次 ignored-root ARRAY pin 扩容软失败可交付缺字段对象。**TODO:** NaN / unordered 的 compare tri-state 策略和 Construct target 借用仍待核实，已证缺陷的窄化前提见 [Complex 审查记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-complex-contracts.md)。
+调用约束及现有乘法公式见 [Complex API](math-api.md#complex-quaternion)。
 
 ## 数值规则
 
@@ -144,9 +144,9 @@ helper 保持一致。
 模块初始化按 scalar、vector、quaternion、complex、matrix、tensor registry 顺序收集
 function/type descriptors，并发布 `zr.math`、版本 `1.0.0`、native plugin ABI 和
 runtime ABI。当前收集 25 个模块函数、8 个类型和 13 条结构化提示，类型方法保留在类型 descriptor。注册入口委托 native registry 核查 ABI、能力和 provider 契约；
-`invokeCallback` 通过 `ZrLib_CallValue` 同步调用 callable，并原样交付实际 VM 结果标签。当前 descriptor、hint 和精简 JSON 声明 float，但 bool/字符串等成功结果不会据此转换；这是已静态证实的返回标签 BUG，见[Scalar审查批次](../../code-review/batches/20261015-math-scalar-contracts.md)。
+`invokeCallback` 通过 `ZrLib_CallValue` 同步调用 callable，并原样交付实际 VM 结果标签。当前 descriptor、hint 和精简 JSON 声明 float，但 bool/字符串等成功结果不会据此转换；这是已静态证实的返回标签 BUG，见[Scalar审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-math-scalar-contracts.md)。
 
-静态 descriptor 与嵌套表依赖模块映像，查询不注册到 VM；Register 的 false 可能发生在下层 Attach 之后。首次初始化需要宿主同步，扩展 registry 前须复核容量，具体借用、线程及失败边界见 [模块入口 API](math-api.md#模块描述符与宿主注册边界)。
+静态 descriptor 与嵌套表依赖模块映像，查询不注册到 VM；Register 的 false 可能发生在下层 Attach 之后。首次初始化需要宿主同步，扩展 registry 前须复核容量，具体借用、线程及失败边界见 [模块入口 API](math-api.md#module-registration)。
 
 ## C API
 
@@ -166,6 +166,6 @@ registry 附着、ABI、能力或 provider 契约检查失败时返回 false；�
 
 构造/clone/reshape/toArray只复制外层数组容器，元素对象不递归复制。constructorSignature第二参数fillValue: float与实际data数组不符，是metadata缺陷；参数类型仍由callback读取，Parser只保存签名并检查无参构造形式。shape/data/rank/size缓存一致性不由GetStorage重建。
 
-**BUG:** 有效shape/index数组中的有限1e300可到达未检查的float-to-int64转换；正维度乘积无溢出检查。正确长度的非数值data可经构造进入sum/mean或按零继续的运算。单次ignored-root ARRAY扩容软失败可令复制/输出shape漏轴；仅丢值1的轴、其他步骤成功时仍可能通过总量校验。短串格式化缓存的HASH_BUCKET软失败也可true/null。具体条件及共享根因见 [Tensor台账](../../code-review/coverage/zr_vm_lib_math_tensor.tsv)。
+**BUG:** 有效shape/index数组中的有限1e300可到达未检查的float-to-int64转换；正维度乘积无溢出检查。正确长度的非数值data可经构造进入sum/mean或按零继续的运算。单次ignored-root ARRAY扩容软失败可令复制/输出shape漏轴；仅丢值1的轴、其他步骤成功时仍可能通过总量校验。短串格式化缓存的HASH_BUCKET软失败也可true/null。具体条件及共享根因见 [Tensor台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_tensor.tsv)。
 
-**TODO:** 新VM数组由C临时值持有并跨后续复制、对象构造或字段发布；条件性full GC窗口的显式root需按具体链核查，不宣称已回收或移动。小数索引/shape比较、void写状态和缓存一致性政策另列待核。现有module suite的两个同名pipeline为常量11 stub；人工numeric project本批未运行，无数值/故障断言。详见 [批次证据](../../code-review/batches/20261015-math-tensor-contracts.md)。
+**TODO:** 新VM数组由C临时值持有并跨后续复制、对象构造或字段发布；条件性full GC窗口的显式root需按具体链核查，不宣称已回收或移动。小数索引/shape比较、void写状态和缓存一致性政策另列待核。现有module suite的两个同名pipeline为常量11 stub；人工numeric project本批未运行，无数值/故障断言。详见 [批次证据](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-math-tensor-contracts.md)。

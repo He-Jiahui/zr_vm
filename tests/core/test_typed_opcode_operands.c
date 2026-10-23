@@ -153,6 +153,8 @@ static void check(const Case *test, unsigned badOperand, TZrBool observed) {
         code[2].instruction.operand.operand1[1] = 1;
     } else if (test->layout == BRANCH || test->layout == CONST_BRANCH) {
         code[2] = instruction(test->opcode, 0, 1, 0);
+        if (test->opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE))
+            code[2].instruction.operand.operand2[0] = 0;
     }
     code[3] = instruction(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, 2, 0);
     success = execute_and_destroy(state, code, ZR_ARRAY_COUNT(code), values, ZR_ARRAY_COUNT(values), observed);
@@ -168,6 +170,32 @@ static void test_typed_opcodes_reject_invalid_runtime_values(void) {
                 check(&cases[i], 1, observed);
             if (cases[i].layout == ADD_MOD) check(&cases[i], 2, observed);
             check(&cases[i], 3, observed);
+        }
+    }
+}
+
+static void test_signed_comparisons_reject_unsigned_operands(void) {
+    static const EZrInstructionCode opcodes[] = {
+        ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED),
+        ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED),
+        ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED)
+    };
+    for (unsigned observed = 0u; observed < 2u; ++observed) {
+        for (unsigned op = 0u; op < ZR_ARRAY_COUNT(opcodes); ++op) {
+            for (unsigned operand = 0u; operand < 2u; ++operand) {
+                SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+                SZrTypeValue values[2];
+                TZrInstruction code[4];
+                TEST_ASSERT_NOT_NULL(state);
+                ZrCore_Value_InitAsInt(state, &values[0], 2);
+                ZrCore_Value_InitAsInt(state, &values[1], 3);
+                ZrCore_Value_InitAsUInt(state, &values[operand], UINT64_MAX);
+                code[0] = instruction(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0, 0);
+                code[1] = instruction(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1, 0);
+                code[2] = instruction(opcodes[op], 2, 0, 1);
+                code[3] = instruction(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, 2, 0);
+                TEST_ASSERT_FALSE(execute_and_destroy(state, code, 4u, values, 2u, observed));
+            }
         }
     }
 }
@@ -325,6 +353,7 @@ static void test_call_opcodes_reject_null_callables(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_opcodes_reject_invalid_runtime_values);
+    RUN_TEST(test_signed_comparisons_reject_unsigned_operands);
     RUN_TEST(test_typed_array_opcodes_reject_invalid_runtime_values);
     RUN_TEST(test_typed_array_bind_and_append_reject_invalid_runtime_values);
     RUN_TEST(test_call_opcodes_reject_null_callables);

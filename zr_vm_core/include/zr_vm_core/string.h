@@ -41,7 +41,7 @@ struct ZR_STRUCT_ALIGN SZrString {
 typedef struct SZrString SZrString;
 
 
-/** 短串驻留表兼作 GC 根；young bucket 索引必须与哈希表当前容量同步。 */
+/** Weak short-string intern table; young bucket indexes track the current capacity. */
 struct ZR_STRUCT_ALIGN SZrStringTable {
     SZrHashSet stringHashSet;
     TZrBool isValid;
@@ -50,6 +50,7 @@ struct ZR_STRUCT_ALIGN SZrStringTable {
     TZrSize minorYoungBucketCapacity;
     TZrSize minorYoungBucketCount;
     SZrString *shortStringListHead;
+    SZrString *minorOldShortStringBoundary;
 };
 
 typedef struct SZrStringTable SZrStringTable;

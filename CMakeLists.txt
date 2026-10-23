@@ -187,6 +187,11 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+option(ZR_VM_BUILD_DEMOS "Build demos" OFF)
+if (ZR_VM_BUILD_DEMOS)
+    add_subdirectory(demos)
+endif ()
+
 # 扩展目标需要语言服务器和 Node/npm，普通 C 库构建不触发 npm 或 WASM 打包。
 option(BUILD_LANGUAGE_SERVER_EXTENSION "Build VS Code Language Server Extension" OFF)
 if (BUILD_LANGUAGE_SERVER_EXTENSION AND NOT BUILD_LANGUAGE_SERVER)

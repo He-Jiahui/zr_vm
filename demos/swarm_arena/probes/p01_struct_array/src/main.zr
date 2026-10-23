@@ -1,0 +1,35 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+
+var points = new Array<Vec2>();
+// Keep construction outside add() to isolate element read/modify/write.
+// nested.zr preserves the independent nested-constructor failure.
+var initial = init Vec2(1.0, 2.0);
+points.add(initial);
+var copy = points[0];
+copy.x = 7.0;
+if (points[0].x != 1.0) { throw "P01 local struct read unexpectedly aliases element"; }
+points[0] = copy;
+if (points[0].x != 7.0) { throw "P01 explicit element writeback failed"; }
+points[0].x = 9.0;
+var fieldWriteThrough = points[0].x == 9.0;
+if (!fieldWriteThrough) { throw "P01 direct field writeback failed"; }
+var scalars = new Array<float>();
+scalars.add(1.0);
+var i = 0;
+while (i < 10000) {
+    var p = points[0];
+    p.y = p.y + 1.0;
+    points[0] = p;
+    scalars[0] = scalars[0] + 1.0;
+    i += 1;
+}
+if (points[0].y != 10002.0 || scalars[0] != 10001.0) { throw "P01 loop mismatch"; }
+system.console.printLine("PROBE_OK P01 writeThrough=" + <string> fieldWriteThrough + " iterations=10000");
+return 0;

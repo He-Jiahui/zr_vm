@@ -1,0 +1,2 @@
+fn inc(n: int): int { return n + 1; }
+var n = 0; var i = 0; while (i < 42) { n = inc(n); i = i + 1; } return n;

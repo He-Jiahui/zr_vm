@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 2,
+  "name": "p14_plugin_package",
+  "version": "0.1.0",
+  "kind": "application",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main",
+  "aliases": {
+    "#gfx": "native:zrgame.probe"
+  },
+  "dependencies": {
+    "@swarmcore": {
+      "version": "0.1.0",
+      "path": "packages/swarmcore/swarmcore.zrp"
+    }
+  }
+}

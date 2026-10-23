@@ -1,0 +1,14 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+var xs = new Array<float>();
+xs.add(1.0); xs.add(2.0); xs.add(3.0);
+var a = 0.0;
+for (var x in xs) { a += x; }
+var b = 0.0;
+for (var i: int = 0; i < xs.length; i += 1) { b += xs[i]; }
+var c = 0.0;
+var j = 0;
+while (j < xs.length) { c += xs[j]; j += 1; }
+if (a != 6.0 || b != a || c != a) { throw "P06 iteration mismatch"; }
+system.console.printLine("PROBE_OK P06 foreach for while");
+return 0;

@@ -2,14 +2,38 @@
 
 #include "gc/gc_internal.h"
 
+/* Native destructors may inspect keys/children in their object's graph. Run
+ * them before any node in that graph can be swept, with weak strings intact.
+ * Detach each callback before invoking it so teardown remains exactly once. */
+TZrSize garbage_collector_finalize_unreachable(SZrState *state, TZrBool minor, TZrBool shutdown) {
+    TZrSize work = 0u;
+    SZrRawObject *object = state->global->garbageCollector->gcObjectList;
+    while (object != ZR_NULL && (!minor || object != state->global->garbageCollector->minorOldBoundary)) {
+        if (object->scanMarkGcFunction != ZR_NULL &&
+            (object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA ||
+             object->type == ZR_RAW_OBJECT_TYPE_OBJECT || object->type == ZR_RAW_OBJECT_TYPE_ARRAY) &&
+            (shutdown ||
+             ((!minor || object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) &&
+              object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED &&
+              object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN &&
+              object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT))) {
+            FRawObjectScanMarkGc finalize = object->scanMarkGcFunction;
+            object->scanMarkGcFunction = ZR_NULL;
+            finalize(state, object);
+            work++;
+        }
+        object = object->next;
+    }
+    return work;
+}
+
 /* 从双指针游标续扫对象链；返回待处理链节点地址供下一切片恢复。 */
 SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list, int maxCount, int *count) {
     SZrGlobalState *global = state->global;
     SZrRawObject **current = list;
 
     *count = 0;
-    /* BUG: 只有释放对象才增加 count；存活对象不消耗 maxCount，
-     * 增量驱动在预算为 1 时仍可能遍历整个存活链并形成长暂停。 */
+    /* Every visited node consumes the slice, including surviving objects. */
     while (*current != ZR_NULL && *count < maxCount) {
         SZrRawObject *object = *current;
 
@@ -23,6 +47,7 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
             *current = ZR_NULL;
             break;
         }
+        (*count)++;
 
         if (garbage_collector_object_is_unreferenced_fast(global->garbageCollector, object)) {
             SZrRawObject *next = object->next;
@@ -32,13 +57,18 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
              * 此处先摘链再释放，非局部跳转将跳过债务及 GC 暂停清理。 */
             *current = next;
             garbage_collector_free_object_sized(state, object, objectSize);
-            (*count)++;
 
             /* 清扫债务只扣除已释放对象大小，不让当前债务变成负数。 */
             TZrMemoryOffset objectDebt = objectSize > (TZrSize)ZR_MAX_MEMORY_OFFSET
                                                 ? ZR_MAX_MEMORY_OFFSET : (TZrMemoryOffset)objectSize;
             ZrCore_GarbageCollector_AddDebtSpace(global, -objectDebt);
         } else {
+            /* Survivors become white in the current epoch. Leaving them black
+             * makes later incremental cycles retain every previous survivor. */
+            if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+                object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+                object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
+            }
             current = &object->next;
         }
     }
@@ -50,6 +80,7 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
 void garbage_collector_enter_sweep(SZrState *state) {
     SZrGlobalState *global = state->global;
 
+    global->garbageCollector->minorOldBoundary = ZR_NULL;
     global->garbageCollector->gcObjectListSweeper = &global->garbageCollector->gcObjectList;
 }
 

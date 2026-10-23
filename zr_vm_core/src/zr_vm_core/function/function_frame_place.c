@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/function.h"
 #include "function/function_argument_staging.h"
+#include "execution/execution_union_storage.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
@@ -16,6 +17,7 @@
 #include "zr_vm_core/type_layout.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 static TZrSize function_frame_byte_storage_slot_count(TZrUInt32 byteSize) {
     TZrSize slotByteSize = sizeof(SZrTypeValueOnStack);
@@ -73,7 +75,82 @@ TZrBool ZrCore_Function_FrameStackSlotIntersectsInlineStruct(const SZrFunction *
     return ZR_FALSE;
 }
 
-TZrBool ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(const SZrFunction *function,
+static TZrBool function_frame_gc_summary_valid(const SZrFunction *function) {
+    return function != ZR_NULL && function->frameGcSummaryValid &&
+           function->frameGcSummaryLayouts == function->frameSlotLayouts &&
+           function->frameGcSummaryLength == function->frameSlotLayoutLength &&
+           function->frameGcSummaryByteSize == function->frameByteSize;
+}
+
+static TZrBool function_frame_layout_has_gc(const SZrFunctionFrameSlotLayout *layout) {
+    return (layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+            layout->byteSize >= sizeof(SZrTypeValue)) ||
+           (layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT && layout->byteSize != 0u);
+}
+
+void ZrCore_Function_FinalizeFrameGcCoverage(SZrFunction *function) {
+    TZrBool packed;
+    TZrSize slots;
+    if (function == ZR_NULL) return;
+    free(function->frameGcSlotBitmap);
+    function->frameGcSlotBitmap = ZR_NULL;
+    function->frameGcSummaryValid = ZR_FALSE;
+    function->frameGcLayoutsPresent = ZR_FALSE;
+    function->frameGcInlineLayoutsPresent = ZR_FALSE;
+    function->frameGcFirstSlot = 0u;
+    function->frameGcEndSlot = 0u;
+    function->frameGcSummaryLayouts = function->frameSlotLayouts;
+    function->frameGcSummaryLength = function->frameSlotLayoutLength;
+    function->frameGcSummaryByteSize = function->frameByteSize;
+    if (function->frameSlotLayouts == ZR_NULL) {
+        function->frameGcSummaryValid = function->frameSlotLayoutLength == 0u;
+        return;
+    }
+    slots = ((TZrSize)function->frameByteSize + sizeof(SZrTypeValueOnStack) - 1u) /
+            sizeof(SZrTypeValueOnStack);
+    packed = function->frameSlotLayoutLength == function->stackSize;
+    for (TZrUInt32 i = 0u; i < function->frameSlotLayoutLength; ++i) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[i];
+        if (layout->slotKind != ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+            layout->byteSize != sizeof(SZrTypeValue) ||
+            (TZrUInt64)layout->byteOffset !=
+                    ((TZrUInt64)function->stackSize + i) * sizeof(SZrTypeValueOnStack)) packed = ZR_FALSE;
+        if (!function_frame_layout_has_gc(layout)) continue;
+        function->frameGcLayoutsPresent = ZR_TRUE;
+        if (layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT)
+            function->frameGcInlineLayoutsPresent = ZR_TRUE;
+        if (layout->byteOffset > function->frameByteSize ||
+            layout->byteSize > function->frameByteSize - layout->byteOffset) return;
+    }
+    if (packed) {
+        function->frameGcFirstSlot = function->stackSize;
+        function->frameGcEndSlot = function->stackSize + function->frameSlotLayoutLength;
+    } else if (function->frameGcLayoutsPresent) {
+        function->frameGcSlotBitmap = (TZrUInt8 *)calloc((slots + 7u) / 8u, 1u);
+        if (function->frameGcSlotBitmap == ZR_NULL) return; /* Checked fallback on OOM. */
+        function->frameGcEndSlot = (TZrUInt32)slots;
+        for (TZrUInt32 i = 0u; i < function->frameSlotLayoutLength; ++i) {
+            const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[i];
+            if (!function_frame_layout_has_gc(layout)) continue;
+            TZrSize first = layout->byteOffset / sizeof(SZrTypeValueOnStack);
+            TZrSize end = ((TZrSize)layout->byteOffset + layout->byteSize +
+                          sizeof(SZrTypeValueOnStack) - 1u) / sizeof(SZrTypeValueOnStack);
+            for (TZrSize slot = first; slot < end; ++slot)
+                function->frameGcSlotBitmap[slot / 8u] |= (TZrUInt8)(1u << (slot % 8u));
+        }
+    }
+    function->frameGcSummaryValid = ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_HasFrameGcLayouts(const SZrFunction *function) {
+    if (function_frame_gc_summary_valid(function)) return function->frameGcLayoutsPresent;
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->frameSlotLayoutLength; ++i)
+        if (function_frame_layout_has_gc(&function->frameSlotLayouts[i])) return ZR_TRUE;
+    return ZR_FALSE;
+}
+
+static TZrBool function_frame_gc_intersects_linear(const SZrFunction *function,
                                                              TZrStackValuePointer frameBase,
                                                              TZrStackValuePointer stackSlot) {
     const TZrByte *slotStart;
@@ -108,6 +185,26 @@ TZrBool ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(const SZrFunction *
     }
 
     return ZR_FALSE;
+}
+
+TZrBool ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(const SZrFunction *function,
+                                                             TZrStackValuePointer frameBase,
+                                                             TZrStackValuePointer stackSlot) {
+    TZrBool covered = ZR_FALSE;
+    if (frameBase == ZR_NULL || stackSlot == ZR_NULL) return ZR_FALSE;
+    if (!function_frame_gc_summary_valid(function))
+        return function_frame_gc_intersects_linear(function, frameBase, stackSlot);
+    if (stackSlot >= frameBase) {
+        TZrSize slot = (TZrSize)(stackSlot - frameBase);
+        if (slot >= function->frameGcFirstSlot && slot < function->frameGcEndSlot) {
+            covered = function->frameGcSlotBitmap == ZR_NULL ||
+                      (function->frameGcSlotBitmap[slot / 8u] & (1u << (slot % 8u))) != 0u;
+        }
+    }
+#ifdef ZR_DEBUG
+    ZR_ASSERT(covered == function_frame_gc_intersects_linear(function, frameBase, stackSlot));
+#endif
+    return covered;
 }
 
 static TZrBool function_frame_slot_matches_layout_kind(const SZrFunctionFrameSlotLayout *slotLayout,
@@ -726,6 +823,10 @@ TZrBool ZrCore_Function_CopyInlineStorageToObjectValue(
     }
 
     typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(sourceFunction, sourceTypeLayoutId, state);
+    if (typeLayout != ZR_NULL && typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) {
+        return execution_inline_frame_materialize_union_storage_to_carrier(
+                state, sourceFunction, sourceTypeLayoutId, sourceAddress, sourceByteSize, outValue);
+    }
     prototype = ZrCore_Function_ResolvePrototypeFrameStructPrototype(state, sourceFunction, sourceTypeLayoutId);
     if (typeLayout == ZR_NULL ||
         prototype == ZR_NULL ||
@@ -786,14 +887,28 @@ TZrBool ZrCore_Function_CopyObjectValueToInlineStorage(SZrState *state,
     if (state == ZR_NULL ||
         destinationFunction == ZR_NULL ||
         destinationAddress == ZR_NULL ||
-        !function_frame_value_is_struct_object(sourceValue, &sourceObject) ||
-        sourceObject->prototype == ZR_NULL ||
+        sourceValue == ZR_NULL ||
         destinationTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
         return ZR_FALSE;
     }
 
     typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(destinationFunction, destinationTypeLayoutId, state);
     if (typeLayout == ZR_NULL || typeLayout->byteSize > destinationByteSize) {
+        return ZR_FALSE;
+    }
+
+    if (typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) {
+        if (sourceValue->type != ZR_VALUE_TYPE_OBJECT || sourceValue->isNative ||
+            sourceValue->value.object == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        return execution_inline_frame_materialize_union_carrier_to_inline_storage(
+                state, destinationFunction, destinationTypeLayoutId,
+                destinationAddress, destinationByteSize,
+                ZR_CAST_OBJECT(state, sourceValue->value.object));
+    }
+    if (!function_frame_value_is_struct_object(sourceValue, &sourceObject) ||
+        sourceObject->prototype == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1966,7 +2081,12 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap_layout(
     receiverTypeLayout = resolver(function, receiverLayout->typeLayoutId, resolverUserData);
     if (!function_frame_slot_matches_layout_kind(receiverLayout, receiverTypeLayout) ||
         !ZrCore_TypeLayout_Validate(receiverTypeLayout) ||
-        receiverTypeLayout->byteSize != receiverLayout->byteSize ||
+        (receiverTypeLayout->byteSize != receiverLayout->byteSize &&
+         (resolver != ZrCore_Function_ResolvePrototypeFrameTypeLayout ||
+          !ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+                  function, receiverLayout->typeLayoutId,
+                  receiverLayout->byteSize, receiverLayout->byteAlign,
+                  (SZrState *)resolverUserData))) ||
         receiverTypeLayout->byteAlign != receiverLayout->byteAlign ||
         (requireCanonicalLayoutIdentity &&
          receiverTypeLayout->cTypeId != receiverLayout->typeLayoutId) ||

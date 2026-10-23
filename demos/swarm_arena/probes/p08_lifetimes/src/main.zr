@@ -1,0 +1,24 @@
+let system = import("zr.system");
+class Counts {
+    pub static var destroyed: int = 0;
+    pub static var closed: int = 0;
+}
+resource class Handle {
+    pub @constructor() { }
+    pub @destructor() { Counts.destroyed += 1; }
+}
+class Zone {
+    pub @close(error) { Counts.closed += 1; }
+}
+fn scope(): void {
+    var handle: Unique<Handle> = own Handle();
+    if (Counts.destroyed != 0) { throw "P08 premature destructor"; }
+}
+scope();
+if (Counts.destroyed != 1) { throw "P08 destructor not run exactly once at scope end"; }
+using (new Zone()) { if (Counts.closed != 0) { throw "P08 premature close"; } }
+if (Counts.closed != 1) { throw "P08 close not run exactly once"; }
+system.gc.collect("full");
+if (Counts.destroyed != 1) { throw "P08 duplicate destructor"; }
+system.console.printLine("PROBE_OK P08 scope-destructor exactly-once using-close");
+return 0;

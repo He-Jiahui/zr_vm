@@ -1,0 +1,41 @@
+let game_session = import("game_session");
+let config = import("config");
+let exception = import("zr.system.exception");
+
+// The host calls this module by its canonical "game" key. No simulation runs
+// on import; the same Session methods and scalar metadata workarounds serve both drives.
+var hosted: game_session.Session;
+var hostBooted: bool = false;
+
+pub fn boot(scenario: string, lane: string, seed: int, frames: int): int {
+    if (hostBooted) { throw new exception.RuntimeError("host session already booted"); }
+    var cfg = new config.Config();
+    cfg.scenario = scenario; cfg.lane = lane; cfg.seed = seed; cfg.frames = frames;
+    cfg.configure(); cfg.validate();
+    hosted = new game_session.Session(); hosted.boot(cfg); hostBooted = true;
+    return 0;
+}
+pub fn tick(frame: int): int {
+    if (!hostBooted) { throw new exception.RuntimeError("host tick requires boot"); }
+    return hosted.tick(frame);
+}
+pub fn render(frame: int): int {
+    if (!hostBooted) { throw new exception.RuntimeError("host render requires boot"); }
+    return hosted.render(frame);
+}
+pub fn fullHash(): int { return hosted.fullHash(); }
+pub fn entityMax(kind: int): int { return hosted.entityMax(kind); }
+pub fn gcDisable(): int {
+    let system = import("zr.system"); system.gc.disable(); return 0;
+}
+pub fn gcMinor(): int {
+    let system = import("zr.system"); system.gc.collect("minor"); return 0;
+}
+pub fn shutdown(): string {
+    if (!hostBooted) { return ""; }
+    var backend: object = import("zrgame.gfx");
+    hosted.rendered(<int>backend.snapshot(""));
+    var summary = hosted.summary(hosted.fullHash(), "host");
+    hosted.shutdown(); hostBooted = false;
+    return summary;
+}

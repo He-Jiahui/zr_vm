@@ -2,6 +2,39 @@
 #include "compiler/compiler_internal.h"
 #include "type_inference/type_environment_context_lookup.h"
 
+TZrBool compiler_stack_slot_is_reference_parameter(SZrCompilerState *cs, TZrUInt32 stackSlot) {
+    if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || cs->semanticContext == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = cs->localVars.length; index > 0u; --index) {
+        const SZrFunctionLocalVariable *local = ZrCore_Array_Get(&cs->localVars, index - 1u);
+        const SZrCompilerBindingIdentity *identity;
+        const SZrTypeBinding *binding;
+        const SZrSemanticSymbolRecord *symbol;
+        const SZrParameter *parameter;
+        if (local->stackSlot != stackSlot || index > cs->localBindingIdentities.length) {
+            continue;
+        }
+        identity = ZrCore_Array_Get(&cs->localBindingIdentities, index - 1u);
+        binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                cs->typeEnv, local->name, identity->syntaxContext);
+        symbol = binding != ZR_NULL
+                ? ZrParser_Semantic_FindSymbolById(cs->semanticContext, binding->symbolId) : ZR_NULL;
+        if (symbol == ZR_NULL || symbol->astNode == ZR_NULL ||
+            symbol->astNode->type != ZR_AST_PARAMETER) {
+            return ZR_FALSE;
+        }
+        parameter = &symbol->astNode->data.parameter;
+        if (parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF_READONLY ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY) {
+            return ZR_FALSE;
+        }
+        return (TZrBool)(parameter->passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+                         parameter->passingMode == ZR_PARAMETER_PASSING_MODE_OUT);
+    }
+    return ZR_FALSE;
+}
+
 typedef struct SZrCompilerParameterLocalRegistration {
     SZrSemanticIrFunction *function;
     TZrSymbolId symbolId;
@@ -77,6 +110,7 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
     TZrSize valueCount;
     TZrBool equalContext;
     TZrBool isScalar;
+    TZrTypeId storageTypeId;
 
     if (cs == ZR_NULL || cs->hasError || cs->state == ZR_NULL ||
         cs->state->global == ZR_NULL || cs->semanticContext == ZR_NULL ||
@@ -138,9 +172,18 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
          !compiler_parameter_range_equal(binding->declarationRange, sourceRange))) {
         return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
     }
-    if (binding->typeId != ZR_SEMANTIC_ID_INVALID) {
-        type = ZrParser_CanonicalType_Find(cs->semanticContext, binding->typeId);
-        if (type == ZR_NULL || type->id != binding->typeId) {
+    storageTypeId = binding->typeId;
+    if (storageTypeId != ZR_SEMANTIC_ID_INVALID &&
+        compiler_stack_slot_is_reference_parameter(cs, stackSlot)) {
+        storageTypeId = ZrParser_CanonicalType_InternRef(
+                cs->semanticContext, storageTypeId, ZR_CANONICAL_REF_WRITABLE);
+        if (storageTypeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
+        }
+    }
+    if (storageTypeId != ZR_SEMANTIC_ID_INVALID) {
+        type = ZrParser_CanonicalType_Find(cs->semanticContext, storageTypeId);
+        if (type == ZR_NULL || type->id != storageTypeId) {
             return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
         }
     }
@@ -151,7 +194,7 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
                 ZrCore_Array_Get(&cs->preSemanticIrSlots, index);
         if (candidate->stackSlot == stackSlot) {
             if (existingSlot != ZR_NULL || type == ZR_NULL ||
-                candidate->typeId != binding->typeId ||
+                candidate->typeId != storageTypeId ||
                 candidate->symbolId != binding->symbolId ||
                 candidate->placeId == ZR_PLACE_ID_INVALID) {
                 return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
@@ -170,11 +213,11 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
             existingPlace->parentId != ZR_PLACE_ID_INVALID ||
             existingPlace->base.kind != ZR_PARSER_PLACE_BASE_PARAMETER ||
             existingPlace->base.identity != stackSlot ||
-            existingPlace->typeId != binding->typeId ||
+            existingPlace->typeId != storageTypeId ||
             existingPlace->projections.length != 0U ||
             !compiler_parameter_range_equal(existingPlace->sourceRange, sourceRange) ||
             entryValue == ZR_NULL || entryValue->id != existingSlot->valueId ||
-            entryValue->typeId != binding->typeId ||
+            entryValue->typeId != storageTypeId ||
             entryValue->definitionInstructionId != ZR_SEMANTIC_INSTRUCTION_ID_INVALID ||
             !compiler_parameter_range_equal(entryValue->sourceRange, sourceRange)) {
             return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
@@ -197,7 +240,7 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
         if (local->symbolId == binding->symbolId ||
             (existingSlot != ZR_NULL && local->placeId == existingSlot->placeId)) {
             if (existingSlot == ZR_NULL || local->symbolId != binding->symbolId ||
-                local->typeId != binding->typeId || local->placeId != existingSlot->placeId ||
+                local->typeId != storageTypeId || local->placeId != existingSlot->placeId ||
                 !local->isParameter || local->isScalar != isScalar || matchingLocals != 0U) {
                 return ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
             }
@@ -228,7 +271,7 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
     memset(&registration, 0, sizeof(registration));
     registration.function = &cs->preSemanticIr;
     registration.symbolId = binding->symbolId;
-    registration.typeId = binding->typeId;
+    registration.typeId = storageTypeId;
     registration.base.kind = ZR_PARSER_PLACE_BASE_PARAMETER;
     registration.base.identity = stackSlot;
     registration.sourceRange = sourceRange;

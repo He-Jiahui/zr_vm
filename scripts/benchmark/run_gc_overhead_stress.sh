@@ -18,6 +18,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${1:-${ROOT}/build/benchmark-gcc-release}"
+# Runner commands execute from generated project directories.
+BUILD_DIR="$(cd "${BUILD_DIR}" && pwd)"
 
 CLI_EXE="${BUILD_DIR}/bin/zr_vm_cli"
 PERF_RUNNER_EXE="${BUILD_DIR}/bin/zr_vm_perf_runner"

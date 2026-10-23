@@ -1,0 +1,1 @@
+{"name":"swarm_features","source":"src","binary":"bin","entry":"main","build":{"features":["trace","enabled"],"profiles":{"debug":{"enableFeatures":["trace"]},"release":{"enableFeatures":[]}}},"features":{"enabled":true}}

@@ -3,6 +3,7 @@
 #include "object/object_write_internal.h"
 #include "object/object_internal.h"
 #include "gc/gc_domain_internal.h"
+#include "gc/gc_temporary_roots.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
@@ -16,11 +17,6 @@ typedef struct SZrObjectWrite {
     const TZrChar *fieldName;
     SZrTypeValue normalizedKey;
     SZrTypeValue preparedValue;
-    SZrGcRootLease objectLease;
-    SZrGcRootLease valueLease;
-    SZrGcRootLease inputKeyLease;
-    SZrGcRootLease storageKeyLease;
-    SZrGcRootLease preparedValueLease;
     TZrBool objectStackRooted;
     TZrBool keyStackRooted;
     TZrBool valueStackRooted;
@@ -31,10 +27,10 @@ typedef struct SZrObjectWrite {
 } SZrObjectWrite;
 
 static TZrBool object_write_root_value(SZrState *state, const SZrTypeValue *value,
-                                      TZrBool stackRooted, SZrGcRootLease *lease) {
+                                      TZrBool stackRooted) {
     if (stackRooted || !ZrCore_Value_IsGarbageCollectable(value) ||
         ZrCore_Value_GetRawObject(value) == ZR_NULL) return ZR_TRUE;
-    return ZrCore_Gc_RootLeaseAcquire(state, ZrCore_Value_GetRawObject(value), lease);
+    return ZrCore_Gc_TemporaryRootPush(state, ZrCore_Value_GetRawObject(value));
 }
 
 static void object_write_run(SZrState *state, TZrPtr data) {
@@ -45,8 +41,8 @@ static void object_write_run(SZrState *state, TZrPtr data) {
     TZrBool newPair;
 
     if ((!write->objectStackRooted &&
-         !ZrCore_Gc_RootLeaseAcquire(state, &write->object->super, &write->objectLease)) ||
-        !object_write_root_value(state, write->value, write->valueStackRooted, &write->valueLease)) return;
+         !ZrCore_Gc_TemporaryRootPush(state, &write->object->super)) ||
+        !object_write_root_value(state, write->value, write->valueStackRooted)) return;
 
     if (write->fieldName != ZR_NULL) {
         SZrString *name = ZrCore_String_CreateFromNative(state, (TZrNativeString)write->fieldName);
@@ -55,7 +51,7 @@ static void object_write_run(SZrState *state, TZrPtr data) {
         write->normalizedKey.type = ZR_VALUE_TYPE_STRING;
         storageKey = &write->normalizedKey;
     } else {
-        if (!object_write_root_value(state, write->key, write->keyStackRooted, &write->inputKeyLease)) return;
+        if (!object_write_root_value(state, write->key, write->keyStackRooted)) return;
         if (object_try_get_direct_storage_key_unchecked(write->key) == ZR_NULL &&
             write->key->type == ZR_VALUE_TYPE_STRING && write->key->value.object != ZR_NULL) {
             SZrString *input = (SZrString *)ZrCore_Value_GetRawObject(write->key);
@@ -68,8 +64,7 @@ static void object_write_run(SZrState *state, TZrPtr data) {
         }
     }
     if (!object_write_root_value(state, storageKey,
-                                (TZrBool)(storageKey == write->key && write->keyStackRooted),
-                                &write->storageKeyLease)) return;
+                                (TZrBool)(storageKey == write->key && write->keyStackRooted))) return;
     if (!object_node_map_is_ready(write->object)) {
         ZrCore_Object_Init(state, write->object);
         if (!object_node_map_is_ready(write->object)) return;
@@ -92,8 +87,7 @@ static void object_write_run(SZrState *state, TZrPtr data) {
             ZrCore_GcDomain_MutationEnd(state, mutationLocked);
             return;
         }
-        if (!object_write_root_value(state, &write->preparedValue, ZR_FALSE,
-                                     &write->preparedValueLease)) {
+        if (!object_write_root_value(state, &write->preparedValue, ZR_FALSE)) {
             ZrCore_GcDomain_MutationEnd(state, mutationLocked);
             return;
         }
@@ -135,9 +129,10 @@ static TZrBool object_write_execute(SZrState *state, SZrObjectWrite *write) {
         return ZR_FALSE;
     }
     write->failureStatus = ZR_THREAD_STATUS_MEMORY_ERROR;
+    TZrSize rootDepth = state->temporaryRootLength;
     status = ZrCore_Exception_TryRun(state, object_write_run, write);
     /* Cleanup itself may release an ownership handle. Its local boundary
-     * guarantees every lease below is released even if that release throws. */
+     * guarantees the temporary roots are restored even if that release throws. */
     cleanupStatus = ZR_THREAD_STATUS_FINE;
     if (!write->preparedValueTransferred &&
         write->preparedValue.ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE &&
@@ -148,11 +143,7 @@ static TZrBool object_write_execute(SZrState *state, SZrObjectWrite *write) {
          * slot only mirrors the caller's direct owner: never drop it here. */
         ZrCore_Value_ResetAsNullNoProfile(&write->preparedValue);
     }
-    ZrCore_Gc_RootLeaseRelease(state->global, &write->preparedValueLease);
-    ZrCore_Gc_RootLeaseRelease(state->global, &write->storageKeyLease);
-    ZrCore_Gc_RootLeaseRelease(state->global, &write->inputKeyLease);
-    ZrCore_Gc_RootLeaseRelease(state->global, &write->valueLease);
-    ZrCore_Gc_RootLeaseRelease(state->global, &write->objectLease);
+    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
     if (status == ZR_THREAD_STATUS_FINE && cleanupStatus != ZR_THREAD_STATUS_FINE) status = cleanupStatus;
     if (status != ZR_THREAD_STATUS_FINE) {
         state->threadStatus = status;

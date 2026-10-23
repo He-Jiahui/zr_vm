@@ -1,0 +1,5 @@
+add_executable(zr_vm_runtime_layout "${CMAKE_SOURCE_DIR}/tests/benchmarks/runtime_layout.c")
+target_include_directories(zr_vm_runtime_layout PRIVATE "${CMAKE_SOURCE_DIR}/zr_vm_common/include")
+zr_vm_link_core(zr_vm_runtime_layout)
+set_target_properties(zr_vm_runtime_layout PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)
+add_test(NAME runtime_value_layout COMMAND zr_vm_runtime_layout)

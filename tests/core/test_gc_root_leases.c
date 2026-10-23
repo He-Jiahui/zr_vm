@@ -32,6 +32,9 @@ static void allocation_unlock(void) { (void)pthread_mutex_unlock(&allocationLock
 #endif
 
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/exception.h"
+#include "gc/gc_temporary_roots.h"
+#include "gc/gc_domain_internal.h"
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
@@ -170,6 +173,7 @@ typedef struct Worker {
     int failed;
     int protectedAfterFirstRelease;
     int distinct;
+    int foreignOnly;
     SZrRawObject *objects[DISTINCT_ROOTS_PER_WORKER];
 } Worker;
 static TestAtomic stage;
@@ -188,6 +192,14 @@ static int wait_stage(int target) {
 static void worker_run(Worker *worker) {
     SZrGcNativeCallPin pin = {0};
     int entered = 0;
+    if (worker->foreignOnly) {
+        SZrGcRootLease lease = {0};
+        atomic_set(&stage, 1);
+        worker->failed = !ZrCore_Gc_RootLeaseAcquire(&worker->state, worker->object, &lease);
+        ZrCore_Gc_RootLeaseRelease(worker->state.global, &lease);
+        atomic_set(&stage, 2);
+        return;
+    }
     TZrBool pinned = ZR_FALSE;
     if (!ZrCore_GcDomain_MutatorEnter(&worker->state)) goto failed;
     entered = 1;
@@ -515,6 +527,74 @@ cleanup:
     free(objects);
 }
 
+static void temporary_roots_throw(SZrState *state, TZrPtr data) {
+    SZrRawObject *object = (SZrRawObject *)data;
+    for (unsigned i = 0u; i < 33u; ++i) EXPECT(ZrCore_Gc_TemporaryRootPush(state, object));
+    ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_YIELD);
+}
+static void state_temporary_roots(SZrState *state) {
+    SZrRawObject *object = new_object(state);
+    SZrGcRootLease lease = {0};
+    EXPECT(object != NULL);
+    if (object == NULL) return;
+    TZrSize registryCount = state->global->garbageCollector->ignoredObjectCount;
+    EXPECT(ZrCore_Gc_TemporaryRootPush(state, object));
+    EXPECT(state->temporaryRootLength == 1 && object->garbageCollectMark.temporaryRootRefCount == 1);
+    EXPECT(state->global->garbageCollector->ignoredObjectCount == registryCount);
+    EXPECT(ZrCore_Gc_RootLeaseAcquire(state, object, &lease));
+    EXPECT(ZrCore_Exception_TryRun(state, temporary_roots_throw, object) == ZR_THREAD_STATUS_YIELD);
+    EXPECT(state->temporaryRootLength == 1 && object->garbageCollectMark.temporaryRootRefCount == 2);
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    EXPECT(object->type == ZR_RAW_OBJECT_TYPE_OBJECT);
+    ZrCore_Gc_TemporaryRootsRestore(state, 0u);
+    EXPECT(object->garbageCollectMark.temporaryRootRefCount == 1);
+    EXPECT(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+    ZrCore_Gc_RootLeaseRelease(state->global, &lease);
+    EXPECT(state->temporaryRootLength == 0 && object->garbageCollectMark.temporaryRootRefCount == 0);
+    EXPECT(!ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+    for (TZrSize i = 0u; i < state->temporaryRootCapacity; ++i) EXPECT(ZrCore_Gc_TemporaryRootPush(state, object));
+    TZrSize depth = state->temporaryRootLength;
+    failArrayBytes = state->temporaryRootCapacity * 2u * sizeof(*state->temporaryRoots);
+    EXPECT(!ZrCore_Gc_TemporaryRootPush(state, object));
+    failArrayBytes = 0u;
+    EXPECT(state->temporaryRootLength == depth && object->garbageCollectMark.temporaryRootRefCount == depth);
+    ZrCore_Gc_TemporaryRootsRestore(state, 0u);
+}
+static int elision_mode(SZrGcDomain *domain) {
+#ifdef _WIN32
+    return (int)InterlockedCompareExchange((volatile LONG *)&domain->elisionMode, 0, 0);
+#else
+    return (int)__atomic_load_n(&domain->elisionMode, __ATOMIC_ACQUIRE);
+#endif
+}
+static void elision_foreign_handoff(SZrState *state) {
+    Worker worker = {0};
+    TestThread thread;
+    worker.foreignOnly = 1;
+    worker.state.global = state->global;
+    worker.state.gcDomain = state->gcDomain;
+    worker.object = new_object(state);
+    atomic_set(&stage, 0);
+    atomic_set(&cancelled, 0);
+    EXPECT(elision_mode(state->gcDomain) == 1);
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
+    int started = start_thread(&thread, &worker);
+    EXPECT(started);
+    if (started) {
+        EXPECT(wait_stage(1));
+        for (unsigned i = 0; i < 5000 && elision_mode(state->gcDomain) == 1; ++i) sleep_ms();
+        EXPECT(elision_mode(state->gcDomain) == 2 && atomic_get(&stage) == 1);
+        /* A draining owner can finish nested work needed to exit its scope. */
+        ZrCore_GcDomain_MutationLock(state->gcDomain);
+        ZrCore_GcDomain_Lock(state->gcDomain);
+        ZrCore_GcDomain_Unlock(state->gcDomain);
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+    }
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+    if (started) { join_thread(thread); EXPECT(!worker.failed && atomic_get(&stage) == 2); }
+    EXPECT(elision_mode(state->gcDomain) == 0);
+}
+
 int main(int argc, char **argv) {
     SZrGlobalState *global;
 #ifdef _WIN32
@@ -530,7 +610,9 @@ int main(int argc, char **argv) {
     if (global != NULL) {
         /* These tests retain native fixture addresses and do not request GC. */
         global->garbageCollector->stopGcFlag = ZR_TRUE;
-        if (strcmp(argv[1], "explicit_before_pin") == 0) explicit_root(global->mainThreadState, 0);
+        if (strcmp(argv[1], "state_temporary_roots") == 0) state_temporary_roots(global->mainThreadState);
+        else if (strcmp(argv[1], "elision_foreign_handoff") == 0) elision_foreign_handoff(global->mainThreadState);
+        else if (strcmp(argv[1], "explicit_before_pin") == 0) explicit_root(global->mainThreadState, 0);
         else if (strcmp(argv[1], "explicit_during_pin") == 0) explicit_root(global->mainThreadState, 1);
         else if (strcmp(argv[1], "same_object_threads") == 0) same_object_threads(global->mainThreadState);
         else if (strcmp(argv[1], "temporary_roots") == 0) temporary_roots(global->mainThreadState);

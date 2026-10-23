@@ -18,6 +18,7 @@ struct SZrFunction;
 struct SZrAotGcRootMap;
 struct SZrGcDomain;
 struct SZrExecutionBudget;
+struct SZrExecutionAdmission;
 
 /** 异常处理器所处的 try/catch/finally 阶段；同一 handler 随控制流更新 phase。 */
 typedef enum EZrVmExceptionHandlerPhase {
@@ -76,6 +77,7 @@ struct ZR_STRUCT_ALIGN SZrState {
 
     EZrThreadStatus threadStatus; /**< 当前线程运行状态。 */
     struct SZrExecutionBudget *executionBudget; /**< 可选的当前执行预算上下文；绑定层设置/清除此借用指针。 */
+    struct SZrExecutionAdmission *executionAdmission; /**< Borrowed active dispatch context; restored before nonlocal exit. */
     TZrMemoryOffset previousProgramCounter; /**< 调试/恢复使用的上一条指令偏移。 */
 
     /** 活动帧由 callInfoList 指向；baseCallInfo 内嵌，扩展帧由 State_Free 回收。 */
@@ -89,6 +91,9 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrStackPointer stackBase; /**< 栈分配起点，扩容后用于偏移重定位。 */
 
     TZrStackPointer toBeClosedValueList; /**< 待关闭值链头；与栈槽中的反向偏移配对。 */
+    SZrRawObject **temporaryRoots;
+    TZrSize temporaryRootLength;
+    TZrSize temporaryRootCapacity;
     SZrAotGcRootFrame *aotGcRootFrameStack; /**< 当前 AOT 根帧链顶。 */
     TZrUInt32 aotGcRootFrameDepth; /**< Push/Pop 必须成对维护的链深度。 */
     /** 栈闭包链成员状态；自身指针是未加入全局链的哨兵。 */
@@ -130,6 +135,12 @@ struct ZR_STRUCT_ALIGN SZrState {
     /** Native provider 默认为 Runtime 阶段；非 Runtime 宿主显式切换。 */
     TZrUInt8 nativeProviderPhase;
     TZrUInt64 debugFrameGenerationNext; /**< 新调用帧的非零 generation 计数。 */
+#ifdef ZR_DEBUG
+    TZrUInt64 gcThreadScanSlots;
+    TZrUInt64 gcThreadScanCoverageChecks;
+    TZrUInt64 gcThreadScanCount;
+#endif
+
 };
 
 typedef struct SZrState SZrState;

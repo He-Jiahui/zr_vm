@@ -20,6 +20,9 @@ endforeach ()
 
 # 静态标记用于发现套件接线遗漏；运行时策略、计划和 JSON 断言在下方独立执行。
 file(READ "${TESTS_CMAKE}" tests_cmake_source)
+get_filename_component(tests_source_dir "${TESTS_CMAKE}" DIRECTORY)
+file(READ "${tests_source_dir}/cmake/benchmark-registration.cmake" benchmark_registration_source)
+string(APPEND tests_cmake_source "\n${benchmark_registration_source}")
 foreach (registered_test IN ITEMS
         benchmark_statistics_python
         benchmark_execution_plan_python

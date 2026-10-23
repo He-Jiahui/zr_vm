@@ -1,0 +1,59 @@
+let pickup_store = import("lanes/dod/pickup_store");
+let testing = import("zr.testing");
+let system = import("zr.system");
+let events = import("events");
+let world = import("lanes/dod/world");
+let systems = import("lanes/dod/systems");
+let player = import("player");
+let core = import("&swarmcore");
+
+#zr.testing.test#
+fn fifoCapacityWrapAndEmptyFill(): void {
+    var q = new events.EventQueue(2);
+    testing.assert(!q.pop() && q.tag == 0);
+    testing.assert(q.hit(7, 1) && q.hit(9, 1) && !q.hit(11, 1));
+    testing.assert(q.pop() && q.tag == 1 && q.id == 7 && q.damage == 1);
+    testing.assert(q.hit(11, 1) && q.count() == 2);
+    testing.assert(q.pop() && q.tag == 1 && q.id == 9);
+    testing.assert(q.pop() && q.tag == 1 && q.id == 11);
+    testing.assert(!q.pop() && q.tag == 0 && q.count() == 0);
+}
+
+#zr.testing.test#
+fn unionPayloadSurvivesGcAndWrap(): void {
+    var q = new events.EventQueue(2);
+    testing.assert(q.hit(17, 2));
+    testing.assert(q.killedKind(23, 2, 1, 1.25, -2.5));
+    system.gc.collect("full");
+    testing.assert(q.pop() && q.tag == 1 && q.id == 17 && q.damage == 2);
+    testing.assert(q.playerHit(3));
+    testing.assert(q.pop() && q.tag == 2 && q.id == 23 && q.x == 1.25 && q.y == -2.5);
+    testing.assert(q.kind == 2 && q.boss == 1);
+    testing.assert(q.pop() && q.tag == 3 && q.damage == 3);
+    testing.assert(!q.pop() && q.tag == 0);
+    testing.assert(q.killed(31, 0.0, 0.0) && q.pop() && q.id == 31 && q.kind == 0 && q.boss == 0);
+}
+
+#zr.testing.test#
+fn rejectsZeroCapacity(): void {
+    var caught = false;
+    try { var q = new events.EventQueue(0); }
+    catch (e) { caught = e.message == "queue capacity must be positive"; }
+    testing.assert(caught);
+}
+
+#zr.testing.test#
+fn queuedIdsRemainCorrectAfterSwapRemove(): void {
+    var w = new world.World(3);
+    w.add(1.0, 2.0, 10); w.add(3.0, 4.0, 11); w.add(5.0, 6.0, 12);
+    w.hp[0] = 1;
+    var q = new events.EventQueue(8);
+    var particles = new world.MovingSoA(16);
+    var p = new player.Bot(1);
+    testing.assert(q.hit(10, 1) && q.hit(11, 1) && q.hit(10, 1) && q.playerHit(3));
+    var pickups = new pickup_store.Pickups(4); var rng = new core.Rng(1);
+    rng.state = systems.drain(w, particles, q, p, pickups, rng.state, 4);
+    testing.assert(w.count == 2 && w.id[0] == 12 && w.id[1] == 11 && w.hp[1] == 1);
+    testing.assert(w.hits == 2 && w.kills == 1 && w.score == 10);
+    testing.assert(p.hp == 97 && particles.count == 4 && q.count() == 0);
+}

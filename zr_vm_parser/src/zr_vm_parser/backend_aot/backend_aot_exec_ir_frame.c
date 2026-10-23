@@ -471,8 +471,9 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
                 typeLayout->cTypeId != layout->typeLayoutId ||
                 (typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
                  typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) ||
-                typeLayout->byteSize != layout->byteSize ||
-                typeLayout->byteAlign != layout->byteAlign) {
+                !ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+                        function, layout->typeLayoutId,
+                        layout->byteSize, layout->byteAlign, state)) {
                 return ZR_FALSE;
             }
         }

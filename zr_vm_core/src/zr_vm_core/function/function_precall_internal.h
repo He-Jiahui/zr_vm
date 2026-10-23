@@ -5,6 +5,14 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 
+static ZR_FORCE_INLINE TZrBool function_precall_value_is_plain_scalar(const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL && value->isNative && !value->isGarbageCollectable &&
+                     value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+                     value->ownershipControl == ZR_NULL && value->ownershipWeakRef == ZR_NULL &&
+                     (ZR_VALUE_IS_TYPE_INT(value->type) || ZR_VALUE_IS_TYPE_FLOAT(value->type) ||
+                      value->type == ZR_VALUE_TYPE_BOOL || value->type == ZR_VALUE_TYPE_NULL));
+}
+
 static ZR_FORCE_INLINE void function_set_call_info_frame_storage_slot_count(
         SZrCallInfo *callInfo,
         TZrSize frameStorageSlotCount) {

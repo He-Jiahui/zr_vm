@@ -1,0 +1,42 @@
+let testing = import("zr.testing");
+let core = import("&swarmcore");
+
+#zr.testing.test#
+fn parkMillerKnownSequence(): void {
+    var rng = new core.Rng(1);
+    testing.assert(rng.next() == 48271);
+    testing.assert(rng.next() == 182605794);
+    testing.assert(rng.next() == 1291394886);
+    testing.assert(rng.next() == 1914720637);
+    testing.assert(rng.next() == 2078669041);
+    var wide = new core.Rng(2147483646);
+    testing.assert(wide.next() == 2147435376);
+    var i = 0;
+    while (i < 10000) {
+        var value = wide.next();
+        testing.assert(value > 0 && value < 2147483647);
+        i += 1;
+    }
+}
+
+#zr.testing.test#
+fn rejectsInvalidSeeds(): void {
+    var caught = 0;
+    try { var rng = new core.Rng(0); }
+    catch (e) { if (e.message == "seed must be in 1..2147483646") { caught += 1; } }
+    try { var rng = new core.Rng(2147483647); }
+    catch (e) { if (e.message == "seed must be in 1..2147483646") { caught += 1; } }
+    testing.assert(caught == 2);
+}
+
+#zr.testing.test#
+fn boundedHashAndSignedQuantization(): void {
+    var h = core.mix(1, 0);
+    h = core.mix(h, 7); h = core.mix(h, -19);
+    h = core.mix(h, 65520); h = core.mix(h, -1152);
+    testing.assert(h == 30849397);
+    testing.assert(core.quantize(1.125) == 18);
+    testing.assert(core.quantize(-1.125) == -18);
+    testing.assert(core.quantize(-0.03) == 0);
+    testing.assert(core.mix(1000000006, 1000000006) == 999999975);
+}

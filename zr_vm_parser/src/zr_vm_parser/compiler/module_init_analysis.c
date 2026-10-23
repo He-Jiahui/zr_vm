@@ -4,6 +4,7 @@
 #include "type_inference_internal.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 
@@ -286,6 +287,67 @@ static void module_init_typed_type_ref_to_inferred(SZrCompilerState *cs,
 }
 
 
+static void module_init_trace_string(SZrState *state, SZrString **slot,
+        FZrRawObjectGcValueVisitor visitor, TZrPtr data) {
+    SZrTypeValue value;
+    if (*slot == ZR_NULL) return;
+    ZrCore_Value_ResetAsNullNoProfile(&value);
+    ZrCore_Value_InitAsRawObject(state, &value, &(*slot)->super);
+    visitor(state, &value, data);
+    *slot = (SZrString *)value.value.object;
+}
+
+/* Compiler summaries outlive their compiled function. They own their names,
+ * independently of the weak intern table and of the function's host root. */
+static void module_init_trace_cache(SZrState *state, SZrRawObject *owner,
+        FZrRawObjectGcValueVisitor visitor, TZrPtr data) {
+    SZrParserModuleInitCache *cache = owner->finalizerData;
+    if (cache == ZR_NULL) return;
+#define TRACE_STRING(SLOT) module_init_trace_string(state, &(SLOT), visitor, data)
+#define TRACE_TYPE(TYPE) do { TRACE_STRING((TYPE).typeName); TRACE_STRING((TYPE).elementTypeName); } while (0)
+#define TRACE_EFFECT(EFFECT) do { \
+    TRACE_STRING((EFFECT).moduleName); \
+    TRACE_STRING((EFFECT).assemblyName); \
+    TRACE_STRING((EFFECT).symbolName); \
+    TRACE_STRING((EFFECT).requestedModuleVersion); \
+    TRACE_STRING((EFFECT).minModuleVersionInclusive); \
+    TRACE_STRING((EFFECT).maxModuleVersionExclusive); \
+} while (0)
+    for (TZrSize i = 0u; i < cache->summaries.length; ++i) {
+        SZrParserModuleInitSummary *summary = ZrCore_Array_Get(&cache->summaries, i);
+        TRACE_STRING(summary->moduleName);
+        TRACE_STRING(summary->moduleVersion);
+        for (TZrSize j = 0u; j < summary->staticImports.length; ++j)
+            TRACE_STRING(*(SZrString **)ZrCore_Array_Get(&summary->staticImports, j));
+        for (TZrSize j = 0u; j < summary->exports.length; ++j) {
+            SZrModuleInitExportInfo *item = ZrCore_Array_Get(&summary->exports, j);
+            TRACE_STRING(item->name);
+            TRACE_TYPE(item->valueType);
+            for (TZrUInt32 k = 0u; k < item->parameterCount; ++k) TRACE_TYPE(item->parameterTypes[k]);
+        }
+        for (TZrSize j = 0u; j < summary->bindings.length; ++j) {
+            SZrModuleInitBindingInfo *item = ZrCore_Array_Get(&summary->bindings, j);
+            TRACE_STRING(item->name);
+            TRACE_STRING(item->moduleName);
+            TRACE_STRING(item->symbolName);
+        }
+        for (TZrSize j = 0u; j < summary->typeDefs.length; ++j) {
+            SZrModuleInitTypeDefInfo *item = ZrCore_Array_Get(&summary->typeDefs, j);
+            TRACE_STRING(item->name);
+        }
+        for (TZrSize j = 0u; j < summary->entryEffects.length; ++j)
+            TRACE_EFFECT(*(SZrFunctionModuleEffect *)ZrCore_Array_Get(&summary->entryEffects, j));
+        for (TZrSize j = 0u; j < summary->exportedCallableSummaries.length; ++j) {
+            SZrModuleInitCallableSummary *item = ZrCore_Array_Get(&summary->exportedCallableSummaries, j);
+            TRACE_STRING(item->name);
+            for (TZrUInt32 k = 0u; k < item->effectCount; ++k) TRACE_EFFECT(item->effects[k]);
+        }
+    }
+#undef TRACE_STRING
+#undef TRACE_TYPE
+#undef TRACE_EFFECT
+}
+
 static SZrParserModuleInitCache *module_init_get_cache(SZrGlobalState *global, TZrBool createIfMissing) {
     SZrState *state;
     SZrParserModuleInitCache *cache;
@@ -318,6 +380,14 @@ static SZrParserModuleInitCache *module_init_get_cache(SZrGlobalState *global, T
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
     global->parserModuleInitState = cache;
     global->parserModuleInitStateCleanup = ZrParser_ModuleInitAnalysis_GlobalCleanup;
+    SZrObject *owner = ZrCore_Object_New(state, ZR_NULL);
+    if (owner == ZR_NULL || !ZrCore_GarbageCollector_IgnoreObject(state, &owner->super)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return ZR_NULL;
+    }
+    cache->gcOwner = owner;
+    cache->gcOwner->super.finalizerData = cache;
+    cache->gcOwner->super.traceGcFunction = module_init_trace_cache;
     return cache;
 }
 
@@ -4505,6 +4575,11 @@ void ZrParser_ModuleInitAnalysis_GlobalCleanup(SZrGlobalState *global, TZrPtr op
     }
 
     state = global->mainThreadState;
+    if (cache->gcOwner != ZR_NULL) {
+        cache->gcOwner->super.traceGcFunction = ZR_NULL;
+        cache->gcOwner->super.finalizerData = ZR_NULL;
+        ZrCore_GarbageCollector_UnignoreObject(global, &cache->gcOwner->super);
+    }
     for (index = 0; index < cache->summaries.length; ++index) {
         SZrParserModuleInitSummary *summary =
                 (SZrParserModuleInitSummary *)ZrCore_Array_Get(&cache->summaries, index);

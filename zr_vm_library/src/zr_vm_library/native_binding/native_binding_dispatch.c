@@ -816,7 +816,6 @@ TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
     slotLayout = ZrCore_Function_FindFrameSlotLayout(mutableContext->inlineFrameFunction, stackSlot);
     if (slotLayout == ZR_NULL ||
         slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
-        !slotLayout->isParameter ||
         !ZrCore_Function_MakeFrameSlotPlace(mutableContext->state,
                                             mutableContext->inlineFrameFunction,
                                             mutableContext->inlineFrameBase,

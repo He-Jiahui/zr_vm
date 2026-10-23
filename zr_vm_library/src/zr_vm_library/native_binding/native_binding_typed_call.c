@@ -13,7 +13,9 @@ static TZrBool typed_native_type(const TZrChar *name, SZrFunctionTypedTypeRef *t
         {"u16", ZR_VALUE_TYPE_UINT16, ZR_STATIC_C_TYPE_U16},
         {"u32", ZR_VALUE_TYPE_UINT32, ZR_STATIC_C_TYPE_U32},
         {"uint", ZR_VALUE_TYPE_UINT64, ZR_STATIC_C_TYPE_U64},
-        {"float", ZR_VALUE_TYPE_FLOAT, ZR_STATIC_C_TYPE_F32},
+        {"float", ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64},
+        {"f32", ZR_VALUE_TYPE_FLOAT, ZR_STATIC_C_TYPE_F32},
+        {"f64", ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64},
         {"double", ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64},
         {"string", ZR_VALUE_TYPE_STRING, ZR_STATIC_C_TYPE_DYNAMIC},
         {"object", ZR_VALUE_TYPE_OBJECT, ZR_STATIC_C_TYPE_DYNAMIC}

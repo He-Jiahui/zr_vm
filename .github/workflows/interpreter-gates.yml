@@ -1,0 +1,93 @@
+name: Interpreter correctness and performance evidence
+
+on:
+  push:
+    branches: [main, perf/interpreter-20261017]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gc-sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ZR_VM_TEST_TIER: core
+      ASAN_OPTIONS: detect_leaks=0
+      UBSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Configure ASan, UBSan and forced full GC
+        run: >-
+          cmake -S . -B build-gc-sanitizers -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -DZR_DEBUG_GARBAGE_COLLECT_MEM_TEST"
+          -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+          -DBUILD_RUST_BINDING=OFF -DBUILD_TESTS=ON
+      - name: Build all registered test dependencies
+        run: cmake --build build-gc-sanitizers --parallel 2
+      - name: Run standalone GC suite
+        run: build-gc-sanitizers/bin/zr_vm_gc_test
+      - name: Test GC and interpreter boundaries
+        run: >-
+          ctest --test-dir build-gc-sanitizers --no-tests=error --output-on-failure
+          -R 'interpreter_gc|gc|execution_budget|execution_integer_boundaries|typed_opcode|container'
+      - name: Run allocation and interpreter smoke probes
+        run: >-
+          python3 tests/benchmarks/run_interpreter_probes.py
+          --cli build-gc-sanitizers/bin/zr_vm_cli
+          --work-dir build-gc-sanitizers/probe-results --smoke --repeat 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interpreter-gc-sanitizers
+          path: |
+            build-gc-sanitizers/Testing/Temporary/LastTest.log
+            build-gc-sanitizers/probe-results/results.json
+          if-no-files-found: ignore
+
+  performance-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Configure Release probes
+        run: >-
+          cmake -S . -B build-interpreter-perf -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+          -DBUILD_RUST_BINDING=OFF -DBUILD_TESTS=ON
+      - name: Build probe runners
+        run: cmake --build build-interpreter-perf --target zr_vm_cli zr_vm_budgeted_loop --parallel 2
+      - name: Run interpreter smoke probes
+        run: >-
+          python3 tests/benchmarks/run_interpreter_probes.py
+          --cli build-interpreter-perf/bin/zr_vm_cli
+          --work-dir build-interpreter-perf/smoke-results --smoke --repeat 1
+      - name: Check depth scaling at full allocation count
+        run: >-
+          python3 tests/benchmarks/run_interpreter_probes.py
+          --cli build-interpreter-perf/bin/zr_vm_cli
+          --work-dir build-interpreter-perf/deep-results
+          --cases deep_alloc0,deep_alloc --repeat 3 --check-deep-ratio
+      - name: Record budget overhead
+        run: |
+          build-interpreter-perf/bin/zr_vm_budgeted_loop > build-interpreter-perf/budget-intloop.json
+          build-interpreter-perf/bin/zr_vm_budgeted_loop --source tests/benchmarks/probes/interpreter/calls.zr --expected 3000000 > build-interpreter-perf/budget-calls.json
+          build-interpreter-perf/bin/zr_vm_budgeted_loop --source tests/benchmarks/probes/interpreter/fib.zr --expected 196418 > build-interpreter-perf/budget-fib.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interpreter-performance-evidence
+          path: |
+            build-interpreter-perf/smoke-results/results.json
+            build-interpreter-perf/deep-results/results.json
+            build-interpreter-perf/budget-*.json
+          if-no-files-found: ignore

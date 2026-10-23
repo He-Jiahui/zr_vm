@@ -604,6 +604,11 @@ static TZrBool execbc_vm_fill_core_function(
         }
     }
 
+    if (!(function->instructionsVerified = ZrCore_Function_VerifyInstructions(function))) {
+        execbc_vm_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                                 projection, 0u, 0u, 0u, 1u, 0u);
+        goto oom;
+    }
     if (rootAdded != ZR_FALSE &&
         !ZrCore_GarbageCollector_UnignoreObject(
                 state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(function))) {

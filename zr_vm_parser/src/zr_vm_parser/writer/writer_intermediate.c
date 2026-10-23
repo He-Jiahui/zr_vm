@@ -882,6 +882,8 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED): fprintf(file, "ADD_SIGNED"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST): fprintf(file, "ADD_SIGNED_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST): fprintf(file, "ADD_SIGNED_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST): fprintf(file, "MUL_FLOAT_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST): fprintf(file, "ADD_FLOAT_CONST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST): fprintf(file, "ADD_SIGNED_CONST_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST): fprintf(file, "ADD_SIGNED_LOAD_CONST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST): fprintf(file, "ADD_SIGNED_LOAD_STACK_CONST"); break;
@@ -1038,6 +1040,8 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED_CONST");
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST): fprintf(file, "JUMP_IF_GREATER_SIGNED_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST): fprintf(file, "JUMP_IF_GREATER_EQUAL_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
                 fprintf(file, "JUMP_IF_NULL");
                 break;
@@ -1083,6 +1087,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
                         inst->instruction.operand.operand1[0],
                         (TZrInt16)inst->instruction.operand.operand1[1]);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 fprintf(file,
                         ", left_slot=%u, constant_index=%u, jump_offset=%d",
@@ -1110,6 +1115,8 @@ static void writer_intermediate_write_nested_function(FILE *file,
 
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -1709,6 +1716,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
                 fprintf(file, "ADD_SIGNED_CONST");
                 break;
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST): fprintf(file, "MUL_FLOAT_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST): fprintf(file, "ADD_FLOAT_CONST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
                 fprintf(file, "ADD_SIGNED_CONST_PLAIN_DEST");
                 break;
@@ -2087,6 +2096,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED_CONST");
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST): fprintf(file, "JUMP_IF_GREATER_SIGNED_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST): fprintf(file, "JUMP_IF_GREATER_EQUAL_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
                 fprintf(file, "JUMP_IF_NULL");
                 break;
@@ -2232,6 +2243,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                         inst->instruction.operand.operand1[0],
                         (TZrInt16)inst->instruction.operand.operand1[1]);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 fprintf(file,
                         ", left_slot=%u, constant_index=%u, jump_offset=%d",
@@ -2293,6 +2305,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
 
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):

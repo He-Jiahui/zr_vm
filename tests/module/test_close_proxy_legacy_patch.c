@@ -69,10 +69,12 @@ static void close_proxy_write_u32_le(TZrByte *bytes, TZrSize offset,
 static void test_appended_opcode_preserves_legacy_instruction_numbers(void) {
     TEST_ASSERT_EQUAL_UINT32(244u, ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL));
     TEST_ASSERT_EQUAL_UINT32(245u, ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY));
-    TEST_ASSERT_EQUAL_UINT32(246u, ZR_INSTRUCTION_ENUM(ENUM_MAX));
+    TEST_ASSERT_EQUAL_UINT32(246u, ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST));
+    TEST_ASSERT_EQUAL_UINT32(249u, ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST));
+    TEST_ASSERT_EQUAL_UINT32(250u, ZR_INSTRUCTION_ENUM(ENUM_MAX));
 }
 
-static void test_patch_44_writer_and_reader_compatibility_gate(void) {
+static void test_writer_and_reader_require_current_frame_abi(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     TZrChar path[ZR_TESTS_PATH_MAX];
@@ -93,7 +95,7 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
             state->global, sizeof(TZrInstruction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     memset(function->instructionsList, 0, sizeof(TZrInstruction));
-    function->instructionsList[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(NOP);
+    function->instructionsList[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
     function->instructionsLength = 1u;
     function->stackSize = 1u;
 
@@ -104,8 +106,8 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     TEST_ASSERT_TRUE(length > patchOffset + sizeof(TZrUInt32));
     TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, close_proxy_read_u32_le(bytes, patchOffset));
 
-    /* Patches 44 and 45 only change opcode semantics. This NOP-only function
-     * has no close proxy or CREATE_ARRAY operands and is also valid at 43. */
+    /* Opcode numbering stays stable, but old raw frame-layout artifacts now
+     * require recompilation even when this function has no close proxies. */
     close_proxy_write_u32_le(bytes, patchOffset, 43u);
     reader.bytes = bytes;
     reader.length = length;
@@ -114,9 +116,8 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     io.isBinary = ZR_TRUE;
     context.io = &io;
     context.source = ZrCore_Io_ReadSourceNew(&io);
-    TEST_ASSERT_NOT_NULL(context.source);
-    TEST_ASSERT_EQUAL_UINT32(43u, context.source->versionPatch);
-    ZrCore_Io_ReadSourceFree(state->global, context.source);
+    TEST_ASSERT_NULL(context.source);
+    TEST_ASSERT_TRUE(io.hasReadError);
 
     close_proxy_write_u32_le(bytes, patchOffset, ZR_IO_SOURCE_PATCH_CURRENT + 1u);
     reader.consumed = ZR_FALSE;
@@ -140,6 +141,6 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_appended_opcode_preserves_legacy_instruction_numbers);
-    RUN_TEST(test_patch_44_writer_and_reader_compatibility_gate);
+    RUN_TEST(test_writer_and_reader_require_current_frame_abi);
     return UNITY_END();
 }

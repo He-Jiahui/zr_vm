@@ -1213,7 +1213,7 @@ TZrBool compiler_semantic_ir_record_property_ref_load(
 
     {
         SZrCompilerSemanticIrSlot *storedReference =
-                compiler_semantic_ir_find_slot(cs, referenceSlot);
+                compiler_semantic_ir_materialize_slot(cs, referenceSlot, sourceRange);
         if (storedReference == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -1278,7 +1278,7 @@ TZrBool compiler_semantic_ir_record_property_ref_store(
     }
     {
         SZrCompilerSemanticIrSlot *storedReference =
-                compiler_semantic_ir_find_slot(cs, referenceSlot);
+                compiler_semantic_ir_materialize_slot(cs, referenceSlot, sourceRange);
         if (storedReference == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -1605,6 +1605,11 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
         }
     }
     localTypeId = binding->typeId;
+    if (localTypeId != ZR_SEMANTIC_ID_INVALID &&
+        compiler_stack_slot_is_reference_parameter(cs, stackSlot)) {
+        localTypeId = ZrParser_CanonicalType_InternRef(
+                cs->semanticContext, localTypeId, ZR_CANONICAL_REF_WRITABLE);
+    }
     if (localTypeId == ZR_SEMANTIC_ID_INVALID &&
         priorTemporaryValueId != ZR_VALUE_ID_INVALID) {
         const SZrSemanticIrValue *sourceValue = ZrParser_SemanticIr_Value(
@@ -2003,6 +2008,9 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
     TZrValueId resultValueId;
     EZrCompilerSemanticScalarResult binding;
 
+    if (compiler_stack_slot_is_reference_parameter(cs, stackSlot)) {
+        return compiler_property_reference_load(cs, stackSlot, resultSlot, sourceRange);
+    }
     if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
         emit_instruction(
                 cs,
@@ -2284,6 +2292,9 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
     const SZrSemanticIrInstruction *instruction;
     EZrInstructionCode opcode;
 
+    if (compiler_stack_slot_is_reference_parameter(cs, stackSlot)) {
+        return compiler_property_reference_store(cs, stackSlot, valueSlot, sourceRange);
+    }
     if ((cs != ZR_NULL && cs->preSemanticIrCfgTerminated) ||
         (compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
          compiler_semantic_ir_has_untyped_local_legacy_fallback(cs, stackSlot))) {

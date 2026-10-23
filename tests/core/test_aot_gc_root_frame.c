@@ -143,6 +143,7 @@ static void test_aot_root_frame_keeps_young_value_above_stack_top_live(void) {
 
         collector->gcDebtSize = 4096;
         collector->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
@@ -189,6 +190,7 @@ static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) 
 
         collector->gcDebtSize = 4096;
         collector->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         TEST_ASSERT_NOT_NULL(localRoot);
@@ -205,7 +207,7 @@ static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
-/* 人为设置正债务，断言安全点记录非零工作及 minor 类型；
+/* 显式请求 minor，断言安全点记录非零工作及 minor 类型；
  * 没有对象搬迁、完整周期终态或跨线程暂停的断言。 */
 static void test_gc_safepoint_advances_pending_collection_debt(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -220,6 +222,7 @@ static void test_gc_safepoint_advances_pending_collection_debt(void) {
     collector->gcDebtSize = 4096;
     collector->gcLastStepWork = 0;
 
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
     ZrCore_Gc_SafePoint(state);
 
     TEST_ASSERT_GREATER_THAN_UINT64(0u, collector->gcLastStepWork);

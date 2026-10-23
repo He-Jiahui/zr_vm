@@ -42,6 +42,14 @@ static TZrBool identity_context_equal(
            leftRepresentative == rightRepresentative;
 }
 
+/* Padding bytes are not part of a source span's identity. */
+static TZrBool identity_span_equal(const SZrTokenSpan *left, const SZrTokenSpan *right) {
+    return left->sourceId == right->sourceId &&
+           left->startOffset == right->startOffset && left->endOffset == right->endOffset &&
+           left->startLine == right->startLine && left->startColumn == right->startColumn &&
+           left->endLine == right->endLine && left->endColumn == right->endColumn;
+}
+
 TZrBool ZrParser_SyntaxContext_ExpansionInfoEqual(
         const SZrSyntaxExpansionInfo *left,
         const SZrSyntaxExpansionInfo *right) {
@@ -51,10 +59,8 @@ TZrBool ZrParser_SyntaxContext_ExpansionInfoEqual(
         left->definitionModuleLength != right->definitionModuleLength ||
         left->callSiteSourceLength != right->callSiteSourceLength ||
         left->definitionSiteSourceLength != right->definitionSiteSourceLength ||
-        memcmp(&left->callSiteSpan, &right->callSiteSpan,
-               sizeof(left->callSiteSpan)) != 0 ||
-        memcmp(&left->definitionSiteSpan, &right->definitionSiteSpan,
-               sizeof(left->definitionSiteSpan)) != 0 ||
+        !identity_span_equal(&left->callSiteSpan, &right->callSiteSpan) ||
+        !identity_span_equal(&left->definitionSiteSpan, &right->definitionSiteSpan) ||
         (left->definitionModuleLength != 0u &&
          memcmp(left->definitionModule, right->definitionModule,
                 left->definitionModuleLength) != 0) ||

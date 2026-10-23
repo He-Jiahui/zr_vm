@@ -1,0 +1,15 @@
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+    pub static @add(a: Vec2, b: Vec2): Vec2 { return init Vec2(a.x + b.x, a.y + b.y); }
+    pub static @sub(a: Vec2, b: Vec2): Vec2 { return init Vec2(a.x - b.x, a.y - b.y); }
+    pub static @neg(a: Vec2): Vec2 { return init Vec2(-a.x, -a.y); }
+    pub static @mul(a: Vec2, b: float): Vec2 { return init Vec2(a.x * b, a.y * b); }
+}
+var a = init Vec2(2.0, 3.0);
+var b = init Vec2(1.0, 2.0);
+var c = (a + b) * 2.0 - b;
+var d = -a;
+if (c.x != 5.0 || c.y != 8.0 || d.x != -2.0 || d.y != -3.0) { throw "P02 operator mismatch"; }
+return 42;

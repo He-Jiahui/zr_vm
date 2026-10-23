@@ -184,7 +184,7 @@ Quaternion 回调按字段名读取数值快照，不核对 prototype，也不�
 **BUG:** 对未驻留的短字符串，短串表扩桶的 `HASH_BUCKET` 原生分配返回 NULL 且没有
 VM 异常时，字符串 setter 保留 dispatch 预置的 null，格式化 helper 和 `toString` 回调
 仍报告成功。完整 descriptor → dispatch → 字符串表 → 分配器证据见
-[Quaternion 审查台账](../../code-review/coverage/zr_vm_lib_math_quaternion.tsv)。该结论是
+[Quaternion 审查台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_quaternion.tsv)。该结论是
 静态调用路径证明，本批未做分配失败注入。
 
 **BUG:** 新建实例的字段哈希表初始容量 4、负载阈值 3，按 `x/y/z/w` 填充时第四次写入
@@ -286,7 +286,7 @@ context、state、参数视图和 result 仅借用本次调用。结果对象和
 跨调用保存裸指针仍须由宿主维持根。构造目标可复用，其余对象运算创建独立结果。
 正常 false 不应消费 result；缺参或实参标签不符经 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:862、zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:877 的
 不返回错误入口报告，分配产生的非局部异常也不等于正常 false。字段 setter 为 void，
-**BUG:** 新对象 factory 在合法定制 allocator 仅拒绝首次 ignored-root ARRAY 扩容、其余步骤成功时，会忽略 receiver pin 失败并成功交付缺字段对象；注册时的 prototype 只有字段 descriptor，没有 real/imag 默认值。Construct 复用 target 的路径仍为 TODO，完整失败链见 [Complex 审查记录](../../code-review/batches/20261014-complex-contracts.md)。
+**BUG:** 新对象 factory 在合法定制 allocator 仅拒绝首次 ignored-root ARRAY 扩容、其余步骤成功时，会忽略 receiver pin 失败并成功交付缺字段对象；注册时的 prototype 只有字段 descriptor，没有 real/imag 默认值。Construct 复用 target 的路径仍为 TODO，完整失败链见 [Complex 审查记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-complex-contracts.md)。
 
 ### 静态注册数据
 
@@ -326,7 +326,7 @@ Vector2 的 constructor 取两个数值实参；具名 method 与 meta 的固定
 
 **BUG:** Vector2 回调将快照地址传给 Dot(count=2)，在 AVX2 分支跳过四项向量循环后以 common.c:62 读取下标1，纯标量 :102 也越出首成员 double 对象（C11 N1570 §6.5.6p7–8）；SSE2/NEON 的单次 intrinsic load 对象范围仍 TODO，见 math_common.h:51、134、135。该结论未声称默认构建执行过边界输入。**TODO:** compare 对 NaN 或双方平方和溢出均落入0，其 unordered 策略须沿实际VM比较/排序消费者核查。
 
-`tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](../../code-review/coverage/zr_vm_lib_math_vector2.tsv)。
+`tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_vector2.tsv)。
 
 
 ## Vector3 回调、结果与数值边界
@@ -343,7 +343,7 @@ Vector3 constructor 元数为 3，命名方法 length/lengthSquared/normalized �
 
 **BUG:** toString 先在 512 字节栈窗口格式化，VM 字符串创建不保留该窗口。仅当格式文本尚未驻留且属于短串、插入触发 HASH_BUCKET rehash 而宿主 allocator 扩容失败时，String_Create 可不抛异常地返回 NULL，SetStringObject 不写结果槽，MakeStringResult 仍返回 true；dispatcher 最后交付预置 null。该具体分支和对象创建时抛出的硬失败分别记录，没有 allocator 故障注入信用。
 
-现有 `test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime` 明确断言 x/y/z 为 2/3/4，Root 的修改前整 module target 78 项运行中该项 PASS，另两项既有失败保留。pipeline 的 lin_alg 执行 dot/cross/cross.length，最终 checksum 只消费 dot，未消费 crossLength，不能为叉积或长度结果授予断言信用。极值、比较、布局和分配失败没有专门执行证据。完整定义、间接调用与测试边界见 [Vector3 台账](../../code-review/coverage/zr_vm_lib_math_vector3.tsv) 与 [Vector3 批次](../../code-review/batches/20261014-vector3-contracts.md)。
+现有 `test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime` 明确断言 x/y/z 为 2/3/4，Root 的修改前整 module target 78 项运行中该项 PASS，另两项既有失败保留。pipeline 的 lin_alg 执行 dot/cross/cross.length，最终 checksum 只消费 dot，未消费 crossLength，不能为叉积或长度结果授予断言信用。极值、比较、布局和分配失败没有专门执行证据。完整定义、间接调用与测试边界见 [Vector3 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_vector3.tsv) 与 [Vector3 批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-vector3-contracts.md)。
 
 最终 GC helper 文档补齐后的共享 target 验证另见 `gc-vector3-final-r3-results.json`：构建成功，78 项为 70 PASS / 8 FAIL；Vector3 构造、GC 控制及统计字段用例仍 PASS。原有两项失败保留，另六项二进制元数据往返用例由 PASS 变为 FAIL，尚未隔离归因。与旧 before 的输入已有九个并发 Parser 文件差异；本轮 1652 个输入在构建和测试期间稳定，但不能据此声称与旧基线完全一致或整个 suite 通过。Vector3 四源与 r2 冻结版本相同，严格非注释 token 证明和 r2 的四对象实际重编证据继续限定于其原范围。
 
@@ -364,7 +364,7 @@ Vector4 constructor 元数为 4；length/lengthSquared/normalized 为 0，dot/di
 
 **BUG:** toString 使用 512 字节栈格式窗口，VM 字符串创建不保留该栈地址。调用链从 `common.c:512-519` 经 `Value_SetString`（`native_binding_dispatch.c:1303-1307`）进入 `native_binding_support.c:320-324` 的 native_binding_create_string，再到 `string.c:958-974` 的 CreateTryHitCache。仅当格式文本为未驻留短串，缓存 miss 后进入 Create/short interning，并且驻留表所需的 HASH_BUCKET rehash 宿主分配失败时，创建才不抛 VM 异常地返回 NULL；SetStringObject 不覆写结果槽，MakeStringResult 仍 true，成功派发交付预置 null。失败与回写证据见 `string.c:802-808`、`hash_set.h:525-537`、`hash_set.c:170-181`、`memory.h:14-22`（raw allocator 不设置 VM 异常）和 `native_binding_dispatch.c:362,1311-1316,673`。不泛化为所有分配失败，无故障注入执行信用。
 
-Matrix4x4 的 mulVector/meta mul 是实际 C 消费者。pipeline 的 `lin_alg.zr:11-18` 确实构造 Vector4、执行矩阵乘向量并把 XYZ 放进记录，但 callbacks/probe 只把记录中的 dot 纳入 checksum，未数值断言这些 XYZ。因此该夹具不提供 Vector4 数值、比较、布局或字段/短串分配失败的断言证据，本批也不运行会改写夹具目录的 project suite。完整逐单元定义、绑定、调用与结论见 [Vector4 台账](../../code-review/coverage/zr_vm_lib_math_vector4.tsv) 和 [Vector4 批次](../../code-review/batches/20261014-vector4-contracts.md)。
+Matrix4x4 的 mulVector/meta mul 是实际 C 消费者。pipeline 的 `lin_alg.zr:11-18` 确实构造 Vector4、执行矩阵乘向量并把 XYZ 放进记录，但 callbacks/probe 只把记录中的 dot 纳入 checksum，未数值断言这些 XYZ。因此该夹具不提供 Vector4 数值、比较、布局或字段/短串分配失败的断言证据，本批也不运行会改写夹具目录的 project suite。完整逐单元定义、绑定、调用与结论见 [Vector4 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_vector4.tsv) 和 [Vector4 批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-vector4-contracts.md)。
 
 本批与 SystemVM 共用 `system-vm-vector4-final-r1-results.json` 的实际验证：四个实现对象强制重建、构建成功；模块测试 78 项为 70 PASS / 8 FAIL，全部 78 行与最近 r3 基线精确一致，provider 9 项全部 PASS。相对更早 76 PASS / 2 FAIL 的记录，六项二进制元数据失败仍保留，本批未新增失败。当前输入与 r3 有三个并发 core/Parser 文件差异；保守扩展的 2950 个输入在构建及两个 suite 期间稳定，八个冻结源码未变化。Parser 的两条 C4701 和其他配置测试的 CMAKE_OBJECT_PATH_MAX 警告另行记录，所选 target 构建成功；不据此授予 Vector4 极值、布局或分配失败测试信用，也不声称整个 suite 通过。
 
@@ -395,8 +395,8 @@ callback 随后拒绝，却仍报告“expected 0..9”，这是元数错误文�
 
 本批没有找到 Matrix3x3 专项构造、数值或失败路径断言；现有 module/provider 目标链接 Math，
 其 Vector3/sqrt 用例不能作为 Matrix3x3 数值覆盖。完整定义、绑定、间接入口和逐单元结论见
-[Matrix3x3 台账](../../code-review/coverage/zr_vm_lib_math_matrix3x3.tsv) 与
-[审查批次](../../code-review/batches/20261014-matrix3x3-contracts.md)。
+[Matrix3x3 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_matrix3x3.tsv) 与
+[审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-matrix3x3-contracts.md)。
 
 ## Matrix4x4 调用与失败边界
 
@@ -426,11 +426,11 @@ VM 无异常时 dispatcher 交付 null，虽然 descriptor 声明 Matrix4x4。`d
 现有工程样例包含 Matrix4x4 的 scale 数值断言与矩阵流水线入口，但本批未运行会重建产物目录的
 工程样例 suite。module/provider 测试链接 Math，其执行结果不授予 Matrix4x4 数值、阈值、故障或 GC
 专项覆盖。完整单元、注册项、调用入口与证据见
-[Matrix4x4 台账](../../code-review/coverage/zr_vm_lib_math_matrix4x4.tsv) 和
-[审查批次](../../code-review/batches/20261014-matrix4x4-contracts.md)。
+[Matrix4x4 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_matrix4x4.tsv) 和
+[审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-matrix4x4-contracts.md)。
 
 
-## 模块描述符与宿主注册边界
+## 模块描述符与宿主注册边界（Module registration）
 
 Math 入口只聚合 registry 并交给 native binding，不执行数值 callback。当前逐 getter 核对为 25 个模块函数、8 个类型、13 条结构化提示；类型方法仍在各自 type descriptor 中。三组静态容量为 48/8/32，类型表恰满。六个常量是 PI、TAU、E、EPSILON、INF、NAN。精简 JSON 仅列两个函数和八个类型，不能用它代替完整函数表；已核消费者是提示导出和 native 反射。
 
@@ -440,7 +440,7 @@ GetModuleDescriptor 惰性初始化并借出同一静态描述符，不注册到
 
 共享发现符号 ZrVm_GetNativeModule_v1 只在共享配置编译，由加载器按字符串查符号后经函数指针调用；它借出描述符，不自行注册或管理库句柄。加载器随后核对 ABI 与请求模块名。静态 Debug 构建不提供共享发现分支的执行信用。
 
-完整定义、41 处实际 checkout 直接 Register 调用、间接插件入口、所有权和测试边界见 [模块入口台账](../../code-review/coverage/zr_vm_lib_math_module.tsv) 与 [批次记录](../../code-review/batches/20261015-math-module-contracts.md)。现有 sqrt 转发测试只断言非空结果与标签；provider 的官方模块清单不等于三组计数或插件加载断言。
+完整定义、41 处实际 checkout 直接 Register 调用、间接插件入口、所有权和测试边界见 [模块入口台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_module.tsv) 与 [批次记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-math-module-contracts.md)。现有 sqrt 转发测试只断言非空结果与标签；provider 的官方模块清单不等于三组计数或插件加载断言。
 
 ## Math 公共辅助层与 Tensor 存储边界
 
@@ -450,7 +450,7 @@ GetModuleDescriptor 惰性初始化并借出同一静态描述符，不注册到
 
 **TODO:** GetStorage在common.c:415还直接把公开rank/size转换为int64，只检查字段存在和标签，不重建shape/data/rank/size一致性；公开写入范围和缓存一致性政策须沿tensor_registry字段descriptor及VM成员写入规则核查，不能直接把所有修改输入都视为已证缺陷。
 
-MakeStringResult使用固定512字节格式窗口；过长输出截断及短串缓存软失败true/null是独立边界。长串缓存布局仍见共享TODO。最终118个公共辅助层单元及每条BUG/TODO完整定义、调用、契约和验证边界见[公共层审查记录](../../code-review/batches/20261014-math-common-contracts.md)及[台账](../../code-review/coverage/zr_vm_lib_math_common.tsv)。
+MakeStringResult使用固定512字节格式窗口；过长输出截断及短串缓存软失败true/null是独立边界。长串缓存布局仍见共享TODO。最终118个公共辅助层单元及每条BUG/TODO完整定义、调用、契约和验证边界见[公共层审查记录](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261014-math-common-contracts.md)及[台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_common.tsv)。
 
 
 ## Scalar 数值与嵌套 callback 边界
@@ -459,7 +459,7 @@ Scalar 以25个模块函数 descriptor 进入 native派发，17个一元与4个�
 
 **BUG:** invokeCallback元数据声明float，但CallValue成功后原样转发callable的实际VM标签，例如bool或字符串。**TODO:** NativePointer作为callable的非空、ABI与代码映像有效期须沿宿主SetNativePointer入口核查。clamp倒置边界、lerp中间差溢出和almostEqual跨量级误差策略仍有明确核查入口；本批仅记录，不改策略。
 
-现有module转发sqrt用例实际PASS，但只检查非空/标签。Rust sqrt数值断言、两个callback pipeline及LSP文档字符串入口本批均仅静态核查，后者不执行callback。94个唯一单元的调用、生命周期、无需另写注释的判断及验证限制见[Scalar台账](../../code-review/coverage/zr_vm_lib_math_scalar.tsv)与[审查批次](../../code-review/batches/20261015-math-scalar-contracts.md)。
+现有module转发sqrt用例实际PASS，但只检查非空/标签。Rust sqrt数值断言、两个callback pipeline及LSP文档字符串入口本批均仅静态核查，后者不执行callback。94个唯一单元的调用、生命周期、无需另写注释的判断及验证限制见[Scalar台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_scalar.tsv)与[审查批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-math-scalar-contracts.md)。
 
 
 ## Tensor 回调、失败与存储生命周期
@@ -470,4 +470,4 @@ Scalar 以25个模块函数 descriptor 进入 native派发，17个一元与4个�
 
 **TODO:** Clone/Reshape的C实参求值顺序未规定，新数组可能跨另一复制和TensorMake分配。Construct中shapeCopy跨dataCopy分配，dataCopy还跨先写shape字段；两个显式root窗口需分别核查。Transpose/Matmul/binary/MulScalar的中间数组也跨后续分配。GcMalloc仅在首次raw申请失败、collector已初始化且非immediate-GC时进入full GC；PushValue仅在单次调用内pin/unpin，不能覆盖后续窗口。ToArray在copy返回后直接写result，不列入该疑点。未观察到回收、移动或故障执行。
 
-Fill/Set的void写入状态、小数维度/索引向零截断与公开缓存一致性政策保留独立TODO，不改行为。人工numeric_pipeline含真实Tensor调用，但本批未运行project suite，toArray的arr不参与checksum214；两个module同名stub只返回11，parser/LSP匹配为静态文本。当前源通过3204tokens/8lexer与现有native构建，仍有原8项Module失败和Fs C1035，无Tensor数值或故障专项信用。逐单元证据见 [Tensor台账](../../code-review/coverage/zr_vm_lib_math_tensor.tsv) 与 [批次](../../code-review/batches/20261015-math-tensor-contracts.md)。
+Fill/Set的void写入状态、小数维度/索引向零截断与公开缓存一致性政策保留独立TODO，不改行为。人工numeric_pipeline含真实Tensor调用，但本批未运行project suite，toArray的arr不参与checksum214；两个module同名stub只返回11，parser/LSP匹配为静态文本。当前源通过3204tokens/8lexer与现有native构建，仍有原8项Module失败和Fs C1035，无Tensor数值或故障专项信用。逐单元证据见 [Tensor台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_math_tensor.tsv) 与 [批次](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/batches/20261015-math-tensor-contracts.md)。

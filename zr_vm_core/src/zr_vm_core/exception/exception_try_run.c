@@ -2,6 +2,8 @@
 #include "gc/gc_domain_internal.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
+#include "gc/gc_temporary_roots.h"
+#include "execution/execution_budget_fast.h"
 
 /* recoverPoint必须为首成员以便从state恢复私有context；只在TryRun调用栈有效 */
 typedef struct SZrExceptionTryRunContext {
@@ -16,6 +18,8 @@ typedef struct SZrExceptionTryRunContext {
     SZrAotGcRootFrame *savedAotGcRootFrameTop;
 /* 与top一并恢复；不凭该数修复正常返回回调的根泄漏 */
     TZrUInt32 savedAotGcRootFrameDepth;
+    TZrSize savedTemporaryRootDepth;
+    SZrExecutionAdmission *savedAdmission;
 /* 不拥有注册指针；恢复要求域identity、mutatorId仍匹配且外层mutation未被释放 */
     SZrGcDomainScopeSnapshot savedGcScopes;
 } SZrExceptionTryRunContext;
@@ -42,9 +46,11 @@ void ZrCore_Exception_RestoreLocalTryRunScopes(SZrState *state) {
     const volatile SZrExceptionTryRunContext *context =
             (const volatile SZrExceptionTryRunContext *)state->exceptionRecoverPoint;
     SZrGcDomainScopeSnapshot snapshot = context->savedGcScopes;
+    execution_admission_restore(state, context->savedAdmission);
     /* Abandoned C-local roots must disappear before any inactive publication. */
     state->aotGcRootFrameStack = context->savedAotGcRootFrameTop;
     state->aotGcRootFrameDepth = context->savedAotGcRootFrameDepth;
+    ZrCore_Gc_TemporaryRootsRestore(state, context->savedTemporaryRootDepth);
     ZrCore_GcDomain_RestoreScopes(state, &snapshot);
 }
 
@@ -73,6 +79,9 @@ EZrThreadStatus ZrCore_Exception_TryRun(
     }
     context.savedAotGcRootFrameTop = state->aotGcRootFrameStack;
     context.savedAotGcRootFrameDepth = state->aotGcRootFrameDepth;
+    context.savedTemporaryRootDepth = state->temporaryRootLength;
+    execution_admission_suspend(state->executionAdmission);
+    context.savedAdmission = state->executionAdmission;
     ZrCore_GcDomain_CaptureScopes(state, &snapshot);
     context.savedGcScopes = snapshot;
     state->exceptionRecoverPoint = recoverPoint;
@@ -86,10 +95,14 @@ EZrThreadStatus ZrCore_Exception_TryRun(
     state->nestedNativeCallYieldFlag = prevNestedNativeCallYieldFlag;
 /* 不再次释放域锁；本地Throw已恢复scopes，旧转发路径无本地锁租约 */
     if (!callbackReturnedNormally) {
+        /* Throw settled live contexts before longjmp. A foreign C++ exception
+         * has already unwound its C locals; never traverse them here. */
+        state->executionAdmission = context.savedAdmission;
         /* Local Throw already restored GC scopes before unwinding. Catch only
          * repeats root restoration; legacy forwarding owns no local lock lease. */
         state->aotGcRootFrameStack = context.savedAotGcRootFrameTop;
         state->aotGcRootFrameDepth = context.savedAotGcRootFrameDepth;
+        ZrCore_Gc_TemporaryRootsRestore(state, context.savedTemporaryRootDepth);
     }
     return context.recoverPoint.status;
 }

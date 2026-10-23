@@ -11,10 +11,85 @@
 
 #if !defined(ZR_PLATFORM_WIN)
 #include <time.h>
+#include <sched.h>
 #endif
 
 #define ZR_GC_DOMAIN_MUTATOR_INITIAL_CAPACITY ((TZrSize)4u)
 #define ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS ((TZrUInt32)10u)
+
+/* The native path cannot enter until all owner scopes have drained. This
+ * also covers foreign root-lease APIs that have no registered mutator. */
+static TZrInt32 gc_domain_atomic_load(volatile TZrInt32 *value) {
+#if defined(ZR_PLATFORM_WIN)
+    return (TZrInt32)InterlockedCompareExchange((volatile LONG *)value, 0, 0);
+#else
+    return __atomic_load_n(value, __ATOMIC_ACQUIRE);
+#endif
+}
+static void gc_domain_atomic_store(volatile TZrInt32 *value, TZrInt32 next) {
+#if defined(ZR_PLATFORM_WIN)
+    (void)InterlockedExchange((volatile LONG *)value, next);
+#else
+    __atomic_store_n(value, next, __ATOMIC_RELEASE);
+#endif
+}
+static TZrInt32 gc_domain_atomic_add(volatile TZrInt32 *value, TZrInt32 delta) {
+#if defined(ZR_PLATFORM_WIN)
+    return (TZrInt32)InterlockedExchangeAdd((volatile LONG *)value, delta);
+#else
+    return __atomic_fetch_add(value, delta, __ATOMIC_ACQ_REL);
+#endif
+}
+static TZrBool gc_domain_is_elision_owner(const SZrGcDomain *domain) {
+#if defined(ZR_PLATFORM_WIN)
+    return (TZrBool)(domain->elisionOwner == GetCurrentThreadId());
+#else
+    return (TZrBool)pthread_equal(domain->elisionOwner, pthread_self());
+#endif
+}
+static void gc_domain_finish_elision_drain(SZrGcDomain *domain) {
+    if (gc_domain_atomic_load(&domain->elisionMode) == 2 &&
+        gc_domain_atomic_load(&domain->elidedCoordinationDepth) == 0 &&
+        gc_domain_atomic_load(&domain->elidedMutationDepth) == 0)
+        gc_domain_atomic_store(&domain->elisionMode, 0);
+}
+static void gc_domain_disable_elision(SZrGcDomain *domain) {
+#if defined(ZR_PLATFORM_WIN)
+    (void)InterlockedCompareExchange((volatile LONG *)&domain->elisionMode, 2, 1);
+#else
+    TZrInt32 expected = 1;
+    (void)__atomic_compare_exchange_n(&domain->elisionMode, &expected, 2, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+#endif
+    gc_domain_finish_elision_drain(domain);
+}
+static TZrBool gc_domain_try_elided_lock(SZrGcDomain *domain, TZrBool mutation) {
+    TZrInt32 mode = gc_domain_atomic_load(&domain->elisionMode);
+    if (mode == 0 || !gc_domain_is_elision_owner(domain)) return ZR_FALSE;
+    TZrBool nested = (TZrBool)(gc_domain_atomic_load(&domain->elidedCoordinationDepth) != 0 ||
+                               gc_domain_atomic_load(&domain->elidedMutationDepth) != 0);
+    if (mode != 1 && !nested) return ZR_FALSE;
+    volatile TZrInt32 *depth = mutation ? &domain->elidedMutationDepth : &domain->elidedCoordinationDepth;
+    (void)gc_domain_atomic_add(depth, 1);
+    if (gc_domain_atomic_load(&domain->elisionMode) == 1 || nested) return ZR_TRUE;
+    (void)gc_domain_atomic_add(depth, -1);
+    gc_domain_finish_elision_drain(domain);
+    return ZR_FALSE;
+}
+static void gc_domain_wait_for_elision_drain(SZrGcDomain *domain) {
+    gc_domain_disable_elision(domain);
+    while (gc_domain_atomic_load(&domain->elisionMode) != 0) {
+        gc_domain_finish_elision_drain(domain);
+#if defined(ZR_PLATFORM_WIN)
+        (void)SwitchToThread();
+#else
+        (void)sched_yield();
+#endif
+    }
+}
+TZrBool ZrCore_GcDomain_TryExclusiveMutation(SZrGcDomain *domain) {
+    return domain != ZR_NULL && domain->mutationLockInitialized &&
+           gc_domain_try_elided_lock(domain, ZR_TRUE);
+}
 
 /* 登记表只在协调锁内定位；返回的表项指针不得跨等待或扩容保存。 */
 static SZrGcDomainMutatorRecord *gc_domain_find_mutator_locked(
@@ -114,6 +189,7 @@ static void gc_domain_wait_locked(
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
     }
+    ZR_ASSERT(gc_domain_atomic_load(&domain->elidedCoordinationDepth) == 0);
 #if defined(ZR_PLATFORM_WIN)
     (void)SleepConditionVariableCS(
             &domain->coordinationCondition,
@@ -146,11 +222,10 @@ static SZrGcDomainMutatorRecord *gc_domain_wait_for_entry_boundary_locked(
     if (record != ZR_NULL && record->mutationDepth > 0u) {
         return record;
     }
-    /* BUG: 前次 PARKED 尚未恢复时新 collector 可推进 epoch；旧代数的记录继续等待，
-     * first_blocker 会把它视为阻塞者，直到新暂停超时。 */
     while (record != ZR_NULL && domain->pauseRequested &&
            domain->collectorState != state) {
-        if (record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING &&
+        if ((record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
+             record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED) &&
             record->nativeMode == ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE) {
             record->observedEpoch = domain->safepointEpoch;
             record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
@@ -227,6 +302,12 @@ TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain) {
     (void)pthread_mutexattr_destroy(&mutationAttributes);
     domain->mutationLockInitialized = ZR_TRUE;
 #endif
+#if defined(ZR_PLATFORM_WIN)
+    domain->elisionOwner = GetCurrentThreadId();
+#else
+    domain->elisionOwner = pthread_self();
+#endif
+    gc_domain_atomic_store(&domain->elisionMode, 1);
     domain->coordinationInitialized = ZR_TRUE;
     domain->nextMutatorId = 1u;
     return ZR_TRUE;
@@ -258,6 +339,8 @@ void ZrCore_GcDomain_Lock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
         return;
     }
+    if (gc_domain_try_elided_lock(domain, ZR_FALSE)) return;
+    gc_domain_wait_for_elision_drain(domain);
 #if defined(ZR_PLATFORM_WIN)
     EnterCriticalSection(&domain->coordinationLock);
 #else
@@ -268,6 +351,12 @@ void ZrCore_GcDomain_Lock(SZrGcDomain *domain) {
 /* 与 Lock 配对；释放后不得继续使用先前取得的 mutator 表项指针。 */
 void ZrCore_GcDomain_Unlock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->coordinationInitialized) {
+        return;
+    }
+    if (gc_domain_is_elision_owner(domain) && gc_domain_atomic_load(&domain->elidedCoordinationDepth) != 0) {
+        ZR_ASSERT(gc_domain_atomic_load(&domain->elidedCoordinationDepth) > 0);
+        (void)gc_domain_atomic_add(&domain->elidedCoordinationDepth, -1);
+        gc_domain_finish_elision_drain(domain);
         return;
     }
 #if defined(ZR_PLATFORM_WIN)
@@ -294,6 +383,8 @@ void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->mutationLockInitialized) {
         return;
     }
+    if (gc_domain_try_elided_lock(domain, ZR_TRUE)) return;
+    gc_domain_wait_for_elision_drain(domain);
 #if defined(ZR_PLATFORM_WIN)
     EnterCriticalSection(&domain->mutationLock);
 #else
@@ -304,6 +395,12 @@ void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain) {
 /* 与 MutationLock 配对；不得在另一个线程或域上释放。 */
 void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain) {
     if (domain == ZR_NULL || !domain->mutationLockInitialized) {
+        return;
+    }
+    if (gc_domain_is_elision_owner(domain) && gc_domain_atomic_load(&domain->elidedMutationDepth) != 0) {
+        ZR_ASSERT(gc_domain_atomic_load(&domain->elidedMutationDepth) > 0);
+        (void)gc_domain_atomic_add(&domain->elidedMutationDepth, -1);
+        gc_domain_finish_elision_drain(domain);
         return;
     }
 #if defined(ZR_PLATFORM_WIN)
@@ -427,6 +524,7 @@ TZrBool ZrCore_GcDomain_RegisterMutator(
         ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
+    if (domain->mutatorLength != 0u) gc_domain_disable_elision(domain);
     record = &domain->mutators[domain->mutatorLength++];
     ZrCore_Memory_RawSet(record, 0, sizeof(*record));
     record->state = state;
@@ -576,12 +674,24 @@ void ZrCore_GcDomain_MutatorUnwindScopes(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
 }
 
+TZrBool ZrCore_GcDomain_HasPauseRequest(const SZrState *state) {
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+#if defined(ZR_PLATFORM_WIN)
+    return (TZrBool)(InterlockedCompareExchange(
+            (volatile LONG *)&state->gcDomain->pauseRequested, 0, 0) != 0);
+#else
+    return (TZrBool)(__atomic_load_n(&state->gcDomain->pauseRequested, __ATOMIC_ACQUIRE) != 0);
+#endif
+}
+
 /* VM/GC 安全点响应暂停请求，并在 collector 结束前保持当前 epoch 的停靠状态。 */
 TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
 
-    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+    if (!ZrCore_GcDomain_HasPauseRequest(state)) {
         return ZR_FALSE;
     }
     domain = state->gcDomain;
@@ -601,9 +711,14 @@ TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     record->observedEpoch = domain->safepointEpoch;
     record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
     ZrCore_GcDomain_Broadcast(domain);
-    /* BUG: 前一轮 End 与下一轮 Begin 可在本线程醒来前连续发生；旧 PARKED
-     * 记录没有更新到新 epoch，collector 把它当阻塞者，直到新请求超时。 */
     while (domain->pauseRequested && domain->collectorState != state) {
+        /* A new collector can begin before this waiter resumes. Acknowledge
+         * its epoch while remaining parked, and reacquire registry pointers. */
+        record = gc_domain_find_mutator_locked(domain, state);
+        if (record != ZR_NULL) {
+            record->observedEpoch = domain->safepointEpoch;
+            ZrCore_GcDomain_Broadcast(domain);
+        }
         gc_domain_wait_locked(domain, ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS);
     }
     record = gc_domain_find_mutator_locked(domain, state);
@@ -786,12 +901,21 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         ZrCore_GcDomain_Unlock(domain);
         return ZR_TRUE;
     }
-    /* BUG: 第二个 RUNNING mutator 竞争暂停时直接在此等待，未承认首个请求的 epoch；
-     * 首个 collector 把它当阻塞者，双方直到首个请求超时才可前进。 */
     /* TODO: now_milliseconds 失败返回 0，若已记录非零起点，此处无符号差值会提前超时；核查时钟故障策略。 */
     while (domain->pauseRequested) {
+        SZrGcDomainMutatorRecord *caller = gc_domain_find_mutator_locked(domain, state);
         TZrUInt64 elapsed = gc_domain_now_milliseconds() - started;
+        if (caller != ZR_NULL && caller->mutationDepth == 0u &&
+            caller->nativeMode == ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE &&
+            (caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
+             caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)) {
+            caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
+            caller->observedEpoch = domain->safepointEpoch;
+            ZrCore_GcDomain_Broadcast(domain);
+        }
         if (elapsed >= timeoutMilliseconds) {
+            if (caller != ZR_NULL && caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)
+                caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING;
             if (outDiagnostic != ZR_NULL) {
                 outDiagnostic->timedOut = ZR_TRUE;
                 outDiagnostic->safepointEpoch = domain->safepointEpoch;
@@ -801,11 +925,16 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         }
         gc_domain_wait_locked(domain, ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS);
     }
+    {
+        SZrGcDomainMutatorRecord *caller = gc_domain_find_mutator_locked(domain, state);
+        if (caller != ZR_NULL && caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)
+            caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING;
+    }
     domain->safepointEpoch++;
     if (domain->safepointEpoch == 0u) {
         domain->safepointEpoch = 1u;
     }
-    domain->pauseRequested = ZR_TRUE;
+    gc_domain_set_pause_requested(domain, ZR_TRUE);
     domain->collectorState = state;
     domain->pauseDepth = 1u;
     ZrCore_GcDomain_Broadcast(domain);
@@ -837,7 +966,7 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
                                 ? blocker->state->callInfoList
                                 : ZR_NULL;
             }
-            domain->pauseRequested = ZR_FALSE;
+            gc_domain_set_pause_requested(domain, ZR_FALSE);
             domain->collectorState = ZR_NULL;
             domain->pauseDepth = 0u;
             ZrCore_GcDomain_Broadcast(domain);
@@ -866,7 +995,7 @@ void ZrCore_GcDomain_StopTheWorldEnd(SZrState *state) {
         ZrCore_GcDomain_Unlock(domain);
         return;
     }
-    domain->pauseRequested = ZR_FALSE;
+    gc_domain_set_pause_requested(domain, ZR_FALSE);
     domain->collectorState = ZR_NULL;
     domain->pauseDepth = 0u;
     ZrCore_GcDomain_Broadcast(domain);

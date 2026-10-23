@@ -2585,7 +2585,7 @@ static void test_prepared_resolved_vm_precall_copies_inline_parameter_payload_fr
     callerFunctionBase = state->stackTop.valuePointer;
     callerFunctionBase = ZrCore_Function_CheckStackAndGc(state, 40u, callerFunctionBase);
     callerFrameBase = callerFunctionBase + 1;
-    callStackPointer = callerFrameBase + 2;
+    callStackPointer = callerFrameBase + ZrCore_Function_GetFrameStorageSlotCount(callerFunction);
 
     ZrCore_Value_InitAsRawObject(state,
                                  ZrCore_Stack_GetValue(callerFunctionBase),
@@ -2627,13 +2627,15 @@ static void test_prepared_resolved_vm_precall_copies_inline_parameter_payload_fr
             1u,
             ZR_NULL));
 
-    calleeCallInfo = ZrCore_Function_PreCallPreparedResolvedVmFunction(
+    calleeCallInfo = ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
             state,
             callStackPointer,
             calleeFunction,
             1u,
             1u,
-            ZR_NULL);
+            ZR_NULL,
+            callerFrameBase,
+            3u);
     TEST_ASSERT_NOT_NULL(calleeCallInfo);
     TEST_ASSERT_EQUAL_PTR(callStackPointer, calleeCallInfo->functionBase.valuePointer);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, destinationPlace.address, sizeof(payload));
@@ -3113,6 +3115,10 @@ static void test_borrowed_frame_alias_artifact_version_and_flags_are_validated(v
             ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
             ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
 
+    TZrInstruction returnInstruction = {0};
+    returnInstruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    ioFunction.instructions = &returnInstruction;
+    ioFunction.instructionsLength = 1u;
     ioFunction.parametersLength = 1u;
     ioFunction.stackSize = 1u;
     ioFunction.sourceVersionPatch =

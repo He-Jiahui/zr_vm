@@ -1,0 +1,5 @@
+let core = import("@swarmcore");
+let system = import("zr.system");
+if (core.value() != 5) { throw "P14 package value"; }
+system.console.printLine("PROBE_OK P14 local-package");
+return 0;

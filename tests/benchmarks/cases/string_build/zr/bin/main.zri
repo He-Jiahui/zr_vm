@@ -43,28 +43,28 @@ CONSTANTS (31):
 "
 
 LOCAL_VARIABLES (22):
-  [0] fragmentFor: offset_activate=0, offset_dead=207
-  [1] benchConfig: offset_activate=6, offset_dead=207
-  [2] container: offset_activate=11, offset_dead=207
-  [3] scale: offset_activate=16, offset_dead=207
-  [4] counts: offset_activate=24, offset_dead=207
-  [5] keys: offset_activate=32, offset_dead=207
-  [6] assembled: offset_activate=35, offset_dead=207
-  [7] assembledScore: offset_activate=36, offset_dead=207
-  [8] checksum: offset_activate=38, offset_dead=207
-  [9] seed: offset_activate=40, offset_dead=207
-  [10] iterations: offset_activate=42, offset_dead=207
-  [11] index: offset_activate=43, offset_dead=207
-  [12] tokenId: offset_activate=53, offset_dead=207
-  [13] firstFragment: offset_activate=61, offset_dead=151
-  [14] secondFragment: offset_activate=69, offset_dead=151
-  [15] thirdFragment: offset_activate=75, offset_dead=151
-  [16] token: offset_activate=80, offset_dead=151
-  [17] tokenScore: offset_activate=84, offset_dead=151
-  [18] existing: offset_activate=126, offset_dead=149
-  [19] existing: offset_activate=179, offset_dead=186
-  [20] keyIndex: offset_activate=188, offset_dead=188
-  [21] key: offset_activate=190, offset_dead=203
+  [0] fragmentFor: offset_activate=0, offset_dead=203
+  [1] benchConfig: offset_activate=6, offset_dead=203
+  [2] container: offset_activate=11, offset_dead=203
+  [3] scale: offset_activate=16, offset_dead=203
+  [4] counts: offset_activate=24, offset_dead=203
+  [5] keys: offset_activate=32, offset_dead=203
+  [6] assembled: offset_activate=35, offset_dead=203
+  [7] assembledScore: offset_activate=36, offset_dead=203
+  [8] checksum: offset_activate=38, offset_dead=203
+  [9] seed: offset_activate=40, offset_dead=203
+  [10] iterations: offset_activate=42, offset_dead=203
+  [11] index: offset_activate=43, offset_dead=203
+  [12] tokenId: offset_activate=53, offset_dead=203
+  [13] firstFragment: offset_activate=59, offset_dead=147
+  [14] secondFragment: offset_activate=65, offset_dead=147
+  [15] thirdFragment: offset_activate=71, offset_dead=147
+  [16] token: offset_activate=76, offset_dead=147
+  [17] tokenScore: offset_activate=80, offset_dead=147
+  [18] existing: offset_activate=122, offset_dead=145
+  [19] existing: offset_activate=175, offset_dead=182
+  [20] keyIndex: offset_activate=184, offset_dead=184
+  [21] key: offset_activate=186, offset_dead=199
 
 CLOSURE_VARIABLES (0):
 
@@ -212,62 +212,62 @@ SEMIR (72):
   [13] MOD exec=48 type=4 effect=13 dst=26 op0=24 op1=25 deopt=0
   [14] ADD exec=51 type=4 effect=14 dst=21 op0=10 op1=12 deopt=0
   [15] MOD exec=52 type=4 effect=15 dst=23 op0=21 op1=22 deopt=0
-  [16] DYN_CALL exec=57 type=7 effect=16 dst=20 op0=20 op1=1 deopt=8
-  [17] DYN_CALL exec=65 type=7 effect=17 dst=21 op0=21 op1=1 deopt=9
-  [18] ADD exec=70 type=4 effect=18 dst=26 op0=24 op1=25 deopt=0
-  [19] DYN_CALL exec=71 type=7 effect=19 dst=22 op0=22 op1=1 deopt=10
-  [20] MOD exec=80 type=4 effect=20 dst=26 op0=24 op1=25 deopt=0
-  [21] MUL exec=81 type=4 effect=21 dst=29 op0=27 op1=28 deopt=0
-  [22] ADD exec=82 type=4 effect=22 dst=30 op0=26 op1=29 deopt=0
-  [23] ADD exec=83 type=4 effect=23 dst=32 op0=30 op1=12 deopt=0
-  [24] MUL exec=86 type=4 effect=24 dst=26 op0=24 op1=25 deopt=0
-  [25] ADD exec=87 type=4 effect=25 dst=28 op0=26 op1=23 deopt=0
-  [26] MOD exec=88 type=4 effect=26 dst=30 op0=28 op1=29 deopt=0
-  [27] MOD exec=88 type=4 effect=27 dst=26 op0=24 op1=25 deopt=0
-  [28] EQ exec=89 type=0 effect=28 dst=28 op0=26 op1=27 deopt=0
-  [29] ADD exec=93 type=4 effect=29 dst=31 op0=29 op1=30 deopt=0
-  [30] MOD exec=94 type=4 effect=30 dst=33 op0=31 op1=32 deopt=0
-  [31] ADD exec=99 type=4 effect=31 dst=31 op0=29 op1=30 deopt=0
-  [32] MOD exec=100 type=4 effect=32 dst=33 op0=31 op1=32 deopt=0
-  [33] MOD exec=101 type=4 effect=33 dst=14 op0=3 op1=13 deopt=0
-  [34] EQ exec=102 type=0 effect=34 dst=13 op0=14 op1=3 deopt=0
-  [35] DYN_INDEX_GET exec=106 type=0 effect=35 dst=34 op0=34 op1=35 deopt=11
-  [36] DYN_ARITHMETIC exec=108 type=0 effect=36 dst=36 op0=34 op1=35 deopt=12
-  [37] DYN_INDEX_SET exec=114 type=4 effect=37 dst=37 op0=38 op1=39 deopt=13
-  [38] DYN_INDEX_GET exec=124 type=0 effect=38 dst=38 op0=38 op1=39 deopt=14
-  [39] ADD exec=125 type=4 effect=39 dst=40 op0=38 op1=39 deopt=0
-  [40] ADD exec=126 type=4 effect=40 dst=40 op0=37 op1=8 deopt=0
-  [41] ADD exec=127 type=4 effect=41 dst=42 op0=40 op1=12 deopt=0
-  [42] ADD exec=128 type=4 effect=42 dst=44 op0=42 op1=43 deopt=0
-  [43] MOD exec=129 type=4 effect=43 dst=46 op0=44 op1=45 deopt=0
-  [44] DYN_INDEX_SET exec=134 type=0 effect=44 dst=46 op0=47 op1=48 deopt=15
-  [45] DYN_INDEX_GET exec=139 type=0 effect=45 dst=39 op0=39 op1=40 deopt=16
-  [46] ADD exec=140 type=4 effect=46 dst=41 op0=39 op1=40 deopt=0
-  [47] ADD exec=141 type=4 effect=47 dst=42 op0=38 op1=41 deopt=0
-  [48] MOD exec=142 type=4 effect=48 dst=45 op0=43 op1=44 deopt=0
-  [49] ADD exec=143 type=4 effect=49 dst=46 op0=42 op1=45 deopt=0
-  [50] MOD exec=144 type=4 effect=50 dst=48 op0=46 op1=47 deopt=0
-  [51] MOD exec=148 type=4 effect=51 dst=40 op0=38 op1=39 deopt=0
-  [52] ADD exec=150 type=4 effect=52 dst=40 op0=38 op1=39 deopt=0
-  [53] NE exec=153 type=0 effect=53 dst=14 op0=3 op1=13 deopt=0
-  [54] DYN_INDEX_GET exec=158 type=0 effect=54 dst=41 op0=41 op1=42 deopt=17
-  [55] DYN_ARITHMETIC exec=160 type=0 effect=55 dst=43 op0=41 op1=42 deopt=18
-  [56] DYN_INDEX_SET exec=166 type=4 effect=56 dst=44 op0=45 op1=46 deopt=19
-  [57] DYN_INDEX_GET exec=176 type=8 effect=57 dst=45 op0=45 op1=46 deopt=20
-  [58] ADD exec=177 type=4 effect=58 dst=47 op0=45 op1=46 deopt=0
-  [59] ADD exec=179 type=4 effect=59 dst=47 op0=44 op1=8 deopt=0
-  [60] ADD exec=180 type=4 effect=60 dst=49 op0=47 op1=11 deopt=0
-  [61] MOD exec=181 type=4 effect=61 dst=51 op0=49 op1=50 deopt=0
-  [62] DYN_INDEX_SET exec=184 type=0 effect=62 dst=51 op0=52 op1=53 deopt=21
-  [63] DYN_ITER_INIT exec=189 type=0 effect=63 dst=47 op0=46 op1=0 deopt=22
-  [64] DYN_ITER_MOVE_NEXT exec=190 type=0 effect=64 dst=48 op0=47 op1=0 deopt=23
-  [65] DYN_INDEX_GET exec=196 type=0 effect=65 dst=51 op0=51 op1=52 deopt=24
-  [66] ADD exec=197 type=4 effect=66 dst=53 op0=51 op1=52 deopt=0
-  [67] ADD exec=198 type=4 effect=67 dst=56 op0=54 op1=55 deopt=0
-  [68] MUL exec=199 type=4 effect=68 dst=57 op0=53 op1=56 deopt=0
-  [69] ADD exec=200 type=4 effect=69 dst=58 op0=50 op1=57 deopt=0
-  [70] MOD exec=201 type=4 effect=70 dst=60 op0=58 op1=59 deopt=0
-  [71] ADD exec=201 type=4 effect=71 dst=52 op0=50 op1=51 deopt=0
+  [16] DYN_CALL exec=55 type=7 effect=16 dst=20 op0=20 op1=1 deopt=8
+  [17] DYN_CALL exec=61 type=7 effect=17 dst=21 op0=21 op1=1 deopt=9
+  [18] ADD exec=66 type=4 effect=18 dst=26 op0=24 op1=25 deopt=0
+  [19] DYN_CALL exec=67 type=7 effect=19 dst=22 op0=22 op1=1 deopt=10
+  [20] MOD exec=76 type=4 effect=20 dst=26 op0=24 op1=25 deopt=0
+  [21] MUL exec=77 type=4 effect=21 dst=29 op0=27 op1=28 deopt=0
+  [22] ADD exec=78 type=4 effect=22 dst=30 op0=26 op1=29 deopt=0
+  [23] ADD exec=79 type=4 effect=23 dst=32 op0=30 op1=12 deopt=0
+  [24] MUL exec=82 type=4 effect=24 dst=26 op0=24 op1=25 deopt=0
+  [25] ADD exec=83 type=4 effect=25 dst=28 op0=26 op1=23 deopt=0
+  [26] MOD exec=84 type=4 effect=26 dst=30 op0=28 op1=29 deopt=0
+  [27] MOD exec=84 type=4 effect=27 dst=26 op0=24 op1=25 deopt=0
+  [28] EQ exec=85 type=0 effect=28 dst=28 op0=26 op1=27 deopt=0
+  [29] ADD exec=89 type=4 effect=29 dst=31 op0=29 op1=30 deopt=0
+  [30] MOD exec=90 type=4 effect=30 dst=33 op0=31 op1=32 deopt=0
+  [31] ADD exec=95 type=4 effect=31 dst=31 op0=29 op1=30 deopt=0
+  [32] MOD exec=96 type=4 effect=32 dst=33 op0=31 op1=32 deopt=0
+  [33] MOD exec=97 type=4 effect=33 dst=14 op0=3 op1=13 deopt=0
+  [34] EQ exec=98 type=0 effect=34 dst=13 op0=14 op1=3 deopt=0
+  [35] DYN_INDEX_GET exec=102 type=0 effect=35 dst=34 op0=34 op1=35 deopt=11
+  [36] DYN_ARITHMETIC exec=104 type=0 effect=36 dst=36 op0=34 op1=35 deopt=12
+  [37] DYN_INDEX_SET exec=110 type=4 effect=37 dst=37 op0=38 op1=39 deopt=13
+  [38] DYN_INDEX_GET exec=120 type=0 effect=38 dst=38 op0=38 op1=39 deopt=14
+  [39] ADD exec=121 type=4 effect=39 dst=40 op0=38 op1=39 deopt=0
+  [40] ADD exec=122 type=4 effect=40 dst=40 op0=37 op1=8 deopt=0
+  [41] ADD exec=123 type=4 effect=41 dst=42 op0=40 op1=12 deopt=0
+  [42] ADD exec=124 type=4 effect=42 dst=44 op0=42 op1=43 deopt=0
+  [43] MOD exec=125 type=4 effect=43 dst=46 op0=44 op1=45 deopt=0
+  [44] DYN_INDEX_SET exec=130 type=0 effect=44 dst=46 op0=47 op1=48 deopt=15
+  [45] DYN_INDEX_GET exec=135 type=0 effect=45 dst=39 op0=39 op1=40 deopt=16
+  [46] ADD exec=136 type=4 effect=46 dst=41 op0=39 op1=40 deopt=0
+  [47] ADD exec=137 type=4 effect=47 dst=42 op0=38 op1=41 deopt=0
+  [48] MOD exec=138 type=4 effect=48 dst=45 op0=43 op1=44 deopt=0
+  [49] ADD exec=139 type=4 effect=49 dst=46 op0=42 op1=45 deopt=0
+  [50] MOD exec=140 type=4 effect=50 dst=48 op0=46 op1=47 deopt=0
+  [51] MOD exec=144 type=4 effect=51 dst=40 op0=38 op1=39 deopt=0
+  [52] ADD exec=146 type=4 effect=52 dst=40 op0=38 op1=39 deopt=0
+  [53] NE exec=149 type=0 effect=53 dst=14 op0=3 op1=13 deopt=0
+  [54] DYN_INDEX_GET exec=154 type=0 effect=54 dst=41 op0=41 op1=42 deopt=17
+  [55] DYN_ARITHMETIC exec=156 type=0 effect=55 dst=43 op0=41 op1=42 deopt=18
+  [56] DYN_INDEX_SET exec=162 type=4 effect=56 dst=44 op0=45 op1=46 deopt=19
+  [57] DYN_INDEX_GET exec=172 type=8 effect=57 dst=45 op0=45 op1=46 deopt=20
+  [58] ADD exec=173 type=4 effect=58 dst=47 op0=45 op1=46 deopt=0
+  [59] ADD exec=175 type=4 effect=59 dst=47 op0=44 op1=8 deopt=0
+  [60] ADD exec=176 type=4 effect=60 dst=49 op0=47 op1=11 deopt=0
+  [61] MOD exec=177 type=4 effect=61 dst=51 op0=49 op1=50 deopt=0
+  [62] DYN_INDEX_SET exec=180 type=0 effect=62 dst=51 op0=52 op1=53 deopt=21
+  [63] DYN_ITER_INIT exec=185 type=0 effect=63 dst=47 op0=46 op1=0 deopt=22
+  [64] DYN_ITER_MOVE_NEXT exec=186 type=0 effect=64 dst=48 op0=47 op1=0 deopt=23
+  [65] DYN_INDEX_GET exec=192 type=0 effect=65 dst=51 op0=51 op1=52 deopt=24
+  [66] ADD exec=193 type=4 effect=66 dst=53 op0=51 op1=52 deopt=0
+  [67] ADD exec=194 type=4 effect=67 dst=56 op0=54 op1=55 deopt=0
+  [68] MUL exec=195 type=4 effect=68 dst=57 op0=53 op1=56 deopt=0
+  [69] ADD exec=196 type=4 effect=69 dst=58 op0=50 op1=57 deopt=0
+  [70] MOD exec=197 type=4 effect=70 dst=60 op0=58 op1=59 deopt=0
+  [71] ADD exec=197 type=4 effect=71 dst=52 op0=50 op1=51 deopt=0
 
 DEOPT_MAP (24):
   [0] deopt=1 exec=3
@@ -277,36 +277,36 @@ DEOPT_MAP (24):
   [4] deopt=5 exec=19
   [5] deopt=6 exec=26
   [6] deopt=7 exec=27
-  [7] deopt=8 exec=57
-  [8] deopt=9 exec=65
-  [9] deopt=10 exec=71
-  [10] deopt=11 exec=106
-  [11] deopt=12 exec=108
-  [12] deopt=13 exec=114
-  [13] deopt=14 exec=124
-  [14] deopt=15 exec=134
-  [15] deopt=16 exec=139
-  [16] deopt=17 exec=158
-  [17] deopt=18 exec=160
-  [18] deopt=19 exec=166
-  [19] deopt=20 exec=176
-  [20] deopt=21 exec=184
-  [21] deopt=22 exec=189
-  [22] deopt=23 exec=190
-  [23] deopt=24 exec=196
+  [7] deopt=8 exec=55
+  [8] deopt=9 exec=61
+  [9] deopt=10 exec=67
+  [10] deopt=11 exec=102
+  [11] deopt=12 exec=104
+  [12] deopt=13 exec=110
+  [13] deopt=14 exec=120
+  [14] deopt=15 exec=130
+  [15] deopt=16 exec=135
+  [16] deopt=17 exec=154
+  [17] deopt=18 exec=156
+  [18] deopt=19 exec=162
+  [19] deopt=20 exec=172
+  [20] deopt=21 exec=180
+  [21] deopt=22 exec=185
+  [22] deopt=23 exec=186
+  [23] deopt=24 exec=192
 
 CALLSITE_CACHE_TABLE (5):
   [0] kind=NONE inst=14 member=4294967295 deopt=0 args=0 hits=0 misses=0
-  [1] kind=MEMBER_GET inst=118 member=2 deopt=0 args=2 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=114 member=2 deopt=0 args=2 hits=0 misses=0
     PIC[0] receiver_version=26 owner_version=26 descriptor=3 static=false has_function=false
-  [2] kind=MEMBER_GET inst=170 member=2 deopt=0 args=2 hits=0 misses=0
+  [2] kind=MEMBER_GET inst=166 member=2 deopt=0 args=2 hits=0 misses=0
     PIC[0] receiver_version=26 owner_version=26 descriptor=3 static=false has_function=false
   [3] kind=MEMBER_GET inst=18 member=1 deopt=4 args=0 hits=0 misses=0
   [4] kind=MEMBER_GET inst=26 member=1 deopt=6 args=0 hits=0 misses=0
 
 EH_TABLE (0):
 
-INSTRUCTIONS (207):
+INSTRUCTIONS (203):
   [0] RESET_STACK_NULL (extra=0)
   [1] GET_CONSTANT (extra=2, operand=1)
   [2] GET_CONSTANT (extra=3, operand=2)
@@ -351,7 +351,7 @@ INSTRUCTIONS (207):
   [41] RESET_STACK_NULL (extra=12)
   [42] GET_CONSTANT (extra=12, operand=9)
   [43] SUB_SIGNED_CONST (extra=15, left_slot=11, constant_index=12)
-  [44] JUMP_IF_GREATER_SIGNED (extra=12, left_slot=12, right_slot=15, jump_offset=107)
+  [44] JUMP_IF_GREATER_SIGNED (extra=12, left_slot=12, right_slot=15, jump_offset=103)
   [45] MUL_SIGNED_CONST (extra=20, left_slot=10, constant_index=13)
   [46] ADD_SIGNED_CONST (extra=22, left_slot=20, constant_index=14)
   [47] ADD_SIGNED_MOD_CONST (extra=10, left_slot=22, right_slot=12, constant_index=15)
@@ -361,159 +361,155 @@ INSTRUCTIONS (207):
   [51] ADD_SIGNED_MOD_CONST (extra=18, left_slot=10, right_slot=12, constant_index=16)
   [52] RESET_STACK_NULL (extra=21)
   [53] GET_STACK (extra=20, operand=0)
-  [54] GET_STACK (extra=22, operand=10)
-  [55] SET_STACK (extra=21, operand=22)
-  [56] RESET_STACK_NULL (extra=22)
-  [57] KNOWN_VM_CALL (extra=20, operand1=20, operand2=1)
-  [58] RESET_STACK_NULL (extra=21)
-  [59] SET_STACK (extra=19, operand=20)
-  [60] RESET_STACK_NULL (extra=20)
-  [61] GET_STACK (extra=21, operand=0)
-  [62] GET_STACK (extra=23, operand=18)
-  [63] SET_STACK (extra=22, operand=23)
-  [64] RESET_STACK_NULL (extra=23)
-  [65] KNOWN_VM_CALL (extra=21, operand1=21, operand2=1)
-  [66] RESET_STACK_NULL (extra=22)
-  [67] SET_STACK (extra=20, operand=21)
-  [68] RESET_STACK_NULL (extra=21)
-  [69] GET_STACK (extra=22, operand=0)
-  [70] ADD_SIGNED_CONST (extra=23, left_slot=18, constant_index=17)
-  [71] KNOWN_VM_CALL (extra=22, operand1=22, operand2=1)
-  [72] RESET_STACK_NULL (extra=23)
-  [73] SET_STACK (extra=21, operand=22)
-  [74] RESET_STACK_NULL (extra=22)
-  [75] GET_CONSTANT (extra=24, operand=18)
-  [76] ADD_STRING (extra=25, operand1=19, operand2=24)
-  [77] ADD_STRING (extra=27, operand1=25, operand2=20)
-  [78] ADD_STRING (extra=29, operand1=27, operand2=21)
-  [79] SET_STACK (extra=22, operand=29)
-  [80] MOD_SIGNED_CONST (extra=26, left_slot=10, constant_index=19)
-  [81] MUL_SIGNED_CONST (extra=29, left_slot=18, constant_index=10)
-  [82] ADD_SIGNED (extra=30, operand1=26, operand2=29)
-  [83] ADD_SIGNED (extra=23, operand1=30, operand2=12)
-  [84] ADD_STRING (extra=26, operand1=7, operand2=22)
-  [85] SET_STACK (extra=7, operand=26)
-  [86] MUL_SIGNED_CONST (extra=26, left_slot=8, constant_index=20)
-  [87] ADD_SIGNED_MOD_CONST (extra=8, left_slot=26, right_slot=23, constant_index=21)
-  [88] MOD_SIGNED_CONST_PLAIN_DEST (extra=26, left_slot=12, constant_index=22)
-  [89] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=26, left_slot=26, constant_index=9, jump_offset=6)
-  [90] GET_CONSTANT (extra=30, operand=23)
-  [91] ADD_STRING (extra=31, operand1=7, operand2=30)
-  [92] SET_STACK (extra=7, operand=31)
-  [93] ADD_SIGNED_CONST (extra=31, left_slot=8, constant_index=24)
-  [94] MOD_SIGNED_CONST (extra=8, left_slot=31, constant_index=21)
-  [95] JUMP (extra=0, operand=5)
-  [96] GET_CONSTANT (extra=30, operand=25)
-  [97] ADD_STRING (extra=31, operand1=7, operand2=30)
-  [98] SET_STACK (extra=7, operand=31)
-  [99] ADD_SIGNED_CONST (extra=31, left_slot=8, constant_index=26)
-  [100] MOD_SIGNED_CONST (extra=8, left_slot=31, constant_index=21)
-  [101] MOD_SIGNED_CONST (extra=14, left_slot=12, constant_index=27)
-  [102] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=14, left_slot=14, constant_index=28, jump_offset=47)
-  [103] GET_STACK (extra=34, operand=5)
-  [104] GET_STACK (extra=36, operand=7)
-  [105] SET_STACK (extra=35, operand=36)
-  [106] GET_BY_INDEX (extra=34, operand1=34, operand2=35)
-  [107] RESET_STACK_NULL (extra=35)
-  [108] LOGICAL_EQUAL (extra=36, operand1=34, operand2=35)
-  [109] JUMP_IF_BOOL_FALSE (extra=36, operand2=11, operand1=11, operand1_1=0)
-  [110] GET_CONSTANT (extra=37, operand=9)
-  [111] GET_STACK (extra=38, operand=5)
+  [54] GET_STACK (extra=21, operand=10)
+  [55] KNOWN_VM_CALL (extra=20, operand1=20, operand2=1)
+  [56] RESET_STACK_NULL (extra=21)
+  [57] SET_STACK (extra=19, operand=20)
+  [58] RESET_STACK_NULL (extra=20)
+  [59] GET_STACK (extra=21, operand=0)
+  [60] GET_STACK (extra=22, operand=18)
+  [61] KNOWN_VM_CALL (extra=21, operand1=21, operand2=1)
+  [62] RESET_STACK_NULL (extra=22)
+  [63] SET_STACK (extra=20, operand=21)
+  [64] RESET_STACK_NULL (extra=21)
+  [65] GET_STACK (extra=22, operand=0)
+  [66] ADD_SIGNED_CONST (extra=23, left_slot=18, constant_index=17)
+  [67] KNOWN_VM_CALL (extra=22, operand1=22, operand2=1)
+  [68] RESET_STACK_NULL (extra=23)
+  [69] SET_STACK (extra=21, operand=22)
+  [70] RESET_STACK_NULL (extra=22)
+  [71] GET_CONSTANT (extra=24, operand=18)
+  [72] ADD_STRING (extra=25, operand1=19, operand2=24)
+  [73] ADD_STRING (extra=27, operand1=25, operand2=20)
+  [74] ADD_STRING (extra=29, operand1=27, operand2=21)
+  [75] SET_STACK (extra=22, operand=29)
+  [76] MOD_SIGNED_CONST (extra=26, left_slot=10, constant_index=19)
+  [77] MUL_SIGNED_CONST (extra=29, left_slot=18, constant_index=10)
+  [78] ADD_SIGNED (extra=30, operand1=26, operand2=29)
+  [79] ADD_SIGNED (extra=23, operand1=30, operand2=12)
+  [80] ADD_STRING (extra=26, operand1=7, operand2=22)
+  [81] SET_STACK (extra=7, operand=26)
+  [82] MUL_SIGNED_CONST (extra=26, left_slot=8, constant_index=20)
+  [83] ADD_SIGNED_MOD_CONST (extra=8, left_slot=26, right_slot=23, constant_index=21)
+  [84] MOD_SIGNED_CONST_PLAIN_DEST (extra=26, left_slot=12, constant_index=22)
+  [85] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=26, left_slot=26, constant_index=9, jump_offset=6)
+  [86] GET_CONSTANT (extra=30, operand=23)
+  [87] ADD_STRING (extra=31, operand1=7, operand2=30)
+  [88] SET_STACK (extra=7, operand=31)
+  [89] ADD_SIGNED_CONST (extra=31, left_slot=8, constant_index=24)
+  [90] MOD_SIGNED_CONST (extra=8, left_slot=31, constant_index=21)
+  [91] JUMP (extra=0, operand=5)
+  [92] GET_CONSTANT (extra=30, operand=25)
+  [93] ADD_STRING (extra=31, operand1=7, operand2=30)
+  [94] SET_STACK (extra=7, operand=31)
+  [95] ADD_SIGNED_CONST (extra=31, left_slot=8, constant_index=26)
+  [96] MOD_SIGNED_CONST (extra=8, left_slot=31, constant_index=21)
+  [97] MOD_SIGNED_CONST (extra=14, left_slot=12, constant_index=27)
+  [98] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=14, left_slot=14, constant_index=28, jump_offset=47)
+  [99] GET_STACK (extra=34, operand=5)
+  [100] GET_STACK (extra=36, operand=7)
+  [101] SET_STACK (extra=35, operand=36)
+  [102] GET_BY_INDEX (extra=34, operand1=34, operand2=35)
+  [103] RESET_STACK_NULL (extra=35)
+  [104] LOGICAL_EQUAL (extra=36, operand1=34, operand2=35)
+  [105] JUMP_IF_BOOL_FALSE (extra=36, operand2=11, operand1=11, operand1_1=0)
+  [106] GET_CONSTANT (extra=37, operand=9)
+  [107] GET_STACK (extra=38, operand=5)
+  [108] GET_STACK (extra=40, operand=7)
+  [109] SET_STACK (extra=39, operand=40)
+  [110] SET_BY_INDEX (extra=37, operand1=38, operand2=39)
+  [111] RESET_STACK_NULL (extra=37)
   [112] GET_STACK (extra=40, operand=7)
   [113] SET_STACK (extra=39, operand=40)
-  [114] SET_BY_INDEX (extra=37, operand1=38, operand2=39)
+  [114] KNOWN_NATIVE_MEMBER_CALL_RECV_U8 (extra=37, cache=1, receiver_source=6, argument_count=2)
   [115] RESET_STACK_NULL (extra=37)
-  [116] GET_STACK (extra=40, operand=7)
-  [117] SET_STACK (extra=39, operand=40)
-  [118] KNOWN_NATIVE_MEMBER_CALL_RECV_U8 (extra=37, cache=1, receiver_source=6, argument_count=2)
-  [119] RESET_STACK_NULL (extra=37)
-  [120] JUMP (extra=0, operand=0)
-  [121] GET_STACK (extra=38, operand=5)
-  [122] GET_STACK (extra=40, operand=7)
-  [123] SET_STACK (extra=39, operand=40)
-  [124] GET_BY_INDEX (extra=38, operand1=38, operand2=39)
-  [125] ADD_SIGNED_CONST (extra=37, left_slot=38, constant_index=9)
-  [126] ADD_SIGNED_PLAIN_DEST (extra=40, operand1=37, operand2=8)
-  [127] ADD_SIGNED (extra=42, operand1=40, operand2=12)
-  [128] ADD_SIGNED_CONST (extra=44, left_slot=42, constant_index=12)
-  [129] MOD_SIGNED_CONST (extra=46, left_slot=44, constant_index=21)
-  [130] GET_STACK (extra=47, operand=5)
-  [131] GET_STACK (extra=49, operand=7)
-  [132] SET_STACK (extra=48, operand=49)
-  [133] RESET_STACK_NULL (extra=49)
-  [134] SET_BY_INDEX (extra=46, operand1=47, operand2=48)
-  [135] RESET_STACK_NULL2 (extra=44, first_slot=44, second_slot=45)
-  [136] GET_STACK (extra=39, operand=5)
-  [137] GET_STACK (extra=41, operand=7)
-  [138] SET_STACK (extra=40, operand=41)
-  [139] GET_BY_INDEX (extra=39, operand1=39, operand2=40)
-  [140] ADD_SIGNED_CONST (extra=41, left_slot=39, constant_index=9)
-  [141] ADD_SIGNED_LOAD_STACK (extra=42, source_slot=9, right_slot=41)
-  [142] MOD_SIGNED_CONST (extra=45, left_slot=10, constant_index=29)
-  [143] ADD_SIGNED_MOD_CONST (extra=48, left_slot=42, right_slot=45, constant_index=21)
-  [144] SET_STACK (extra=9, operand=48)
-  [145] RESET_STACK_NULL (extra=45)
-  [146] GET_STACK (extra=38, operand=22)
-  [147] SET_STACK (extra=7, operand=38)
-  [148] MOD_SIGNED_CONST (extra=8, left_slot=23, constant_index=21)
-  [149] JUMP (extra=0, operand=0)
-  [150] ADD_SIGNED_CONST (extra=12, left_slot=12, constant_index=12)
-  [151] JUMP (extra=0, operand=-109)
-  [152] GET_CONSTANT (extra=13, operand=8)
-  [153] LOGICAL_NOT_EQUAL_STRING (extra=14, operand1=7, operand2=13)
-  [154] JUMP_IF_BOOL_FALSE (extra=14, operand2=32, operand1=32, operand1_1=0)
-  [155] GET_STACK (extra=41, operand=5)
-  [156] GET_STACK (extra=43, operand=7)
-  [157] SET_STACK (extra=42, operand=43)
-  [158] GET_BY_INDEX (extra=41, operand1=41, operand2=42)
-  [159] RESET_STACK_NULL (extra=42)
-  [160] LOGICAL_EQUAL (extra=43, operand1=41, operand2=42)
-  [161] JUMP_IF_BOOL_FALSE (extra=43, operand2=11, operand1=11, operand1_1=0)
-  [162] GET_CONSTANT (extra=44, operand=9)
-  [163] GET_STACK (extra=45, operand=5)
+  [116] JUMP (extra=0, operand=0)
+  [117] GET_STACK (extra=38, operand=5)
+  [118] GET_STACK (extra=40, operand=7)
+  [119] SET_STACK (extra=39, operand=40)
+  [120] GET_BY_INDEX (extra=38, operand1=38, operand2=39)
+  [121] ADD_SIGNED_CONST (extra=37, left_slot=38, constant_index=9)
+  [122] ADD_SIGNED_PLAIN_DEST (extra=40, operand1=37, operand2=8)
+  [123] ADD_SIGNED (extra=42, operand1=40, operand2=12)
+  [124] ADD_SIGNED_CONST (extra=44, left_slot=42, constant_index=12)
+  [125] MOD_SIGNED_CONST (extra=46, left_slot=44, constant_index=21)
+  [126] GET_STACK (extra=47, operand=5)
+  [127] GET_STACK (extra=49, operand=7)
+  [128] SET_STACK (extra=48, operand=49)
+  [129] RESET_STACK_NULL (extra=49)
+  [130] SET_BY_INDEX (extra=46, operand1=47, operand2=48)
+  [131] RESET_STACK_NULL2 (extra=44, first_slot=44, second_slot=45)
+  [132] GET_STACK (extra=39, operand=5)
+  [133] GET_STACK (extra=41, operand=7)
+  [134] SET_STACK (extra=40, operand=41)
+  [135] GET_BY_INDEX (extra=39, operand1=39, operand2=40)
+  [136] ADD_SIGNED_CONST (extra=41, left_slot=39, constant_index=9)
+  [137] ADD_SIGNED_LOAD_STACK (extra=42, source_slot=9, right_slot=41)
+  [138] MOD_SIGNED_CONST (extra=45, left_slot=10, constant_index=29)
+  [139] ADD_SIGNED_MOD_CONST (extra=48, left_slot=42, right_slot=45, constant_index=21)
+  [140] SET_STACK (extra=9, operand=48)
+  [141] RESET_STACK_NULL (extra=45)
+  [142] GET_STACK (extra=38, operand=22)
+  [143] SET_STACK (extra=7, operand=38)
+  [144] MOD_SIGNED_CONST (extra=8, left_slot=23, constant_index=21)
+  [145] JUMP (extra=0, operand=0)
+  [146] ADD_SIGNED_CONST (extra=12, left_slot=12, constant_index=12)
+  [147] JUMP (extra=0, operand=-105)
+  [148] GET_CONSTANT (extra=13, operand=8)
+  [149] LOGICAL_NOT_EQUAL_STRING (extra=14, operand1=7, operand2=13)
+  [150] JUMP_IF_BOOL_FALSE (extra=14, operand2=32, operand1=32, operand1_1=0)
+  [151] GET_STACK (extra=41, operand=5)
+  [152] GET_STACK (extra=43, operand=7)
+  [153] SET_STACK (extra=42, operand=43)
+  [154] GET_BY_INDEX (extra=41, operand1=41, operand2=42)
+  [155] RESET_STACK_NULL (extra=42)
+  [156] LOGICAL_EQUAL (extra=43, operand1=41, operand2=42)
+  [157] JUMP_IF_BOOL_FALSE (extra=43, operand2=11, operand1=11, operand1_1=0)
+  [158] GET_CONSTANT (extra=44, operand=9)
+  [159] GET_STACK (extra=45, operand=5)
+  [160] GET_STACK (extra=47, operand=7)
+  [161] SET_STACK (extra=46, operand=47)
+  [162] SET_BY_INDEX (extra=44, operand1=45, operand2=46)
+  [163] RESET_STACK_NULL2 (extra=45, first_slot=45, second_slot=44)
   [164] GET_STACK (extra=47, operand=7)
   [165] SET_STACK (extra=46, operand=47)
-  [166] SET_BY_INDEX (extra=44, operand1=45, operand2=46)
-  [167] RESET_STACK_NULL2 (extra=45, first_slot=45, second_slot=44)
-  [168] GET_STACK (extra=47, operand=7)
-  [169] SET_STACK (extra=46, operand=47)
-  [170] KNOWN_NATIVE_MEMBER_CALL_RECV_U8 (extra=44, cache=2, receiver_source=6, argument_count=2)
-  [171] RESET_STACK_NULL (extra=44)
-  [172] JUMP (extra=0, operand=0)
-  [173] GET_STACK (extra=45, operand=5)
-  [174] GET_STACK (extra=47, operand=7)
-  [175] SET_STACK (extra=46, operand=47)
-  [176] GET_BY_INDEX (extra=45, operand1=45, operand2=46)
-  [177] ADD_SIGNED_CONST (extra=44, left_slot=45, constant_index=9)
-  [178] RESET_STACK_NULL (extra=45)
-  [179] ADD_SIGNED_PLAIN_DEST (extra=47, operand1=44, operand2=8)
-  [180] ADD_SIGNED_MOD_CONST (extra=51, left_slot=47, right_slot=11, constant_index=21)
-  [181] GET_STACK (extra=52, operand=5)
-  [182] GET_STACK (extra=54, operand=7)
-  [183] SET_STACK (extra=53, operand=54)
-  [184] SET_BY_INDEX (extra=51, operand1=52, operand2=53)
-  [185] RESET_STACK_NULL (extra=49)
-  [186] JUMP (extra=0, operand=0)
-  [187] GET_CONSTANT (extra=45, operand=9)
-  [188] GET_STACK (extra=46, operand=6)
-  [189] ITER_INIT (extra=47, operand1=46, operand2=0)
-  [190] SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE (extra=48, iterator_slot=47, jump_if_false_offset=11)
-  [191] JUMP_IF (extra=48, operand=11)
-  [192] ITER_CURRENT (extra=49, operand1=47, operand2=0)
-  [193] GET_STACK (extra=51, operand=5)
-  [194] GET_STACK (extra=53, operand=49)
-  [195] SET_STACK (extra=52, operand=53)
-  [196] GET_BY_INDEX (extra=51, operand1=51, operand2=52)
-  [197] ADD_SIGNED_CONST (extra=53, left_slot=51, constant_index=9)
-  [198] ADD_SIGNED_CONST (extra=56, left_slot=45, constant_index=12)
-  [199] MUL_SIGNED (extra=57, operand1=53, operand2=56)
-  [200] ADD_SIGNED_MOD_CONST (extra=9, left_slot=9, right_slot=57, constant_index=21)
-  [201] ADD_SIGNED_CONST_PLAIN_DEST (extra=45, left_slot=45, constant_index=12)
-  [202] JUMP (extra=0, operand=-13)
-  [203] GET_CONSTANT (extra=3, operand=30)
-  [204] TO_STRING (extra=13, operand1=9)
-  [205] ADD_STRING (extra=14, operand1=3, operand2=13)
-  [206] FUNCTION_RETURN (extra=1, operand1=14, operand2=0)
+  [166] KNOWN_NATIVE_MEMBER_CALL_RECV_U8 (extra=44, cache=2, receiver_source=6, argument_count=2)
+  [167] RESET_STACK_NULL (extra=44)
+  [168] JUMP (extra=0, operand=0)
+  [169] GET_STACK (extra=45, operand=5)
+  [170] GET_STACK (extra=47, operand=7)
+  [171] SET_STACK (extra=46, operand=47)
+  [172] GET_BY_INDEX (extra=45, operand1=45, operand2=46)
+  [173] ADD_SIGNED_CONST (extra=44, left_slot=45, constant_index=9)
+  [174] RESET_STACK_NULL (extra=45)
+  [175] ADD_SIGNED_PLAIN_DEST (extra=47, operand1=44, operand2=8)
+  [176] ADD_SIGNED_MOD_CONST (extra=51, left_slot=47, right_slot=11, constant_index=21)
+  [177] GET_STACK (extra=52, operand=5)
+  [178] GET_STACK (extra=54, operand=7)
+  [179] SET_STACK (extra=53, operand=54)
+  [180] SET_BY_INDEX (extra=51, operand1=52, operand2=53)
+  [181] RESET_STACK_NULL (extra=49)
+  [182] JUMP (extra=0, operand=0)
+  [183] GET_CONSTANT (extra=45, operand=9)
+  [184] GET_STACK (extra=46, operand=6)
+  [185] ITER_INIT (extra=47, operand1=46, operand2=0)
+  [186] SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE (extra=48, iterator_slot=47, jump_if_false_offset=11)
+  [187] JUMP_IF (extra=48, operand=11)
+  [188] ITER_CURRENT (extra=49, operand1=47, operand2=0)
+  [189] GET_STACK (extra=51, operand=5)
+  [190] GET_STACK (extra=53, operand=49)
+  [191] SET_STACK (extra=52, operand=53)
+  [192] GET_BY_INDEX (extra=51, operand1=51, operand2=52)
+  [193] ADD_SIGNED_CONST (extra=53, left_slot=51, constant_index=9)
+  [194] ADD_SIGNED_CONST (extra=56, left_slot=45, constant_index=12)
+  [195] MUL_SIGNED (extra=57, operand1=53, operand2=56)
+  [196] ADD_SIGNED_MOD_CONST (extra=9, left_slot=9, right_slot=57, constant_index=21)
+  [197] ADD_SIGNED_CONST_PLAIN_DEST (extra=45, left_slot=45, constant_index=12)
+  [198] JUMP (extra=0, operand=-13)
+  [199] GET_CONSTANT (extra=3, operand=30)
+  [200] TO_STRING (extra=13, operand1=9)
+  [201] ADD_STRING (extra=14, operand1=3, operand2=13)
+  [202] FUNCTION_RETURN (extra=1, operand1=14, operand2=0)
 
 CHILD_FUNCTIONS (1):
   [0] FUNCTION:

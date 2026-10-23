@@ -426,6 +426,10 @@ TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunct
         return ZR_FALSE;
     }
 
+    /* Strict bodies get the fast path. Legacy host fallthrough is validated
+     * separately at entry and retains the guarded dispatcher. */
+    if (!function->instructionsVerified)
+        function->instructionsVerified = ZrCore_Function_VerifyInstructions(function);
     ZrCore_Value_ResetAsNull(result);
     request.function = function;
     request.resultBase = ZR_NULL;

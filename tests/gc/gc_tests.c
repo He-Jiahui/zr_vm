@@ -27,6 +27,16 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_lib_system/gc.h"
 
+/* Root/forwarding fixtures request a minor explicitly; ordinary debt no
+ * longer forces a collection below the nursery occupancy threshold. */
+static void gc_test_request_minor_if_idle(SZrState *state) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL &&
+        !collector->concurrentMajorActive &&
+        collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR)
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+}
+
 // 推进到并发 major 不再活动后再读快照，避免断言尚未提交的统计。
 static void gc_test_finish_concurrent_major(SZrState *state) {
     TZrUInt32 stepCount = 0u;
@@ -725,6 +735,9 @@ static void test_gc_barrier(void) {
     
     TEST_INFO("Test barrier: REFERENCED object pointing to INITED object", 
               "Calling ZrCore_GarbageCollector_Barrier when REFERENCED parent points to INITED child");
+    /* Tri-color propagation applies during marking, not between cycles. */
+    state->global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
+    state->global->garbageCollector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
     ZrCore_GarbageCollector_Barrier(state, parent, child);
     
     TEST_INFO("Verify child object is marked", 
@@ -838,6 +851,29 @@ static void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
     TEST_DIVIDER();
+}
+
+static void test_gc_sweep_slice_budget_counts_live_objects(void) {
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    SZrGarbageCollector *gc = state->global->garbageCollector;
+    SZrRawObject *first = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+    SZrRawObject *second = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NOT_NULL(second);
+    ZrCore_RawObject_MarkAsReferenced(first);
+    ZrCore_RawObject_MarkAsReferenced(second);
+    gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
+    gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
+    gc->gcSweepSliceBudget = 1u;
+    gc->gcObjectListSweeper = &gc->gcObjectList;
+    gc->gcDebtSize = 4096;
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_EQUAL_INT(1, (int)gc->gcLastStepWork);
+    TEST_ASSERT_EQUAL_PTR(second, gc->gcObjectList);
+    TEST_ASSERT_EQUAL_PTR(&second->next, gc->gcObjectListSweeper);
+    TEST_ASSERT_EQUAL_PTR(first, *gc->gcObjectListSweeper);
+    destroyTestState(state);
 }
 
 static void test_gc_ignore_registry_and_phase_metadata(void) {
@@ -1006,8 +1042,10 @@ static void test_gc_barrier_unignores_escaped_object(void) {
     TEST_ASSERT_NOT_NULL(state->global);
     TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
 
-    {
+    for (unsigned marking = 0u; marking < 2u; ++marking) {
         SZrGarbageCollector* gc = state->global->garbageCollector;
+        gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+        gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
         SZrRawObject* parent = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
         SZrRawObject* child = createTestObject(state, ZR_VALUE_TYPE_STRING, sizeof(SZrRawObject));
 
@@ -1024,11 +1062,16 @@ static void test_gc_barrier_unignores_escaped_object(void) {
 
         TEST_INFO("Barrier on shared escape",
                   "Writing an ignored child through the GC barrier should restore normal tracing ownership");
+        if (marking) {
+            gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
+            gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        }
         ZrCore_GarbageCollector_Barrier(state, parent, child);
 
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, child));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
-        TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
+        if (marking) TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
+        else TEST_ASSERT_TRUE(ZR_GC_IS_INITED(child));
     }
 
     destroyTestState(state);
@@ -1516,6 +1559,7 @@ static void test_gc_snapshot_accumulates_collection_counts_and_durations(void) {
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(youngObject));
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_CheckGc(state);
 
         oldObject = ZrCore_Object_New(state, ZR_NULL);
@@ -1526,6 +1570,7 @@ static void test_gc_snapshot_accumulates_collection_counts_and_durations(void) {
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, oldRawObject);
         state->stackTop.valuePointer = rootSlot + 1;
         ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_CheckGc(state);
         gc_test_finish_concurrent_major(state);
 
@@ -1601,6 +1646,7 @@ static void test_gc_snapshot_reports_region_pressure_shape(void) {
                                                      3u,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_ESCAPE);
         gc->gcDebtSize = 4096;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -2858,6 +2904,7 @@ static void test_function_return_escape_promotes_returned_object_during_minor_gc
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3140,6 +3187,8 @@ static void test_gc_minor_collection_evacuates_stack_root_young_object(void) {
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3194,6 +3243,8 @@ static void test_gc_minor_collection_reassigns_root_function_and_stamps_minor_sc
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, functionObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  functionObject->garbageCollectMark.storageKind);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3263,6 +3314,8 @@ static void test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_t
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, oldObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3335,7 +3388,7 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
         layouts[0].stackSlot = 4u;
         layouts[0].byteOffset = inlineByteOffset;
         layouts[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-        layouts[0].byteAlign = ZR_ALIGN_SIZE;
+        layouts[0].byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         layouts[0].typeLayoutId = 0u;
         layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
         layouts[0].isParameter = ZR_TRUE;
@@ -3352,14 +3405,14 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
                 gc_test_write_single_compiled_struct_prototype(prototypeData,
                                                                prototypeDataLength,
                                                                (TZrUInt32)sizeof(SZrTypeValue),
-                                                               ZR_ALIGN_SIZE,
+                                                               (TZrUInt32)_Alignof(SZrTypeValue),
                                                                0u,
                                                                (TZrUInt32)sizeof(SZrTypeValue)));
 
         function->frameSlotLayouts = layouts;
         function->frameSlotLayoutLength = 1u;
         function->frameByteSize = inlineByteOffset + (TZrUInt32)sizeof(SZrTypeValue);
-        function->frameByteAlign = ZR_ALIGN_SIZE;
+        function->frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         function->prototypeData = prototypeData;
         function->prototypeDataLength = prototypeDataLength;
         function->prototypeCount = 1u;
@@ -3399,6 +3452,8 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, oldObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3473,6 +3528,8 @@ static void test_gc_minor_collection_preserves_young_descendant_through_old_stac
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3655,8 +3712,10 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_EQUAL_PTR(oldChild, resolvedChildValue->value.object);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
-        TEST_ASSERT_EQUAL_INT64(debtBefore, gc->gcDebtSize);
+        TEST_ASSERT_TRUE(gc->gcDebtSize < debtBefore);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
         TEST_ASSERT_NOT_NULL(memberName);
@@ -3737,6 +3796,8 @@ static void test_gc_minor_collection_preserves_hidden_items_array_on_promoted_pa
 
         TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3768,6 +3829,7 @@ static void test_gc_minor_collection_preserves_hidden_items_array_on_promoted_pa
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
@@ -3849,6 +3911,8 @@ static void test_gc_minor_collection_preserves_replaced_hidden_items_array_on_pr
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3881,6 +3945,7 @@ static void test_gc_minor_collection_preserves_replaced_hidden_items_array_on_pr
 
             gc->gcDebtSize = 4096;
             gc->gcLastStepWork = 0;
+            gc_test_request_minor_if_idle(state);
             ZrCore_GarbageCollector_GcStep(state);
 
             rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3967,6 +4032,8 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
 
         TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3997,6 +4064,7 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4076,6 +4144,8 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4096,6 +4166,7 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4116,6 +4187,7 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
         for (iteration = 0u; iteration < 6u; iteration++) {
             gc->gcDebtSize = 4096;
             gc->gcLastStepWork = 0;
+            gc_test_request_minor_if_idle(state);
             ZrCore_GarbageCollector_GcStep(state);
 
             rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4198,6 +4270,8 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4218,6 +4292,7 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4241,6 +4316,8 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
 
         ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
         TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_CheckGc(state);
         gc_test_finish_concurrent_major(state);
@@ -4432,13 +4509,13 @@ static TZrBool gc_test_short_string_list_contains(const SZrStringTable *stringTa
 
 static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Short Concat Pair Cache Keeps Minor-Promoted Entries Reachable";
+    const char *testSummary = "GC Weak Concat Cache Clears While Explicit Roots Survive";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("Short concat pair cache minor promotion",
-              "Testing that the exact short-string concat cache keeps left/right/result rooted during minor GC whether the strings forward to clones or promote in place");
+              "Testing that minor GC clears the weak concat cache while explicit roots preserve interned strings");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4453,6 +4530,7 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         SZrString *currentRight;
         SZrString *currentResult;
         const ZrStringConcatPairCacheEntry *entry;
+        SZrGcRootLease roots[3] = {{ZR_NULL}};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
@@ -4464,6 +4542,9 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         TEST_ASSERT_NOT_NULL(left);
         TEST_ASSERT_NOT_NULL(right);
         TEST_ASSERT_NOT_NULL(result);
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &left->super, &roots[0]));
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &right->super, &roots[1]));
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &result->super, &roots[2]));
 
         entry = gc_test_find_concat_pair_cache_entry(state->global, left, right);
         TEST_ASSERT_NOT_NULL(entry);
@@ -4486,11 +4567,14 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         TEST_ASSERT_TRUE(currentRight->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
         TEST_ASSERT_TRUE(currentResult->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
 
+        TEST_ASSERT_NULL(gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight));
+        TEST_ASSERT_EQUAL_PTR(currentResult, ZrCore_String_ConcatPair(state, currentLeft, currentRight));
         entry = gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight);
         TEST_ASSERT_NOT_NULL(entry);
         TEST_ASSERT_EQUAL_PTR(currentLeft, entry->left);
         TEST_ASSERT_EQUAL_PTR(currentRight, entry->right);
         TEST_ASSERT_EQUAL_PTR(currentResult, entry->result);
+        for (unsigned i = 0u; i < 3u; ++i) ZrCore_Gc_RootLeaseRelease(state->global, &roots[i]);
     }
 
     destroyTestState(state);
@@ -4502,13 +4586,13 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
 
 static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC String Table Keeps Interned Entry Reachable Across Minor Promotion";
+    const char *testSummary = "GC Weak String Table Preserves Explicitly Rooted Identity";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("String table minor promotion",
-              "Testing that a young interned short string stays rooted by the string table during minor GC whether the entry rewrites to a clone or the string promotes in place");
+              "Testing that an explicitly rooted short string keeps its interned identity across minor promotion");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4519,12 +4603,14 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
         SZrString *original;
         SZrString *current;
         const SZrHashKeyValuePair *entry;
+        SZrGcRootLease root = {ZR_NULL};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
 
         original = ZrCore_String_CreateFromNative(state, "gc_table_forward");
         TEST_ASSERT_NOT_NULL(original);
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &original->super, &root));
 
         entry = gc_test_find_string_table_entry(state->global, original);
         TEST_ASSERT_NOT_NULL(entry);
@@ -4557,6 +4643,7 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
         TEST_ASSERT_NOT_NULL(entry);
         TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(current), entry->key.value.object);
         TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)state->global->stringTable->minorYoungBucketCount);
+        ZrCore_Gc_RootLeaseRelease(state->global, &root);
     }
 
     destroyTestState(state);
@@ -4568,13 +4655,13 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
 
 static void test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Short String List Keeps Interned Entries Reachable Across Minor Then Full GC";
+    const char *testSummary = "GC Weak String List Preserves Explicitly Rooted Entries";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("Short-string root list forwarding",
-              "Testing that the string-table short-string root list keeps interned short strings reachable after minor promotion and the subsequent full collection uses that rewritten list to keep them alive");
+              "Testing that the weak string list retains entries held by explicit roots across minor and full collections");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4592,6 +4679,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
         const TZrSize nameCount = sizeof(names) / sizeof(names[0]);
         SZrGarbageCollector *gc = state->global->garbageCollector;
         SZrString *currentStrings[sizeof(names) / sizeof(names[0])];
+        SZrGcRootLease roots[sizeof(names) / sizeof(names[0])] = {{ZR_NULL}};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
@@ -4599,6 +4687,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
         for (TZrSize index = 0; index < nameCount; index++) {
             currentStrings[index] = ZrCore_String_CreateFromNative(state, names[index]);
             TEST_ASSERT_NOT_NULL(currentStrings[index]);
+            TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &currentStrings[index]->super, &roots[index]));
             TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
             TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
         }
@@ -4623,6 +4712,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
             TEST_ASSERT_TRUE(currentStrings[index]->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
             TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
             TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
+            ZrCore_Gc_RootLeaseRelease(state->global, &roots[index]);
         }
     }
 
@@ -4730,6 +4820,7 @@ int main(void) {
     RUN_TEST(test_gc_barrier);
     RUN_TEST(test_gc_pause_budget_consumes_multiple_incremental_steps);
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
+    RUN_TEST(test_gc_sweep_slice_budget_counts_live_objects);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
     RUN_TEST(test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable);
     RUN_TEST(test_gc_is_unreferenced_respects_ignore_registry);

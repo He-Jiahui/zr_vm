@@ -172,8 +172,8 @@ static void test_call_info_frame_storage_cache_uses_legacy_padding(void) {
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(returnFlagEnd, cacheOffset);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(nextLegacyFieldOffset, cacheEnd);
-    legacySize = (debugGenerationEnd + ZR_ALIGN_SIZE - 1u) /
-                 ZR_ALIGN_SIZE * ZR_ALIGN_SIZE;
+    legacySize = (debugGenerationEnd + _Alignof(SZrCallInfo) - 1u) /
+                 _Alignof(SZrCallInfo) * _Alignof(SZrCallInfo);
     TEST_ASSERT_EQUAL_UINT32(legacySize, sizeof(SZrCallInfo));
 }
 
@@ -840,7 +840,7 @@ static void test_frame_gc_visitor_includes_value_layout_slots(void) {
     function->stackSize = 2;
     function->parameterCount = 0;
     function->frameByteSize = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 4u);
-    function->frameByteAlign = ZR_ALIGN_SIZE;
+    function->frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
     function->frameSlotLayoutLength = 1u;
     layout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
             state->global,
@@ -851,7 +851,7 @@ static void test_frame_gc_visitor_includes_value_layout_slots(void) {
     layout->stackSlot = 1u;
     layout->byteOffset = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 3u);
     layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-    layout->byteAlign = ZR_ALIGN_SIZE;
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
     layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
     function->frameSlotLayouts = layout;
 

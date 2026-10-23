@@ -40,6 +40,7 @@ void setUp(void) {
     g_compiler.suppressErrorOutput = ZR_TRUE;
     g_function = ZrCore_Function_New(g_state);
     TEST_ASSERT_NOT_NULL(g_function);
+    TEST_ASSERT_TRUE(ZrCore_Function_AcquireHostRoot(g_state, g_function));
     g_compiler.currentFunction = g_function;
 }
 
@@ -170,6 +171,7 @@ static void assert_execution(TZrInt64 expected) {
 
     g_executionFunction = ZrParser_Compiler_Compile(g_state, g_ast);
     TEST_ASSERT_NOT_NULL(g_executionFunction);
+    TEST_ASSERT_TRUE(ZrCore_Function_AcquireHostRoot(g_state, g_executionFunction));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, g_executionFunction, &result));
     TEST_ASSERT_EQUAL_INT64(expected, result);

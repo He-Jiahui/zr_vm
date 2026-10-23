@@ -24,7 +24,7 @@ static void test_raw_object_hash_uses_object_address(void) {
 static void test_module_restores_protocol_bits_above_array_like(void) {
     static const TZrUInt32 protocolId = ZR_PROTOCOL_ID_THREAD_SYNC;
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction entryFunction;
+    SZrFunction *entryFunction;
     SZrCompiledPrototypeInfo prototypeInfo;
     TZrByte prototypeData[sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo)] = {0};
     TZrUInt32 prototypeCount = 1u;
@@ -37,7 +37,9 @@ static void test_module_restores_protocol_bits_above_array_like(void) {
     SZrObjectPrototype *prototype;
 
     TEST_ASSERT_NOT_NULL(state);
-    memset(&entryFunction, 0, sizeof(entryFunction));
+    entryFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrCore_Function_AcquireHostRoot(state, entryFunction));
     typeName = ZrCore_String_Create(state, "AuditProtocolTarget", sizeof("AuditProtocolTarget") - 1u);
     ZrCore_Value_InitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
     constant.type = ZR_VALUE_TYPE_STRING;
@@ -50,11 +52,11 @@ static void test_module_restores_protocol_bits_above_array_like(void) {
     memcpy(prototypeData, &prototypeCount, sizeof(prototypeCount));
     memcpy(prototypeData + sizeof(prototypeCount), &prototypeInfo, sizeof(prototypeInfo));
 
-    entryFunction.prototypeCount = prototypeCount;
-    entryFunction.prototypeData = prototypeData;
-    entryFunction.prototypeDataLength = sizeof(prototypeData);
-    entryFunction.constantValueList = &constant;
-    entryFunction.constantValueLength = 1u;
+    entryFunction->prototypeCount = prototypeCount;
+    entryFunction->prototypeData = prototypeData;
+    entryFunction->prototypeDataLength = sizeof(prototypeData);
+    entryFunction->constantValueList = &constant;
+    entryFunction->constantValueLength = 1u;
 
     module = ZrCore_Module_Create(state);
     TEST_ASSERT_NOT_NULL(module);
@@ -62,7 +64,7 @@ static void test_module_restores_protocol_bits_above_array_like(void) {
     fullPath = ZrCore_String_Create(state, "audit_protocol.zr", sizeof("audit_protocol.zr") - 1u);
     ZrCore_Module_SetInfo(state, module, moduleName, ZrCore_Module_CalculatePathHash(state, fullPath), fullPath);
 
-    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Module_CreatePrototypesFromData(state, module, &entryFunction));
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Module_CreatePrototypesFromData(state, module, entryFunction));
     exported = ZrCore_Module_GetPubExport(state, module, typeName);
     TEST_ASSERT_NOT_NULL(exported);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, exported->type);
@@ -70,9 +72,12 @@ static void test_module_restores_protocol_bits_above_array_like(void) {
     TEST_ASSERT_NOT_NULL(prototype);
     TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_ImplementsProtocol(prototype, (EZrProtocolId)protocolId));
 
-    ZrCore_Memory_RawFree(state->global,
-                          entryFunction.prototypeInstances,
-                          entryFunction.prototypeInstancesLength * sizeof(*entryFunction.prototypeInstances));
+    /* The fixture lends stack buffers; the runtime function owns its instance table. */
+    entryFunction->prototypeData = ZR_NULL;
+    entryFunction->prototypeDataLength = 0u;
+    entryFunction->constantValueList = ZR_NULL;
+    entryFunction->constantValueLength = 0u;
+    ZrCore_Function_Free(state, entryFunction);
     ZrTests_Runtime_State_Destroy(state);
 }
 static void test_utf8_encoder_rejects_non_scalar_values(void) {

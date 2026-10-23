@@ -169,7 +169,14 @@ static SZrAstNode *prepare_receiver(SZrAstNode *owner, SZrAstNode *variable,
     prototype = type_inference_find_nominal_prototype(&g_compiler, &g_types[0]);
     TEST_ASSERT_NOT_NULL(prototype);
     TEST_ASSERT_EQUAL_PTR(owner, prototype->declarationNode);
-    TEST_ASSERT_EQUAL_UINT(1U, prototype->members.length);
+    TZrSize fieldCount = 0U;
+    for (TZrSize index = 0U; index < prototype->members.length; index++) {
+        const SZrTypeMemberInfo *candidate = ZrCore_Array_Get(&prototype->members, index);
+        if (candidate->memberType == ZR_AST_CLASS_FIELD || candidate->memberType == ZR_AST_STRUCT_FIELD) {
+            fieldCount++;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(1U, fieldCount);
     member = ZrCore_Array_Get(&prototype->members, 0U);
     TEST_ASSERT_NOT_NULL(member);
     TEST_ASSERT_EQUAL_INT(owner->type == ZR_AST_CLASS_DECLARATION ?
@@ -445,7 +452,8 @@ static void assert_initializer_field(EFixtureProducer producer,
             "struct Widget {} struct Widget {} var seed: Widget;"
             "struct Holder { pub var value = seed; } var receiver: Holder; receiver.value;" :
             "class Widget {} class Widget {} var seed: Widget;"
-            "class Holder { pub var value = seed; } var receiver: Holder; receiver.value;");
+            "class Holder { pub var value = seed; pub @constructor(seed: Widget) {} }"
+            "var receiver: Holder; receiver.value;");
     SZrNamedTypeBinding rootBinding;
     SZrNamedTypeBinding markedBinding;
     SZrNamedTypeBinding ownerBinding;
@@ -500,7 +508,14 @@ static void assert_initializer_field(EFixtureProducer producer,
     members = producer == FIXTURE_SOURCE_CLASS ? owner->data.classDeclaration.members :
             owner->data.structDeclaration.members;
     TEST_ASSERT_NOT_NULL(members);
-    TEST_ASSERT_EQUAL_UINT(1U, members->count);
+    TEST_ASSERT_EQUAL_UINT(producer == FIXTURE_SOURCE_CLASS ? 2U : 1U, members->count);
+    if (producer == FIXTURE_SOURCE_CLASS) {
+        /* Constructor compilation now evaluates field initializers. Supply
+         * seed as a parameter as well as the inference-only binding above. */
+        SZrAstNode *parameter = members->nodes[1]->data.classMetaFunction.params->nodes[0];
+        parameter->data.parameter.typeInfo->name->data.identifier.syntaxContext =
+                seedType->name->data.identifier.syntaxContext;
+    }
     field = members->nodes[0];
     TEST_ASSERT_EQUAL_INT(producer == FIXTURE_SOURCE_CLASS ?
             ZR_AST_CLASS_FIELD : ZR_AST_STRUCT_FIELD, field->type);

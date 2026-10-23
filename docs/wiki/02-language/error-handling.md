@@ -157,7 +157,7 @@ exception.registerUnhandledException((error: exception.Error) => {
 当前 CLI project runtime 与 REPL 的失败出口会记录异常并重置线程，没有调用此槽。测试宿主
 `tests/harness/runtime_support.c` 则会同步调用 handler，并把 bool true 视为已消费异常；这是该宿主的策略，
 不能推及其他执行入口。嵌入宿主需要自行定义分发边界、异常值的有效期与失败策略；注册成功不等于 handler 会运行。
-已核查调用链及待确认的生产接入意图见 [Exception 台账](../../code-review/coverage/zr_vm_lib_system_exception.tsv)。
+已核查调用链及待确认的生产接入意图见 [Exception 台账](https://github.com/He-Jiahui/zr_vm/blob/main/docs/code-review/coverage/zr_vm_lib_system_exception.tsv)。
 
 
 注册读取器还接受 VM closure 和原生函数指针，不校验 hint 的 `(Error) -> bool` 签名或原生地址。

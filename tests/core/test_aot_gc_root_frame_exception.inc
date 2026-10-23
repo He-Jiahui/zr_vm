@@ -182,6 +182,7 @@ static TZrBool aot_root_frame_run_following_minor_gc(SZrState *state) {
     collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
     collector->gcDebtSize = 4096;
     collector->gcLastStepWork = 0;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
     ZrCore_GarbageCollector_GcStep(state);
     return collector->statsSnapshot.lastCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
 }

@@ -1,0 +1,47 @@
+let testing = import("zr.testing");
+let grid = import("lanes/dod/grid");
+let world = import("lanes/dod/world");
+
+#zr.testing.test#
+fn boundaryCells(): void {
+    var g = new grid.Grid(0);
+    testing.assert(g.cell(-1.0, -65.0) == 0);
+    testing.assert(g.cell(63.99, 0.0) == 0);
+    testing.assert(g.cell(64.0, 64.0) == 65);
+    testing.assert(g.cell(4096.0, 5000.0) == 4095);
+}
+
+#zr.testing.test#
+fn stableCountingSortAndEmptyRebuild(): void {
+    var e = new world.World(4);
+    e.add(65.0, 0.0, 10); e.add(1.0, 0.0, 11);
+    e.add(66.0, 0.0, 12); e.add(4095.0, 4095.0, 13);
+    var g = new grid.Grid(4);
+    g.build(e);
+    testing.assert(g.counts[0] == 1 && g.counts[1] == 2 && g.counts[4095] == 1);
+    testing.assert(g.starts[0] == 0 && g.starts[1] == 1 && g.starts[4096] == 4);
+    testing.assert(g.slots[0] == 1 && g.slots[1] == 0 && g.slots[2] == 2 && g.slots[3] == 3);
+    e.count = 0;
+    g.build(e);
+    testing.assert(g.counts[0] == 0 && g.counts[1] == 0 && g.counts[4095] == 0);
+    testing.assert(g.starts[4096] == 0);
+}
+
+#zr.testing.test#
+fn denseSwapRemoveKeepsAllColumns(): void {
+    var e = new world.World(3);
+    e.add(1.0, 2.0, 10); e.add(3.0, 4.0, 11); e.add(5.0, 6.0, 12);
+    e.vx[2] = 7.0; e.vy[2] = 8.0; e.ax[2] = 9.0; e.ay[2] = 10.0;
+    e.hp[2] = 1; e.kind[2] = 2;
+    e.boss[2] = 1; e.radius[2] = 16.0; e.speed[2] = 42.0;
+    e.swapRemove(0);
+    testing.assert(e.count == 2 && e.id[0] == 12 && e.id[1] == 11);
+    testing.assert(e.px[0] == 5.0 && e.py[0] == 6.0);
+    testing.assert(e.vx[0] == 7.0 && e.vy[0] == 8.0 && e.ax[0] == 9.0 && e.ay[0] == 10.0);
+    testing.assert(e.hp[0] == 1 && e.kind[0] == 2);
+    testing.assert(e.boss[0] == 1 && e.radius[0] == 16.0 && e.speed[0] == 42.0);
+    testing.assert(e.find(10) == -1 && e.find(12) == 0 && e.find(11) == 1);
+    var g = new grid.Grid(3);
+    g.build(e);
+    testing.assert(g.starts[4096] == 2 && g.slots[0] == 0 && g.slots[1] == 1);
+}

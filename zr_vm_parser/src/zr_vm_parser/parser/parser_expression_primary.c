@@ -783,6 +783,13 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         base = parse_resource_own_expression(ps);
         return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
     }
+    if (token == ZR_TK_IDENTIFIER &&
+        (current_identifier_equals(ps, "Borrow") || current_identifier_equals(ps, "Loan")) &&
+        peek_token(ps) == ZR_TK_LESS_THAN) {
+        report_removed_legacy_syntax(ps, "Borrow<T>/Loan<T> ownership type",
+                "Use `ref readonly T` for a shared reference or `ref T` for a writable reference.");
+        return ZR_NULL;
+    }
     if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
         base = try_parse_generic_type_member_root(ps);
         if (base != ZR_NULL) {

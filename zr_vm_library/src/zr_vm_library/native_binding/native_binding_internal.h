@@ -459,6 +459,15 @@ static ZR_FORCE_INLINE void native_binding_attach_inline_frame_context(ZrLibCall
     }
 
     function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    if (function == ZR_NULL && callInfo->hasArgumentSourceFrame && callInfo->previous != ZR_NULL) {
+        function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
+        if (function != ZR_NULL) {
+            context->inlineFrameFunction = function;
+            context->inlineFrameBase = callInfo->argumentSourceFrameBase.valuePointer;
+            context->inlineArgumentStartSlot += callInfo->argumentSourceStartSlot;
+            return;
+        }
+    }
     if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL ||
         function->frameSlotLayoutLength == 0u) {
         return;

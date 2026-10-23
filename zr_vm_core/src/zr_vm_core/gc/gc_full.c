@@ -21,6 +21,7 @@ static void garbage_collector_full_body(SZrState *state, TZrPtr argument) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector = global->garbageCollector;
 
+    collector->minorCollectionDeferred = ZR_FALSE;
     garbage_collector_concurrent_major_cancel(state);
     context->startedUs = garbage_collector_now_us();
     collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
@@ -40,6 +41,7 @@ static void garbage_collector_full_body(SZrState *state, TZrPtr argument) {
     collector->isImmediateGcFlag = context->isImmediate;
     if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
         context->work += garbage_collector_run_generational_full(state);
+        ZrCore_GarbageCollector_AddDebtSpace(global, -ZR_GC_DEBT_CREDIT_BYTES);
     } else {
         context->work += garbage_collector_prepare_major_collection(state);
         garbage_collector_full_inc(state, global);

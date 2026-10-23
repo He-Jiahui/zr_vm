@@ -1,0 +1,7 @@
+let probe = import("zr.swarmprobe");
+var sample = init probe.Sample(16777217.0, 0.25, 6);
+if (sample.x != 16777217.0 || sample.y != 0.25 || sample.tag != 6) { throw "native float field precision"; }
+for (var i = 0; i < 3; i += 1) {
+    if (probe.sum(sample) != 16777223.25) { throw "native inline argument view"; }
+}
+return 42;

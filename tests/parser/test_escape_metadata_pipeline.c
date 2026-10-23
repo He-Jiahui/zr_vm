@@ -58,7 +58,7 @@ static SZrFunction *compile_source_fixture(SZrState *state,
 static SZrFunction *compile_escape_metadata_fixture(SZrState *state) {
     static const TZrChar *kSource =
             "pub fn returnLocal(): int {\n"
-            "    var value = 9;\n"
+            "    var value: int = 9;\n"
             "    return value;\n"
             "}\n"
             "pub fn returnTemp(): int {\n"
@@ -596,12 +596,11 @@ static void assert_escape_metadata_shape(const SZrFunction *rootFunction) {
 
     valueLocal = find_local_variable_by_name(returnLocalFunction, "value");
     TEST_ASSERT_NOT_NULL(valueLocal);
-    TEST_ASSERT_TRUE((valueLocal->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN) != 0u);
-    TEST_ASSERT_TRUE(function_has_return_escape_slot(returnLocalFunction, valueLocal->stackSlot));
-    binding = find_escape_binding(returnLocalFunction, ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL, "value");
-    TEST_ASSERT_NOT_NULL(binding);
-    TEST_ASSERT_TRUE((binding->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN) != 0u);
-    TEST_ASSERT_EQUAL_UINT32(valueLocal->stackSlot, binding->slotOrIndex);
+    /* A live typed scalar needs no GC escape summary. Temporary and GC
+     * returns below continue to carry conservative metadata. */
+    TEST_ASSERT_EQUAL_UINT32(0u, valueLocal->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN);
+    TEST_ASSERT_FALSE(function_has_return_escape_slot(returnLocalFunction, valueLocal->stackSlot));
+    TEST_ASSERT_NULL(find_escape_binding(returnLocalFunction, ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL, "value"));
 
     TEST_ASSERT_TRUE(returnTempFunction->returnEscapeSlotCount > 0);
     binding = find_escape_binding_by_slot(returnTempFunction,

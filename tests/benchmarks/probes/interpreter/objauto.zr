@@ -1,0 +1,9 @@
+// objauto: CORR-C1 (no explicit GC; expect collections > 0 after the fix)
+var i = 0;
+var keep = 0;
+while (i < 2000000) {
+    var o = { value: i, slot: keep };
+    keep = keep + 1;
+    i = i + 1;
+}
+return keep;

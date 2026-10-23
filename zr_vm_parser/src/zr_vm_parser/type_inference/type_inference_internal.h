@@ -48,6 +48,8 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs,
                                SZrFileRange location);
 ZR_PARSER_API void free_inferred_type_array(SZrState *state, SZrArray *types);
 TZrBool zr_string_equals_cstr(SZrString *value, const TZrChar *literal);
+SZrTypeMemberInfo *find_compiler_type_meta_member_inference(
+        SZrCompilerState *cs, SZrString *typeName, EZrMetaType metaType);
 ZR_PARSER_API SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *typeName,
