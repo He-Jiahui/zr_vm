@@ -3,8 +3,10 @@
 GD-C5 implements full v1 gameplay on the existing DOD lane: separation,
 Grunt/Runner/Tank enemies, nearest and radial weapons, pierce, XP pickups,
 magnet collection, deterministic upgrades, boss waves and cosmetic particles.
-CLI and C host drive share one Session and support null rendering with bulk
-submission. The default 120-frame smoke golden is **552988638** for seed
+CLI and DOD host drive share one Session and support null rendering with bulk
+submission. GD-H1 adds independent host `--lane c` reference gameplay and a
+DOD==C smoke gate under the same rules; see [GD-H1 decisions](docs/gd-h1-decisions.md).
+The default 120-frame smoke golden is **552988638** for seed
 12345; checkpoint 60 is **42922906**. The deliberate change from GD-C4 is
 explained in [decisions](docs/gd-c5-decisions.md).
 
@@ -72,6 +74,13 @@ build/demo-release/bin/zr_swarm \
   --out /tmp/zr-swarm-gd-c5-arena \
   > /tmp/zr-swarm-gd-c5-arena.log 2>&1
 
+build/demo-release/bin/zr_swarm \
+  --project demos/swarm_arena/game/swarm_arena.zrp \
+  --scenario smoke --lane c --frames 120 --seed 12345 --render null --submit bulk \
+  --out /tmp/zr-swarm-gd-h1-c --expect-hash 552988638
+ctest --test-dir build/demo-release -R '^(demo_host_smoke_c|demo_lane_equivalence)$' \
+  -j1 --output-on-failure
+
 python3 -I demos/swarm_arena/tools/run_game.py --mode binary \
   --cli build/demo-release/bin/zr_vm_cli \
   --native-dir build/demo-release/demos/swarm_arena/native \
@@ -105,8 +114,14 @@ one finally cleanup marker. Host `--project` is required except with help.
 Host `--warmup` stays 0, and `--out` defaults to `out/swarm`. CLI output stays
 textual. Unsupported lanes, renderers, submission modes and `sweep` fail.
 
-The demo CTests retain the 73 GD-C4 checks and add four
-`demo_cli_host_<scenario>_dod` completion/parity checks, for 77 total. Release
+The C host lane uses the same output schema with `lane=c`, `exec=native` and
+the same CSV columns. Its GC options are inert because it has no managed heap;
+managed counters stay zero, and native allocations are explicitly unmeasured.
+CLI drive continues to support DOD only.
+
+The demo CTests retain the 77 GD-C5 checks and add `demo_host_smoke_c` and
+`demo_lane_equivalence`, for 79 total. The four
+`demo_cli_host_<scenario>_dod` gates retain their completion/parity checks. Release
 runs each new scenario for 1800 frames with CLI and host. Stress builds use
 four-frame scenario checks alongside full 120-frame smoke and twenty ZR units.
 The new Release pair runs may execute together; stress pairs and CTests run
@@ -123,6 +138,6 @@ still bridges the stock CLI's source discovery to `game/tests`.
 
 Demos remain off by default with CTest label `demo`. Core inventory stays 515;
 use `-LE demo -E '^performance_report$'` to inspect it. Native plugins share
-`libzrgame_runtime.so` and load from `ZR_VM_NATIVE_PATH`. Other lanes, `sweep`,
+`libzrgame_runtime.so` and load from `ZR_VM_NATIVE_PATH`. OOP/Hybrid lanes, `sweep`,
 software/GL rendering, images, interactive input, performance harnesses and all
-H/M milestones remain deferred. The null backend writes no image.
+GD-H2+ / M milestones remain deferred. The null backend writes no image.

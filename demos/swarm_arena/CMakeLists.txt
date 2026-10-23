@@ -44,8 +44,16 @@ target_link_libraries(zr_swarm_probe_host PRIVATE zr_vm_parser_shared zr_vm_lib_
     zr_vm_lib_container_shared zr_vm_library_shared zr_vm_core_shared)
 set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# GD-C4 uses the core/library path and the same runtime provider list as the CLI.
-add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/platform_null.c)
+# DOD uses the core/library path and the same runtime providers as the CLI;
+# the independent C reference shares its host loop, artifacts and null batch.
+add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/platform_null.c
+    native/runtime/csim.c)
+if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(native/runtime/csim.c PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+endif()
+if (UNIX)
+    target_link_libraries(zr_swarm PRIVATE m)
+endif()
 foreach(component zr_vm_common zr_vm_core zr_vm_library zr_vm_parser zr_vm_lib_math
         zr_vm_lib_system zr_vm_lib_container zr_vm_lib_ffi)
     target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/${component}/include")
@@ -69,7 +77,7 @@ if (GIT_FOUND)
     execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}" OUTPUT_VARIABLE swarm_git
         OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    execute_process(COMMAND "${GIT_EXECUTABLE}" diff-index --quiet HEAD --
+    execute_process(COMMAND "${GIT_EXECUTABLE}" diff-index --ignore-submodules=all --quiet HEAD --
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}" RESULT_VARIABLE swarm_dirty)
     if (swarm_dirty EQUAL 1)
         string(APPEND swarm_git "-dirty")
@@ -141,6 +149,18 @@ if (BUILD_TESTS)
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
         set_tests_properties(demo_cli_host_${scenario}_dod PROPERTIES
             LABELS "demo;host;game;scenario" TIMEOUT 15000)
+    endforeach()
+    foreach(check smoke equivalence)
+        if (check STREQUAL "smoke")
+            set(lane_test demo_host_smoke_c)
+        else()
+            set(lane_test demo_lane_equivalence)
+        endif()
+        add_test(NAME ${lane_test}
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_lanes.py"
+            --check ${check} --host $<TARGET_FILE:zr_swarm>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+        set_tests_properties(${lane_test} PROPERTIES LABELS "demo;host;game;lane" TIMEOUT 1800)
     endforeach()
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")

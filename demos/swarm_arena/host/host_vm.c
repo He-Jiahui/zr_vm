@@ -1,6 +1,7 @@
 #include "host.h"
 #include "modules.h"
 #include "runtime.h"
+#include "csim.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/string.h"
@@ -33,6 +34,20 @@ static bool failure(ZrgHostVm *vm, const char *operation) {
 
 bool zrg_host_vm_call_int(ZrgHostVm *vm, const char *name,
                           const int64_t *arguments, size_t count, int64_t *out) {
+    if (vm->csim) {
+        int64_t value;
+        if (!strcmp(name, "tick") && count == 1) value = zrg_csim_tick(vm->csim, arguments[0]);
+        else if (!strcmp(name, "render") && count == 1) value = zrg_csim_render(vm->csim, arguments[0]);
+        else if (!strcmp(name, "fullHash") && count == 0) value = zrg_csim_full_hash(vm->csim);
+        else if (!strcmp(name, "entityMax") && count == 1) value = zrg_csim_entity_max(vm->csim, arguments[0]);
+        else {
+            fprintf(stderr, "SWARM_ERROR c lane unknown operation %s\n", name);
+            return false;
+        }
+        if (value < 0) return false;
+        if (out) *out = value;
+        return true;
+    }
     SZrTypeValue args[4], result;
     if (count > 4) return false;
     for (size_t i = 0; i < count; ++i) {
@@ -100,6 +115,19 @@ static void bootstrap(SZrState *state, TZrPtr data) {
 bool zrg_host_vm_open(ZrgHostVm *vm, const ZrgOptions *options) {
     zrg_set_host_driven(true);
     zrg_zones_reset();
+    if (!strcmp(options->lane, "c")) {
+        /* Retain the host's --project path contract. Native gameplay does not
+         * import or execute the project and does not create a managed heap. */
+        FILE *project = fopen(options->project, "r");
+        if (!project) {
+            fprintf(stderr, "SWARM_ERROR --project could not load %s\n", options->project);
+            return false;
+        }
+        fclose(project);
+        vm->csim = zrg_csim_new(options->scenario, options->seed, options->frames);
+        vm->booted = vm->csim != NULL;
+        return vm->booted;
+    }
     vm->global = ZrLibrary_CommonState_CommonGlobalState_New((TZrNativeString)options->project);
     if (!vm->global) {
         fprintf(stderr, "SWARM_ERROR --project could not load %s\n", options->project);
@@ -127,6 +155,11 @@ bool zrg_host_vm_gc_step(ZrgHostVm *vm) {
 }
 
 bool zrg_host_vm_shutdown(ZrgHostVm *vm, char *summary, size_t capacity) {
+    if (vm->csim) {
+        bool ok = zrg_csim_summary(vm->csim, summary, capacity);
+        vm->booted = false;
+        return ok;
+    }
     SZrTypeValue result;
     ZrCore_Value_ResetAsNull(&result);
     if (!ZrLib_CallModuleExport(vm->state, "game", "shutdown", NULL, 0, &result) ||
@@ -144,6 +177,7 @@ bool zrg_host_vm_shutdown(ZrgHostVm *vm, char *summary, size_t capacity) {
 }
 
 void zrg_host_vm_close(ZrgHostVm *vm) {
+    zrg_csim_free(vm->csim);
     if (vm->state) {
         if (vm->state->hasCurrentException || vm->state->threadStatus != ZR_THREAD_STATUS_FINE)
             ZrCore_State_ResetThread(vm->state, vm->state->currentExceptionStatus);

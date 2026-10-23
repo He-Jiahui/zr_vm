@@ -13,7 +13,7 @@
     "scenario": {"type": "string"},
     "lane": {"enum": ["dod", "oop", "hybrid", "pool", "c"]},
     "drive": {"enum": ["host", "cli"]},
-    "exec": {"enum": ["interp", "binary"]},
+    "exec": {"enum": ["interp", "binary", "native"]},
     "render": {"enum": ["null", "soft", "gl"]},
     "submit": {"enum": ["percall", "struct", "bulk", "direct"]},
     "gc_policy": {"enum": ["auto", "slack", "manual"]},

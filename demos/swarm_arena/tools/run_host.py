@@ -80,11 +80,11 @@ def percentile(values, percent):
     return sorted(values)[math.ceil(len(values) * percent / 100) - 1]
 
 
-def artifacts(directory, frames, seed, policy, interval=30, scenario="smoke", caps=(200, 964, 512)):
+def artifacts(directory, frames, seed, policy, interval=30, scenario="smoke", caps=(200, 964, 512), lane="dod"):
     schema = json.loads((DEMO / "docs/perf-summary.schema.json").read_text())
     summary = json.loads((directory / "summary.json").read_text())
     validate_schema(summary, schema)
-    for key, value in dict(scenario=scenario, lane="dod", drive="host", exec="interp",
+    for key, value in dict(scenario=scenario, lane=lane, drive="host", exec="native" if lane == "c" else "interp",
                            render="null", submit="bulk", frames=frames, seed=seed,
                            warmup=0, gc_policy=policy).items():
         require(summary[key] == value, "summary option mismatch: " + key)
@@ -111,12 +111,19 @@ def artifacts(directory, frames, seed, policy, interval=30, scenario="smoke", ca
                          ("total_us", "gc_total_us"), ("slack_steps", "gc_steps"), ("manual_requests", "manual_minor_requests")):
         require(summary["gc"][name] == sum(row[column] for row in rows), "GC aggregate mismatch: " + name)
     require(summary["gc"]["max_pause_us"] == max(row["gc_max_pause_us"] for row in rows), "GC maximum mismatch")
-    require(summary["gc"]["manual_requests"] == (frames // interval if policy == "manual" else 0),
+    manual = policy == "manual" and lane != "c"
+    require(summary["gc"]["manual_requests"] == (frames // interval if manual else 0),
             "manual minor cadence mismatch")
     require(summary["gc"]["manual_interval_frames"] == interval, "manual interval metadata mismatch")
     require([row["manual_minor_requests"] for row in rows] ==
-            [int(policy == "manual" and (frame + 1) % interval == 0) for frame in range(frames)],
+            [int(manual and (frame + 1) % interval == 0) for frame in range(frames)],
             "manual minor requests occur on the wrong frames")
+    if lane == "c":
+        columns = ("gc_minor", "gc_major", "gc_full", "gc_total_us", "gc_max_pause_us", "managed_bytes",
+                   "gc_debt_bytes", "alloc_bytes_estimate", "gc_steps", "manual_minor_requests")
+        require(all(row[key] == 0 for row in rows for key in columns), "C lane reports managed heap work")
+        require(summary["gc"]["pause_source"] == "C lane has no managed heap" and
+                summary["alloc"]["source"] == "C native allocations are not measured", "C measurement source mismatch")
     require(summary["rss_kb_max"] == max(row["rss_kb"] for row in rows), "RSS aggregate mismatch")
     estimates = [row["alloc_bytes_estimate"] for row in rows]
     require(summary["alloc"]["bytes_per_frame_p50"] == percentile(estimates, 50) and

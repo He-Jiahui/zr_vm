@@ -9,13 +9,13 @@ const char *zrg_gc_policy_name(ZrgGcPolicy policy) {
 }
 
 void zrg_options_usage(void) {
-    puts("usage: zr_swarm --project FILE [--scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst] [--lane dod]\n"
+    puts("usage: zr_swarm --project FILE [--scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst] [--lane dod|c]\n"
          "  [--frames 1..scenario-limit] [--seed 1..2147483646] [--render null] [--submit bulk]\n"
          "  [--gc-policy auto|slack|manual] [--gc-budget-us 0..1000000]\n"
          "  [--gc-minor-interval 1..1800] [--warmup 0] [--out DIR]\n"
          "  [--expect-hash 0..1000000006] [--help]\n"
          "Defaults: scenario length (smoke 120, others 1800), seed 12345, auto GC, 500us cap, minor every 30 frames,\n"
-         "          out/swarm. Source execution; null platform uses the game bot.");
+         "          out/swarm. DOD source or C reference execution; null platform uses the game bot.");
 }
 
 static bool error(const char *option, const char *message) {
@@ -45,7 +45,7 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
         "--seed", "--render", "--submit", "--gc-policy", "--gc-budget-us",
         "--gc-minor-interval", "--warmup", "--expect-hash", "--help"};
     bool seen[sizeof(names) / sizeof(names[0])] = {false};
-    *options = (ZrgOptions){.out = "out/swarm", .scenario = "smoke", .frames = 120, .seed = 12345,
+    *options = (ZrgOptions){.out = "out/swarm", .scenario = "smoke", .lane = "dod", .frames = 120, .seed = 12345,
         .gc_budget_us = 500, .minor_interval = 30, .expect_hash = -1, .gc_policy = ZRG_GC_AUTO};
     for (int i = 1; i < argc; ++i) {
         size_t key = 0;
@@ -67,7 +67,10 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
                     return error(option, "must be smoke, arena_2k, swarm_10k, bullet_storm or particle_burst");
                 options->scenario = value;
                 break;
-            case 3: if (strcmp(value, "dod")) return error(option, "must be dod"); break;
+            case 3:
+                if (strcmp(value, "dod") && strcmp(value, "c")) return error(option, "must be dod or c");
+                options->lane = value;
+                break;
             case 4: if (!number(option, value, 1, 1800, &options->frames)) return false; break;
             case 5: if (!number(option, value, 1, 2147483646, &options->seed)) return false; break;
             case 6: if (strcmp(value, "null")) return error(option, "must be null"); break;

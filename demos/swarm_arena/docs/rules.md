@@ -225,8 +225,12 @@ Render order is player, dense enemies, bullets, particles, pickups. Sizes are
 the camera inclusively. One `submitSoA` slice submits the visible batch.
 Host drive consumes that batch in C; CLI drive consumes it in script.
 
+GD-H1's host `--lane c` is an independent native reference for these same
+rules. Its DOD==C smoke gate changes no rule, hash order or golden; see
+[GD-H1 decisions](gd-h1-decisions.md).
+
 Goldens and final counters live in [hashes.json](../goldens/hashes.json).
 CLI interpreter/source-removed binary smoke repetition and CLI/host parity
 remain required. Full scenario completion establishes correctness, without a
-performance-budget or cross-platform libm claim. Other lanes, `sweep`,
-software/GL renderers, interactive input and all H/M work remain deferred.
+performance-budget or cross-platform libm claim. OOP/Hybrid lanes, `sweep`,
+software/GL renderers, interactive input and GD-H2+ / M work remain deferred.
