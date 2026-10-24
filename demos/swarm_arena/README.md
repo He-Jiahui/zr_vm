@@ -10,6 +10,10 @@ The default 120-frame smoke golden is **552988638** for seed
 12345; checkpoint 60 is **42922906**. The deliberate change from GD-C4 is
 explained in [decisions](docs/gd-c5-decisions.md).
 
+GD-H2 is blocked by a compiler error when an `Actor` initializes `Vec2` fields.
+The incomplete OOP lane is isolated outside the checkout; current lane support
+remains DOD and host C. See the [minimal repro and handoff](docs/gd-h2-blocker-20261024.md).
+
 | Scenario | Enemy cap | Default frames | Purpose |
 | --- | --- | --- | --- |
 | smoke | 200 | 120 | Fast gameplay, detector and forced-GC gate |
