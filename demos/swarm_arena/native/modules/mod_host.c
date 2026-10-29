@@ -84,11 +84,41 @@ static TZrBool is_host_driven(ZrLibCallContext *ctx, SZrTypeValue *result) {
     return ZR_TRUE;
 }
 
+/* W10 uses the same arithmetic as native/ffi/zrgame_ffi.c. */
+static TZrBool add_i64(ZrLibCallContext *ctx, SZrTypeValue *result) {
+    TZrInt64 a, b;
+    ZrLib_CallContext_ReadInt(ctx, 0, &a);
+    ZrLib_CallContext_ReadInt(ctx, 1, &b);
+    /* Keep the callback defined at i64 bounds; W10 uses bounded operands. */
+    ZrLib_Value_SetInt(ctx->state, result, (TZrInt64)((TZrUInt64)a + (TZrUInt64)b));
+    return ZR_TRUE;
+}
+
+static TZrBool noise2(ZrLibCallContext *ctx, SZrTypeValue *result) {
+    double x, y;
+    ZrLib_CallContext_ReadFloat(ctx, 0, &x);
+    ZrLib_CallContext_ReadFloat(ctx, 1, &y);
+    ZrLib_Value_SetFloat(ctx->state, result, x * 0.25 + y * 0.75);
+    return ZR_TRUE;
+}
+
+static TZrBool nop(ZrLibCallContext *ctx, SZrTypeValue *result) {
+    (void)ctx;
+    ZrLib_Value_SetNull(result);
+    return ZR_TRUE;
+}
+
 static const ZrLibParameterDescriptor zone_args[] = {{.name = "id", .typeName = "int"}};
 static const ZrLibParameterDescriptor path_args[] = {{.name = "path", .typeName = "string"}};
 static const ZrLibParameterDescriptor handle_args[] = {{.name = "h", .typeName = "int"}};
 static const ZrLibParameterDescriptor write_args[] = {
     {.name = "h", .typeName = "int"}, {.name = "line", .typeName = "string"},
+};
+static const ZrLibParameterDescriptor add_args[] = {
+    {.name = "a", .typeName = "i64"}, {.name = "b", .typeName = "i64"},
+};
+static const ZrLibParameterDescriptor noise_args[] = {
+    {.name = "x", .typeName = "f64"}, {.name = "y", .typeName = "f64"},
 };
 static const ZrLibFunctionDescriptor functions[] = {
     ZRG_FUNCTION("nowMicros", now_micros, "int", NULL, 0),
@@ -100,6 +130,9 @@ static const ZrLibFunctionDescriptor functions[] = {
     ZRG_FUNCTION("closeSink", close_sink, "void", handle_args, 1),
     ZRG_FUNCTION("rssKb", rss_kb, "int", NULL, 0),
     ZRG_FUNCTION("isHostDriven", is_host_driven, "bool", NULL, 0),
+    ZRG_FUNCTION("addI64", add_i64, "i64", add_args, 2),
+    ZRG_FUNCTION("noise2", noise2, "f64", noise_args, 2),
+    ZRG_FUNCTION("nop", nop, "void", NULL, 0),
 };
 
 const ZrLibModuleDescriptor *ZrGame_HostModule(void) {
@@ -107,9 +140,9 @@ const ZrLibModuleDescriptor *ZrGame_HostModule(void) {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION, .moduleName = "zrgame.host",
         .functions = functions, .functionCount = ZR_ARRAY_COUNT(functions),
         .documentation = "Swarm clock, inclusive nested zones and newline metrics sinks. Single owner thread.",
-        .moduleVersion = "1.0.0", .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        .moduleVersion = "1.1.0", .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         .requiredCapabilities = ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS,
-        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, .publicContractHash = "zrgame.host:v1",
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, .publicContractHash = "zrgame.host:v2",
     };
     return &module;
 }

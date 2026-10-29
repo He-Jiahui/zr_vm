@@ -112,6 +112,14 @@ if (BUILD_TESTS)
             --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
         set_tests_properties(demo_cli_smoke_${mode}_dod PROPERTIES LABELS "demo;game" TIMEOUT 960)
     endforeach()
+    foreach(mode interp binary)
+        add_test(NAME demo_w10_${mode}
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_w10.py"
+            --mode ${mode} --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native"
+            --calls 2000 --warmup 120 --repetitions 1)
+        set_tests_properties(demo_w10_${mode} PROPERTIES LABELS "demo;ffi;w10" TIMEOUT 180)
+    endforeach()
     add_test(NAME demo_zr_unit_tests
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_zr_unit_tests.py"
         --cli $<TARGET_FILE:zr_vm_cli_executable>

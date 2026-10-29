@@ -1,0 +1,81 @@
+let system = import("zr.system");
+let ffi = import("zr.ffi");
+let host = import("zrgame.host");
+
+native extern("@FFI_LIBRARY@") {
+    #zr.ffi.entry("zrg_add_i64")# fn ffiAdd(a: i64, b: i64): i64;
+    #zr.ffi.entry("zrg_noise2")# fn ffiNoise(x: f64, y: f64): f64;
+    #zr.ffi.entry("zrg_nop")# fn ffiNop(): void;
+}
+
+fn zrAdd(a: i64, b: i64): i64 { return a + b; }
+fn zrNoise(x: f64, y: f64): f64 { return x * 0.25 + y * 0.75; }
+fn zrNop(): void { }
+
+// Opening/resolving is deliberately outside the timed loops. Dynamic call's
+// public API constructs a guest argument array per invocation; that cost counts.
+var library = ffi.loadLibrary("@FFI_LIBRARY@");
+var add = library.getSymbol("zrg_add_i64", {
+    returnType: "i64", parameters: [{type: "i64"}, {type: "i64"}]
+});
+var noise = library.getSymbol("zrg_noise2", {
+    returnType: "f64", parameters: [{type: "f64"}, {type: "f64"}]
+});
+var nop = library.getSymbol("zrg_nop", {returnType: "void", parameters: []});
+
+// The runner executes this negative control in a separate process: this FFI
+// provider reports a closed owner as a fatal LoadError, outside guest catch.
+if (system.process.arguments.length == 2 && system.process.arguments[1] == "--closed-library") {
+    if (<int>add.call([1, 2]) != 3) { throw "W10 lifetime setup checksum"; }
+    library.close(); library.close();
+    add.call([1, 2]);
+    throw "W10 closed library accepted symbol call";
+}
+
+var calls = @CALLS@;
+var warmup = @WARMUP@;
+var pass = 0;
+while (pass < 2) {
+    var n = warmup;
+    if (pass == 1) { n = calls; }
+    var path = 0;
+    while (path < 4) {
+        var i = 0; var sum = 0;
+        var start = host.nowMicros();
+        if (path == 0) { while (i < n) { sum += zrAdd(i, 7); i += 1; } }
+        else if (path == 1) { while (i < n) { sum += host.addI64(i, 7); i += 1; } }
+        else if (path == 2) { while (i < n) { sum += ffiAdd(i, 7); i += 1; } }
+        else { while (i < n) { sum += <int>add.call([i, 7]); i += 1; } }
+        var elapsed = host.nowMicros() - start;
+        if (sum != n * (n - 1) / 2 + n * 7) { throw "W10 add checksum"; }
+        if (pass == 1) {
+            system.console.printLine("W10_OK op=add_i64 path=" + <string>path + " calls=" + <string>n
+                + " elapsed_us=" + <string>elapsed + " checksum=" + <string>sum);
+        }
+        i = 0; var total = 0.0; start = host.nowMicros();
+        if (path == 0) { while (i < n) { total += zrNoise(<float>i, 3.0); i += 1; } }
+        else if (path == 1) { while (i < n) { total += host.noise2(<float>i, 3.0); i += 1; } }
+        else if (path == 2) { while (i < n) { total += ffiNoise(<float>i, 3.0); i += 1; } }
+        else { while (i < n) { total += <float>noise.call([<float>i, 3.0]); i += 1; } }
+        elapsed = host.nowMicros() - start;
+        if (total != <float>(n * (n - 1) / 2) * 0.25 + <float>n * 2.25) { throw "W10 noise checksum"; }
+        if (pass == 1) {
+            system.console.printLine("W10_OK op=noise2 path=" + <string>path + " calls=" + <string>n
+                + " elapsed_us=" + <string>elapsed + " checksum=" + <string>total);
+        }
+        i = 0; start = host.nowMicros();
+        if (path == 0) { while (i < n) { zrNop(); i += 1; } }
+        else if (path == 1) { while (i < n) { host.nop(); i += 1; } }
+        else if (path == 2) { while (i < n) { ffiNop(); i += 1; } }
+        else { while (i < n) { nop.call([]); i += 1; } }
+        elapsed = host.nowMicros() - start;
+        if (pass == 1) {
+            system.console.printLine("W10_OK op=nop path=" + <string>path + " calls=" + <string>n
+                + " elapsed_us=" + <string>elapsed + " checksum=" + <string>i);
+        }
+        path += 1;
+    }
+    pass += 1;
+}
+library.close(); library.close();
+return 0;

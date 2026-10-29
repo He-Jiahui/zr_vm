@@ -14,6 +14,12 @@ GD-H2 is blocked by a compiler error when an `Actor` initializes `Vec2` fields.
 The incomplete OOP lane is isolated outside the checkout; current lane support
 remains DOD and host C. See the [minimal repro and handoff](docs/gd-h2-blocker-20261024.md).
 
+GD-M3 partially delivers W10 with ZR, native-module, native-extern and dynamic
+`zr.ffi` paths, in both interpreter and source-removed binary modes. The Pool
+lane hit script class binding and binary loading failures; its sources and
+failed integration are preserved outside the checkout. `--lane pool` remains
+unsupported. See [GD-M3 outcomes and evidence](docs/gd-m3-20261029.md).
+
 | Scenario | Enemy cap | Default frames | Purpose |
 | --- | --- | --- | --- |
 | smoke | 200 | 120 | Fast gameplay, detector and forced-GC gate |
@@ -123,8 +129,8 @@ the same CSV columns. Its GC options are inert because it has no managed heap;
 managed counters stay zero, and native allocations are explicitly unmeasured.
 CLI drive continues to support DOD only.
 
-The demo CTests retain the 77 GD-C5 checks and add `demo_host_smoke_c` and
-`demo_lane_equivalence`, for 79 total. The four
+The demo CTests retain the 79 GD-H1 checks and add `demo_w10_interp` and
+`demo_w10_binary`, for 81 total. The four
 `demo_cli_host_<scenario>_dod` gates retain their completion/parity checks. Release
 runs each new scenario for 1800 frames with CLI and host. Stress builds use
 four-frame scenario checks alongside full 120-frame smoke and twenty ZR units.
@@ -143,5 +149,27 @@ still bridges the stock CLI's source discovery to `game/tests`.
 Demos remain off by default with CTest label `demo`. Core inventory stays 515;
 use `-LE demo -E '^performance_report$'` to inspect it. Native plugins share
 `libzrgame_runtime.so` and load from `ZR_VM_NATIVE_PATH`. OOP/Hybrid lanes, `sweep`,
-software/GL rendering, images, interactive input, performance harnesses and all
-GD-H2+ / M milestones remain deferred. The null backend writes no image.
+software/GL rendering, images, interactive input and the full performance
+matrix remain deferred in this branch. GD-M3's W10 runner is available below;
+the null backend writes no image.
+
+## W10 boundary calls
+
+Keep temporary projects and results in an owned build root:
+
+```sh
+export TMPDIR=/workspace/cargo-targets/zr-gd-m3/tmp
+mkdir -p "$TMPDIR"
+export ZR_VM_NATIVE_PATH=/workspace/cargo-targets/zr-gd-m3/release/demos/swarm_arena/native
+ctest --test-dir /workspace/cargo-targets/zr-gd-m3/release \
+  -R '^demo_w10_' -j1 --output-on-failure
+python3 -I demos/swarm_arena/tools/run_w10.py \
+  --cli /workspace/cargo-targets/zr-gd-m3/release/bin/zr_vm_cli \
+  --native-dir "$ZR_VM_NATIVE_PATH" --mode binary \
+  --calls 20000 --warmup 1000 --repetitions 3 \
+  --out /workspace/cargo-targets/zr-gd-m3/w10-binary
+```
+
+The runner writes `result.json`, raw logs and `w10.md`. Raw loop timings
+include argument-array construction for dynamic calls; library/symbol setup
+is cached outside timing. Load above 2.0 prevents regression claims.

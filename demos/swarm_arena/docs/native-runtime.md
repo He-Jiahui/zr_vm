@@ -18,7 +18,9 @@ available for static registration. GD-C4 adds the `zr_swarm` host using those
 same descriptors; see [host decisions](gd-c4-decisions.md).
 
 Descriptors use plugin ABI 6, minimum runtime ABI 4, runtime provider phase,
-module version `1.0.0`, and contract names `zrgame.host:v1` / `zrgame.gfx:v1`.
+module version `1.1.0` / `1.0.0`, and contract names `zrgame.host:v2` / `zrgame.gfx:v1`.
+The host module also exports `addI64`, `noise2` and `nop` for W10, matching
+the functions in `libzrgame_ffi.so`.
 Every successful function or constructor writes its result, including null
 for void functions, and declares `RESULT_ALWAYS_WRITTEN`.
 
