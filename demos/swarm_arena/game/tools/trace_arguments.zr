@@ -1,0 +1,17 @@
+let system = import("zr.system");
+var argumentsEvaluated = 0;
+var traceCalls = 0;
+
+fn message(): string {
+    argumentsEvaluated += 1;
+    return "argument-evaluated";
+}
+#zr.compile.conditional("trace")#
+fn trace(message: string): void {
+    traceCalls += 1;
+    system.console.printLine("TRACE_PROBE " + message);
+}
+
+trace(message());
+system.console.printLine("TRACE_OK arguments=" + <string>argumentsEvaluated + " calls=" + <string>traceCalls);
+return 0;

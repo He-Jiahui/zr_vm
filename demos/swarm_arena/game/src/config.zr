@@ -5,6 +5,7 @@ let exception = import("zr.system.exception");
 pub class Config {
     pub var scenario: string = "smoke";
     pub var lane: string = "dod";
+    pub var spawnMode: string = "direct";
     pub var frames: int = 120;
     pub var seed: int = 12345;
     pub var render: string = "null";
@@ -23,7 +24,7 @@ pub class Config {
     pub var minorInterval: int = 30;
     pub @constructor() { }
     pub fn usage(): string {
-        return "usage: --scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst --lane dod --frames 1..scenario-limit --seed 1..2147483646 --render null --submit bulk --gc-policy auto|slack|manual --gc-budget-us 0..1000000 --gc-minor-interval 1..1800 --expect-hash H";
+        return "usage: --scenario smoke|arena_2k|swarm_10k|bullet_storm|particle_burst --lane dod --spawn-mode direct|jobs --frames 1..scenario-limit --seed 1..2147483646 --render null --submit bulk --gc-policy auto|slack|manual --gc-budget-us 0..1000000 --gc-minor-interval 1..1800 --expect-hash H";
     }
     pub fn configure(): void {
         this.maxFrames = 1800; this.enemyCap = 2000; this.aimedCount = 10;
@@ -44,6 +45,9 @@ pub class Config {
     }
     pub fn validate(): void {
         if (this.lane != "dod") { throw new exception.RuntimeError("lane must be dod"); }
+        if (this.spawnMode != "direct" && this.spawnMode != "jobs") {
+            throw new exception.RuntimeError("spawn-mode must be direct or jobs");
+        }
         if (this.frames < 1 || this.frames > this.maxFrames) {
             throw new exception.RuntimeError("--frames must be in 1.." + <string>this.maxFrames + " for scenario " + this.scenario);
         }
@@ -97,13 +101,15 @@ pub class Config {
             seen.add(option);
             if (option != "--scenario" && option != "--lane" && option != "--frames" && option != "--seed"
                 && option != "--render" && option != "--submit" && option != "--gc-policy"
-                && option != "--gc-budget-us" && option != "--expect-hash" && option != "--gc-minor-interval") {
+                && option != "--gc-budget-us" && option != "--expect-hash" && option != "--gc-minor-interval"
+                && option != "--spawn-mode") {
                 throw new exception.RuntimeError("unknown argument " + option);
             }
             if (i == args.length) { throw new exception.RuntimeError("missing value for " + option); }
             var value = args[i]; i += 1;
             if (option == "--scenario") { this.scenario = value; }
             else if (option == "--lane") { this.lane = value; }
+            else if (option == "--spawn-mode") { this.spawnMode = value; }
             else if (option == "--frames") { this.frames = this.number(option, value, 1800); explicitFrames = true; }
             else if (option == "--seed") { this.seed = this.number(option, value, 2147483646); }
             else if (option == "--render") { this.render = value; }

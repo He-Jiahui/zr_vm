@@ -1,0 +1,29 @@
+{
+  "debug": {
+    "main_trace_opcodes": [
+      "GET_STACK",
+      "GET_MEMBER_SLOT",
+      "RESET_STACK_NULL",
+      "GET_MEMBER_SLOT",
+      "RESET_STACK_NULL",
+      "FUNCTION_CALL",
+      "RESET_STACK_NULL2",
+      "RESET_STACK_NULL"
+    ],
+    "argument_trace_opcodes": [
+      "GET_STACK",
+      "GET_STACK",
+      "SUPER_KNOWN_VM_CALL_NO_ARGS",
+      "SET_STACK",
+      "KNOWN_VM_CALL"
+    ],
+    "arguments_evaluated": 1,
+    "trace_calls": 1
+  },
+  "release": {
+    "main_trace_opcodes": [],
+    "argument_trace_opcodes": [],
+    "arguments_evaluated": 0,
+    "trace_calls": 0
+  }
+}

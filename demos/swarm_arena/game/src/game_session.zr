@@ -57,9 +57,16 @@ pub class Session {
         }
         {
             this.p.input(frame); this.p.dodge(this.w);                             // 1 input
-            this.wave.advance(frame, this.w.count, this.rng, this.p.x, this.p.y);  // 2 director
+            var pending = 0;
+            if (this.cfg.spawnMode == "jobs") {                                  // 2 director
+                var completion = this.wave.schedule(frame, this.w.count, this.rng, this.p.x, this.p.y);
+                pending = this.wave.drain(completion);                            // 3 spawn
+            } else {
+                this.wave.advance(frame, this.w.count, this.rng, this.p.x, this.p.y);
+                pending = this.wave.pending;
+            }
             var i = 0;
-            while (i < this.wave.pending) {                                       // 3 spawn
+            while (i < pending) {
                 this.w.spawn(this.wave.xs[i], this.wave.ys[i], this.w.nextId,
                              this.wave.kinds[i], this.wave.bosses[i]);
                 this.w.nextId += 1; i += 1;
@@ -117,6 +124,10 @@ pub class Session {
         if (kind == 1) { return this.bulletsMax; }
         if (kind == 2) { return this.particlesMax; }
         throw new exception.RuntimeError("unknown entity kind");
+    }
+    pub fn jobSummary(): string {
+        return "SWARM_JOBS scheduled=" + <string>this.wave.jobsScheduled
+            + " drained=" + <string>this.wave.jobsDrained + " spawned=" + <string>this.wave.totalSpawned;
     }
     pub fn rendered(hash: int): void { this.batch.lastHash = hash; }
     pub fn shutdown(): void { this.booted = false; }

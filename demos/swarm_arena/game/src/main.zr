@@ -5,6 +5,11 @@ let metrics = import("metrics");
 let host = import("zrgame.host");
 let exception = import("zr.system.exception");
 
+#zr.compile.conditional("trace")#
+fn traceStart(scenario: string, frames: int): void {
+    system.console.printLine("SWARM_TRACE scenario=" + scenario + " frames=" + <string>frames);
+}
+
 fn run(cfg: config.Config, session: game_session.Session): void {
     var runtimeHost: object = host;
     system.gc.set_budget(cfg.gcBudgetUs);
@@ -34,6 +39,7 @@ fn run(cfg: config.Config, session: game_session.Session): void {
     if (cfg.expectHash >= 0 && hash != cfg.expectHash) {
         throw new exception.RuntimeError("hash mismatch: expected " + <string>cfg.expectHash + " got " + <string>hash);
     }
+    if (cfg.spawnMode == "jobs") { system.console.printLine(session.jobSummary()); }
     system.console.printLine(session.summary(hash, "cli") + stats.summary());
 }
 
@@ -50,6 +56,7 @@ try {
     cfg.parse();
     if (cfg.help) { system.console.printLine(cfg.usage()); }
     else {
+        traceStart(cfg.scenario, cfg.frames);
         run(cfg, session);
     }
 } catch (e) {

@@ -1,0 +1,39 @@
+let director = import("director");
+let core = import("&swarmcore");
+let system = import("zr.system");
+
+var direct = new director.Director(200, 40, 192);
+var queued = new director.Director(200, 40, 192);
+var a = new core.Rng(1);
+var b = new core.Rng(1);
+var frame = 0;
+var alive = 0;
+while (frame < 120) {
+    var completion = queued.schedule(frame, alive, b, 2048.0, 2048.0);
+    var duplicate = false;
+    try { var unused = queued.schedule(frame, alive, b, 2048.0, 2048.0); } catch (e) { duplicate = true; }
+    if (!duplicate) { throw "director accepted two undrained batches"; }
+    direct.advance(frame, alive, a, 2048.0, 2048.0);
+    var count = queued.drain(completion);
+    if (count != direct.pending || a.state != b.state) { throw "batch/RNG mismatch"; }
+    var i = 0;
+    while (i < count) {
+        if (direct.xs[i] != queued.xs[i] || direct.ys[i] != queued.ys[i]
+            || direct.kinds[i] != queued.kinds[i] || direct.bosses[i] != queued.bosses[i]) {
+            throw "ordered spawn request mismatch";
+        }
+        i += 1;
+    }
+    var empty = false;
+    try { queued.drain(completion); } catch (e) { empty = true; }
+    if (!empty) { throw "director consumed one batch twice"; }
+    // Keep room for ordinary and boss batches, including zero-spawn frames.
+    alive = 190;
+    frame += 1;
+}
+if (queued.jobsScheduled != 120 || queued.jobsDrained != 120 || queued.bossWaves != 1
+    || queued.burstSpawns != 10 || queued.totalSpawned != direct.totalSpawned) {
+    throw "queue reuse or boss batch mismatch";
+}
+system.console.printLine("JOBS_OK scheduled=120 drained=120 boss_waves=1 burst_spawns=10");
+return 0;

@@ -20,6 +20,13 @@ lane hit script class binding and binary loading failures; its sources and
 failed integration are preserved outside the checkout. `--lane pool` remains
 unsupported. See [GD-M3 outcomes and evidence](docs/gd-m3-20261029.md).
 
+GD-M4 adds debug/release trace profiles with bytecode call-stripping goldens
+and CLI `--spawn-mode jobs`, with direct/Job parity in interpreter and
+source-removed binary modes. Profile selection uses the demo staging tool;
+the native scheduler eagerly executes queued work during `schedule()`.
+Reflection-backed tunables remain blocked at the P19 runtime import. See
+[GD-M4 outcomes, commands and limits](docs/gd-m4-20261029.md).
+
 | Scenario | Enemy cap | Default frames | Purpose |
 | --- | --- | --- | --- |
 | smoke | 200 | 120 | Fast gameplay, detector and forced-GC gate |
@@ -129,8 +136,8 @@ the same CSV columns. Its GC options are inert because it has no managed heap;
 managed counters stay zero, and native allocations are explicitly unmeasured.
 CLI drive continues to support DOD only.
 
-The demo CTests retain the 79 GD-H1 checks and add `demo_w10_interp` and
-`demo_w10_binary`, for 81 total. The four
+The demo CTests retain the 79 GD-H1 checks and the two W10 checks. GD-M4 adds
+`demo_m4_trace_{interp,binary}` and `demo_m4_jobs_{interp,binary}`, for 85 total. The four
 `demo_cli_host_<scenario>_dod` gates retain their completion/parity checks. Release
 runs each new scenario for 1800 frames with CLI and host. Stress builds use
 four-frame scenario checks alongside full 120-frame smoke and twenty ZR units.

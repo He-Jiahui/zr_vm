@@ -120,6 +120,16 @@ if (BUILD_TESTS)
             --calls 2000 --warmup 120 --repetitions 1)
         set_tests_properties(demo_w10_${mode} PROPERTIES LABELS "demo;ffi;w10" TIMEOUT 180)
     endforeach()
+    foreach(check trace jobs)
+        foreach(mode interp binary)
+            add_test(NAME demo_m4_${check}_${mode}
+                COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_m4.py"
+                --check ${check} --mode ${mode} --cli $<TARGET_FILE:zr_vm_cli_executable>
+                --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+            set_tests_properties(demo_m4_${check}_${mode} PROPERTIES
+                LABELS "demo;m4;${check}" TIMEOUT 1800)
+        endforeach()
+    endforeach()
     add_test(NAME demo_zr_unit_tests
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_zr_unit_tests.py"
         --cli $<TARGET_FILE:zr_vm_cli_executable>

@@ -1,6 +1,8 @@
 let container = import("zr.container");
 let core = import("&swarmcore");
 let math = import("zr.math");
+let task = import("zr.task");
+let exception = import("zr.system.exception");
 
 // Wave definitions and requests are preallocated SoA columns, consumed in phase 3.
 pub class Director {
@@ -16,6 +18,9 @@ pub class Director {
     pub var bossWaves: int = 0;
     pub var burstSpawns: int = 0;
     pub var totalSpawned: int = 0;
+    pub var jobsScheduled: int = 0;
+    pub var jobsDrained: int = 0;
+    pri var queued: bool = false;
     pri var cap: int;
     pri var waveFrames: int;
     pri var ringRadius: int;
@@ -89,5 +94,26 @@ pub class Director {
         this.pending = amount;
         this.totalSpawned += amount;
         if (bossWave) { this.burstSpawns += amount; }
+    }
+    // schedule() pumps the local cooperative scheduler immediately. Phase 3
+    // still collects the Task result before consuming the request columns.
+    pub fn schedule(frame: int, alive: int, rng: core.Rng, x: float, y: float): zr.task.Task<int> {
+        let task = import("zr.task");
+        if (this.queued) { throw new exception.RuntimeError("director batch already queued"); }
+        this.pending = 0;
+        var self = this;
+        var job = init task.Job<int>(fn() => {
+            self.advance(frame, alive, rng, x, y);
+            return self.pending;
+        });
+        var completion = task.currentScheduler.schedule<int>(job);
+        this.queued = true; this.jobsScheduled += 1;
+        return completion;
+    }
+    pub fn drain(completion: zr.task.Task<int>): int {
+        if (!this.queued) { throw new exception.RuntimeError("director has no queued batch"); }
+        var amount = completion.result();
+        this.queued = false; this.jobsDrained += 1;
+        return amount;
     }
 }
