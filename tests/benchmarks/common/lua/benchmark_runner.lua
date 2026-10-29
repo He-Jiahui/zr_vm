@@ -473,8 +473,9 @@ local CASE_HANDLERS = {
     map_object_access = { "BENCH_MAP_OBJECT_ACCESS_PASS", map_object_access },
 }
 
-function M.run_main(case_name, args)
-    local handler = CASE_HANDLERS[case_name]
+function M.run_main(case_name, args, case_handler)
+    -- Case-local kernels share both the CLI and persistent checksum protocol.
+    local handler = case_handler or CASE_HANDLERS[case_name]
     local server_mode, requested_case, tier, runner_args
     if handler == nil then
         error("unknown benchmark case: " .. tostring(case_name))

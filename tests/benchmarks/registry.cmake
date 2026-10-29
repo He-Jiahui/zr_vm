@@ -164,6 +164,20 @@ zr_vm_register_benchmark_case(
         CHECKSUM_STRESS "664618747")
 
 zr_vm_register_benchmark_case(
+        swarm_step
+        DESCRIPTION "Deterministic SoA enemy steering, homing bullets, hit/respawn updates, and state hashing."
+        PASS_BANNER "BENCH_SWARM_STEP_PASS"
+        WORKLOAD_TAG "game,soa,index,branch,loop"
+        PROFILE_SCALE 1
+        TIERS "smoke;core;stress;profile"
+        IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "python" "node" "lua"
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "python"
+        CHECKSUM_SMOKE "436940475"
+        CHECKSUM_CORE "49001808"
+        CHECKSUM_PROFILE "436940475"
+        CHECKSUM_STRESS "662750722")
+
+zr_vm_register_benchmark_case(
         dispatch_loops
         DESCRIPTION "Polymorphic dispatch loops aligned with interface-call pressure."
         PASS_BANNER "BENCH_DISPATCH_LOOPS_PASS"

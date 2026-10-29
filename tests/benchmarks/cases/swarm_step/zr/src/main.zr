@@ -1,0 +1,104 @@
+// Integer SoA swarm kernel; no game host, renderer, or demo modules.
+let benchConfig = import("bench_config");
+let {Array} = import("zr.container");
+
+var scale = benchConfig.scale();
+var enemyCount = 64 * scale;
+var bulletCount = 128 * scale;
+var ex = new Array<int>();
+var ey = new Array<int>();
+var vx = new Array<int>();
+var vy = new Array<int>();
+var hp = new Array<int>();
+var bx = new Array<int>();
+var by = new Array<int>();
+var life = new Array<int>();
+var target = new Array<int>();
+var i = 0;
+while (i < enemyCount) {
+    ex.add((i * 73 + 19) % 4096);
+    ey.add((i * 151 + 47) % 4096);
+    vx.add(1 + i % 3);
+    vy.add(1 + (i * 3) % 5);
+    hp.add(3 + i % 5);
+    i += 1;
+}
+i = 0;
+while (i < bulletCount) {
+    bx.add((i * 97 + 11) % 4096);
+    by.add((i * 53 + 23) % 4096);
+    life.add(8 + i % 17);
+    target.add((i * 7 + 3) % enemyCount);
+    i += 1;
+}
+var checksum = 17;
+var hits = 0;
+var kills = 0;
+var frame = 0;
+while (frame < 24 * scale) {
+    var px = (frame * 29 + 1024) % 4096;
+    var py = (frame * 43 + 2048) % 4096;
+    i = 0;
+    while (i < enemyCount) {
+        if (ex[i] < px) { vx[i] = vx[i] + 1; }
+        else { vx[i] = vx[i] - 1; }
+        if (ey[i] < py) { vy[i] = vy[i] + 1; }
+        else { vy[i] = vy[i] - 1; }
+        if (vx[i] < -4) { vx[i] = -4; }
+        if (vx[i] > 4) { vx[i] = 4; }
+        if (vy[i] < -4) { vy[i] = -4; }
+        if (vy[i] > 4) { vy[i] = 4; }
+        ex[i] = (ex[i] + vx[i] + 4096) % 4096;
+        ey[i] = (ey[i] + vy[i] + 4096) % 4096;
+        i += 1;
+    }
+    i = 0;
+    while (i < bulletCount) {
+        var t = target[i] + 0;
+        if (bx[i] < ex[t]) { bx[i] = bx[i] + 12; }
+        else if (bx[i] > ex[t]) { bx[i] = bx[i] - 12; }
+        if (by[i] < ey[t]) { by[i] = by[i] + 12; }
+        else if (by[i] > ey[t]) { by[i] = by[i] - 12; }
+        bx[i] = (bx[i] + 4096) % 4096;
+        by[i] = (by[i] + 4096) % 4096;
+        life[i] = life[i] - 1;
+        var dx = ex[t] - bx[i];
+        var dy = ey[t] - by[i];
+        if (dx * dx + dy * dy <= 256) {
+            hits += 1;
+            hp[t] = hp[t] - 1;
+            life[i] = 0;
+            if (hp[t] == 0) {
+                kills += 1;
+                ex[t] = (t * 73 + frame * 37 + 19) % 4096;
+                ey[t] = (t * 151 + frame * 61 + 47) % 4096;
+                vx[t] = 1 + t % 3;
+                vy[t] = 1 + (t * 3) % 5;
+                hp[t] = 3 + t % 5;
+            }
+        }
+        if (life[i] <= 0) {
+            bx[i] = px;
+            by[i] = py;
+            life[i] = 8 + i % 17;
+            target[i] = (t + i + frame + 1) % enemyCount;
+        }
+        i += 1;
+    }
+    i = 0;
+    while (i < enemyCount) {
+        checksum = (checksum * 131 + ex[i] * 3 + ey[i] * 5
+            + (vx[i] + 4) * 7 + (vy[i] + 4) * 11 + hp[i] * 13) % 1000000007;
+        i += 1;
+    }
+    i = 0;
+    while (i < bulletCount) {
+        checksum = (checksum * 131 + bx[i] * 3 + by[i] * 5
+            + life[i] * 7 + target[i] * 11) % 1000000007;
+        i += 1;
+    }
+    checksum = (checksum * 131 + hits * 17 + kills * 19 + frame) % 1000000007;
+    frame += 1;
+}
+
+return "BENCH_SWARM_STEP_PASS\n" + <string> checksum;

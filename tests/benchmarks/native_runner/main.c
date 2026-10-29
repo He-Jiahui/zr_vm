@@ -7,6 +7,7 @@
 #include "benchmark_case.h"
 
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_numeric_loops;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_swarm_step;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_dispatch_loops;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_container_pipeline;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_sort_array;
@@ -33,6 +34,7 @@ static void zr_bench_print_usage(const char *executable) {
 static const ZrBenchCaseDescriptor *zr_bench_find_case(const char *caseName) {
     static const ZrBenchCaseDescriptor *const cases[] = {
             &zr_bench_case_descriptor_numeric_loops,
+            &zr_bench_case_descriptor_swarm_step,
             &zr_bench_case_descriptor_dispatch_loops,
             &zr_bench_case_descriptor_container_pipeline,
             &zr_bench_case_descriptor_sort_array,

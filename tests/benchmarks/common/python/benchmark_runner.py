@@ -703,11 +703,12 @@ CASE_HANDLERS = {
 }
 
 
-def run_main(case_name: str) -> None:
-    if case_name not in CASE_HANDLERS:
+def run_main(case_name: str, case_handler=None) -> None:
+    # A case may supply its own (banner, kernel) while sharing the CLI protocol.
+    if case_handler is None and case_name not in CASE_HANDLERS:
         raise SystemExit(f"unknown benchmark case: {case_name}")
 
-    banner, handler = CASE_HANDLERS[case_name]
+    banner, handler = case_handler if case_handler is not None else CASE_HANDLERS[case_name]
     scale = parse_scale(sys.argv[1:])
     checksum = handler(scale)
     print(banner)

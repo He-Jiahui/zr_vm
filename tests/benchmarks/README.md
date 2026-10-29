@@ -84,7 +84,7 @@ avoiding runtime dependencies on generated CLI argument parsing support.
 ## Tier Policy
 
 - `smoke`
-  Runs `numeric_loops`, `sort_array`, `prime_trial_division`
+  Runs `numeric_loops`, `sort_array`, `prime_trial_division`, `swarm_step`
 - `core`
   Runs all registered core-tier benchmark cases
 - `stress`
@@ -108,6 +108,10 @@ Scale is fixed in `registry.cmake`:
 - `core = 4`
 - `stress = 16`
 - `profile = registry controlled per case`
+
+`swarm_step` adds a self-contained data-oriented game step in C, ZR (source and
+binary), Python, Node and Lua. See [its workload contract](cases/swarm_step/README.md)
+for tier sizes and checksums. It has no demo host or renderer dependency.
 
 ## Sampling And Execution Order
 
