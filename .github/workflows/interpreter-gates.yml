@@ -51,6 +51,96 @@ jobs:
             build-gc-sanitizers/probe-results/results.json
           if-no-files-found: ignore
 
+  # Demo evidence stays independent of the interpreter correctness gates.
+  demo:
+    name: Swarm demo (${{ matrix.configuration }}, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: release
+            build-type: Release
+            rust-binding: "ON"
+            c-flags: ""
+          - configuration: asan
+            build-type: Debug
+            rust-binding: "OFF"
+            c-flags: -fsanitize=address,undefined -fno-omit-frame-pointer
+    env:
+      DEMO_BUILD_DIR: build-demo-${{ matrix.configuration }}
+      TMPDIR: ${{ github.workspace }}/build-demo-${{ matrix.configuration }}/tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Select memory-aware build parallelism
+        run: |
+          mkdir -p "$TMPDIR"
+          jobs=$(awk '/MemAvailable/ {print ($2 < 6291456 ? 1 : 2)}' /proc/meminfo)
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
+      - name: Configure Swarm demo
+        env:
+          DEMO_C_FLAGS: ${{ matrix.c-flags }}
+        run: >-
+          cmake -S . -B "$DEMO_BUILD_DIR" -G Ninja
+          -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
+          -DCMAKE_C_FLAGS="$DEMO_C_FLAGS"
+          -DZR_VM_BUILD_DEMOS=ON -DBUILD_TESTS=ON -DBUILD_CLI=ON
+          -DBUILD_NETWORK_LIB=ON -DBUILD_RUST_BINDING=${{ matrix.rust-binding }}
+          -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+      - name: Build demo smoke dependencies
+        id: build
+        run: >-
+          cmake --build "$DEMO_BUILD_DIR"
+          --target zr_vm_cli_executable zr_swarm zrgame_plugins zrgame_ffi zrgame_native_tests
+      - name: Run Release smoke and selected demo CTests
+        if: matrix.configuration == 'release'
+        run: >-
+          ctest --test-dir "$DEMO_BUILD_DIR" -j1 --no-tests=error --output-on-failure
+          -L '^demo$'
+          -R '^(demo_native_runtime|demo_native_smoke_(interp|binary)|demo_cli_smoke_(interp|binary)_dod|demo_host_smoke_(dod|c)|demo_cli_host_parity|demo_lane_equivalence|demo_session_(smoke|budget))$'
+      - name: Record W10 perf matrix (report only)
+        if: ${{ !cancelled() && matrix.configuration == 'release' && steps.build.outcome == 'success' }}
+        run: >-
+          python3 -I demos/swarm_arena/tools/run_w10.py
+          --cli "$DEMO_BUILD_DIR/bin/zr_vm_cli"
+          --native-dir "$DEMO_BUILD_DIR/demos/swarm_arena/native"
+          --mode interp --calls 2000 --warmup 120 --repetitions 1
+          --out "$DEMO_BUILD_DIR/perf-matrix"
+      - name: Run ASan and UBSan demo smoke
+        if: matrix.configuration == 'asan'
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: >-
+          ctest --test-dir "$DEMO_BUILD_DIR" -j1 --no-tests=error --output-on-failure
+          -L '^demo$'
+          -R '^(demo_native_runtime|demo_native_smoke_(interp|binary)|demo_cli_smoke_(interp|binary)_dod|demo_host_smoke_(dod|c))$'
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && matrix.configuration == 'release' }}
+        with:
+          name: swarm-demo-perf-matrix
+          path: |
+            build-demo-release/perf-matrix/result.json
+            build-demo-release/perf-matrix/w10.md
+            build-demo-release/perf-matrix/*.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swarm-demo-${{ matrix.configuration }}
+          path: |
+            build-demo-${{ matrix.configuration }}/Testing/Temporary/LastTest.log
+            build-demo-${{ matrix.configuration }}/Testing/Temporary/LastTestsFailed.log
+            build-demo-${{ matrix.configuration }}/tmp/**/result.json
+            build-demo-${{ matrix.configuration }}/tmp/**/*.log
+            build-demo-${{ matrix.configuration }}/tmp/**/summary.json
+          if-no-files-found: ignore
+
   performance-evidence:
     runs-on: ubuntu-latest
     timeout-minutes: 20
