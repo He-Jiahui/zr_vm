@@ -34,6 +34,13 @@ frame slack. Smoke keeps hash parity. The 600/720 rewind is blocked after the
 API reports rollback success: restored script class calls fail. See
 [GD-M5 commands, metrics and minimal reproduction](docs/gd-m5-20261029.md).
 
+GD-M6 partially delivers AOT C emission, shared-library builds and descriptor
+loading for four of the five DOD modules. Full-game and subset execution hit
+lowering/call-binding findings; game hash parity and W1–W6 timings remain
+unavailable. A standalone scalar control passes interpreter/AOT checksum
+comparison. See [AOT commands and findings](docs/gd-m6-20261029.md) and the
+[W1–W6 baseline rows](docs/perf-gd-m6-20261029.md).
+
 | Scenario | Enemy cap | Default frames | Purpose |
 | --- | --- | --- | --- |
 | smoke | 200 | 120 | Fast gameplay, detector and forced-GC gate |

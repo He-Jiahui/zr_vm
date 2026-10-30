@@ -1,0 +1,18 @@
+// Functional W3 subset; this is not the full simulation or a timing benchmark.
+let world = import("lanes/dod/world");
+let grid = import("lanes/dod/grid");
+var w = new world.World(32);
+var i = 0;
+while (i < 32) { w.add(<float>(i * 127), <float>(i * 59), i + 1); i += 1; }
+var g = new grid.Grid(32);
+g.build(w);
+var hash = 1;
+i = 0;
+while (i < 4096) {
+    hash = (hash * 31 + g.counts[i]) % 1000000007;
+    hash = (hash * 31 + g.starts[i]) % 1000000007;
+    i += 1;
+}
+i = 0;
+while (i < 32) { hash = (hash * 31 + g.slots[i]) % 1000000007; i += 1; }
+return (hash * 31 + g.starts[4096]) % 1000000007;

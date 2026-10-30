@@ -44,6 +44,26 @@ target_link_libraries(zr_swarm_probe_host PRIVATE zr_vm_parser_shared zr_vm_lib_
     zr_vm_lib_container_shared zr_vm_library_shared zr_vm_core_shared)
 set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# Experimental GD-M6 loader uses the benchmark runner's explicit registration,
+# checksum and unavailable-coverage contracts. It never changes zr_swarm modes.
+if (UNIX AND NOT APPLE)
+    add_executable(zr_swarm_aot_host probes/native/aot_host.c
+        "${PROJECT_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_runner.c"
+        "${PROJECT_SOURCE_DIR}/tests/benchmarks/aot_runner/aot_coverage.c")
+    foreach(component zr_vm_common zr_vm_core zr_vm_library zr_vm_parser zr_vm_lib_math
+            zr_vm_lib_system zr_vm_lib_container zr_vm_lib_ffi)
+        target_include_directories(zr_swarm_aot_host PRIVATE "${PROJECT_SOURCE_DIR}/${component}/include")
+    endforeach()
+    target_include_directories(zr_swarm_aot_host PRIVATE "${PROJECT_SOURCE_DIR}/tests/benchmarks/aot_runner")
+    target_link_libraries(zr_swarm_aot_host PRIVATE zrgame_modules zr_vm_parser_shared
+        zr_vm_lib_math_shared zr_vm_lib_system_shared zr_vm_lib_container_shared
+        zr_vm_lib_ffi_shared zr_vm_library_shared zr_vm_core_shared ${CMAKE_DL_LIBS})
+    if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(zr_swarm_aot_host PRIVATE -Wall -Wextra -Werror)
+    endif()
+    set_target_properties(zr_swarm_aot_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()
+
 # DOD uses the core/library path and the same runtime providers as the CLI;
 # the independent C reference shares its host loop, artifacts and null batch.
 add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/host_session.c host/platform_null.c

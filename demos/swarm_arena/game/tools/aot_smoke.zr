@@ -1,0 +1,10 @@
+// Dedicated GD-M6 entry: the existing game exports, without CLI argument injection.
+let game = import("game");
+let system = import("zr.system");
+
+game.boot("smoke", "dod", 12345, 120);
+var frame = 0;
+while (frame < 120) { game.frameStep(frame); frame += 1; }
+var hash = game.fullHash();
+system.console.printLine(game.shutdown());
+return hash;

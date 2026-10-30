@@ -1,0 +1,21 @@
+// Functional W5 subset: fixed store reuse/history, not bullet_storm timing.
+let bullets = import("lanes/dod/bullet_store");
+let world = import("lanes/dod/world");
+var b = new bullets.Bullets(32);
+var motion = b.motion;
+var frame = 0;
+var hash = 1;
+while (frame < 64) {
+    var i = 0;
+    while (i < 32) { b.add(<float>i, <float>frame, 1.0, 2.0, i + 1, 2); i += 1; }
+    while (motion.count > 0) {
+        var slot = motion.count / 2;
+        b.recordHit(slot, frame + 1);
+        hash = (hash * 31 + b.damage[slot]) % 1000000007;
+        hash = (hash * 31 + b.history[slot * 8]) % 1000000007;
+        hash = (hash * 31 + b.pierce[slot]) % 1000000007;
+        b.swapRemove(slot);
+    }
+    frame += 1;
+}
+return hash;
