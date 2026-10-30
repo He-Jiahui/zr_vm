@@ -27,6 +27,13 @@ the native scheduler eagerly executes queued work during `schedule()`.
 Reflection-backed tunables remain blocked at the P19 runtime import. See
 [GD-M4 outcomes, commands and limits](docs/gd-m4-20261029.md).
 
+GD-M5 adds optional host `--host-api session`, requiring the network library,
+`BUILD_RUST_BINDING=ON` and the existing native plugins. It records budgeted
+per-frame instruction/time/GC/heap/native-call usage and steps GC with remaining
+frame slack. Smoke keeps hash parity. The 600/720 rewind is blocked after the
+API reports rollback success: restored script class calls fail. See
+[GD-M5 commands, metrics and minimal reproduction](docs/gd-m5-20261029.md).
+
 | Scenario | Enemy cap | Default frames | Purpose |
 | --- | --- | --- | --- |
 | smoke | 200 | 120 | Fast gameplay, detector and forced-GC gate |

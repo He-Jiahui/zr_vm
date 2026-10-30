@@ -23,6 +23,12 @@ pub fn render(frame: int): int {
     if (!hostBooted) { throw new exception.RuntimeError("host render requires boot"); }
     return hosted.render(frame);
 }
+// A single session call budgets both simulation and bulk render preparation.
+pub fn frameStep(frame: int): int {
+    var hash = tick(frame);
+    render(frame);
+    return hash;
+}
 pub fn fullHash(): int { return hosted.fullHash(); }
 pub fn entityMax(kind: int): int { return hosted.entityMax(kind); }
 pub fn gcDisable(): int {

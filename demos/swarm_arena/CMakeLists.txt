@@ -46,7 +46,7 @@ set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$
 
 # DOD uses the core/library path and the same runtime providers as the CLI;
 # the independent C reference shares its host loop, artifacts and null batch.
-add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/platform_null.c
+add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/host_session.c host/platform_null.c
     native/runtime/csim.c)
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(native/runtime/csim.c PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
@@ -61,6 +61,12 @@ endforeach()
 target_link_libraries(zr_swarm PRIVATE zrgame_modules zr_vm_parser_shared
     zr_vm_lib_math_shared zr_vm_lib_system_shared zr_vm_lib_container_shared
     zr_vm_lib_ffi_shared zr_vm_library_shared zr_vm_core_shared)
+if (TARGET zr_vm_rust_binding_shared)
+    target_link_libraries(zr_swarm PRIVATE zr_vm_rust_binding_shared)
+    target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_rust_binding/include")
+    target_compile_definitions(zr_swarm PRIVATE ZRG_HAS_SESSION=1)
+    add_dependencies(zr_swarm zrgame_plugins)
+endif()
 if (TARGET zr_vm_lib_network_shared)
     target_link_libraries(zr_swarm PRIVATE zr_vm_lib_network_shared)
     target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_lib_network/include")
@@ -94,6 +100,16 @@ if (BUILD_TESTS)
         message(FATAL_ERROR "Swarm Arena feature probes require BUILD_CLI=ON")
     endif ()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    if (TARGET zr_vm_rust_binding_shared)
+        foreach(check smoke budget)
+            add_test(NAME demo_session_${check}
+                COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_session.py"
+                --check ${check} --host $<TARGET_FILE:zr_swarm>
+                --cli $<TARGET_FILE:zr_vm_cli_executable>
+                --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+            set_tests_properties(demo_session_${check} PROPERTIES LABELS "demo;host;session" TIMEOUT 1800)
+        endforeach()
+    endif()
     add_executable(zrgame_native_tests native/tests/test_runtime.c)
     target_link_libraries(zrgame_native_tests PRIVATE zrgame_runtime)
     add_test(NAME demo_native_runtime COMMAND zrgame_native_tests)

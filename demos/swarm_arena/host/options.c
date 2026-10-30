@@ -14,8 +14,11 @@ void zrg_options_usage(void) {
          "  [--gc-policy auto|slack|manual] [--gc-budget-us 0..1000000]\n"
          "  [--gc-minor-interval 1..1800] [--warmup 0] [--out DIR]\n"
          "  [--expect-hash 0..1000000006] [--help]\n"
+         "  [--host-api library|session] [--instruction-budget 0..1000000000] [--rewind]\n"
          "Defaults: scenario length (smoke 120, others 1800), seed 12345, auto GC, 500us cap, minor every 30 frames,\n"
-         "          out/swarm. DOD source or C reference execution; null platform uses the game bot.");
+         "          out/swarm. DOD source or C reference execution; null platform uses the game bot.\n"
+         "Session: DOD only, slack GC, 100000000 instructions/frame; --rewind requires >=720 frames.\n"
+         "Requires BUILD_RUST_BINDING=ON and zrgame plugins on ZR_VM_NATIVE_PATH.");
 }
 
 static bool error(const char *option, const char *message) {
@@ -43,10 +46,12 @@ static bool number(const char *option, const char *text, uint32_t min,
 bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
     static const char *names[] = {"--project", "--out", "--scenario", "--lane", "--frames",
         "--seed", "--render", "--submit", "--gc-policy", "--gc-budget-us",
-        "--gc-minor-interval", "--warmup", "--expect-hash", "--help"};
+        "--gc-minor-interval", "--warmup", "--expect-hash", "--help", "--host-api",
+        "--instruction-budget", "--rewind"};
     bool seen[sizeof(names) / sizeof(names[0])] = {false};
     *options = (ZrgOptions){.out = "out/swarm", .scenario = "smoke", .lane = "dod", .frames = 120, .seed = 12345,
-        .gc_budget_us = 500, .minor_interval = 30, .expect_hash = -1, .gc_policy = ZRG_GC_AUTO};
+        .gc_budget_us = 500, .minor_interval = 30, .instruction_budget = 100000000,
+        .expect_hash = -1, .gc_policy = ZRG_GC_AUTO};
     for (int i = 1; i < argc; ++i) {
         size_t key = 0;
         while (key < sizeof(names) / sizeof(names[0]) && strcmp(argv[i], names[key])) ++key;
@@ -55,6 +60,7 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
         seen[key] = true;
         const char *option = argv[i];
         if (key == 13) { options->help = true; continue; }
+        if (key == 16) { options->rewind = true; continue; }
         if (++i == argc || !strncmp(argv[i], "--", 2)) return error(option, "is missing a value");
         const char *value = argv[i];
         uint32_t parsed;
@@ -88,11 +94,30 @@ bool zrg_options_parse(int argc, char **argv, ZrgOptions *options) {
                 if (!number(option, value, 0, 1000000006, &parsed)) return false;
                 options->expect_hash = parsed;
                 break;
+            case 14:
+                if (strcmp(value, "library") && strcmp(value, "session"))
+                    return error(option, "must be library or session");
+                options->session_api = !strcmp(value, "session");
+                break;
+            case 15:
+                if (!number(option, value, 0, 1000000000, &options->instruction_budget)) return false;
+                break;
             default: return false;
         }
     }
     uint32_t limit = !strcmp(options->scenario, "smoke") ? 120 : 1800;
     if (!seen[4]) options->frames = limit;
     if (options->frames > limit) return error("--frames", "exceeds the scenario limit");
+    if (options->session_api) {
+        if (strcmp(options->lane, "dod")) return error("--host-api session", "requires --lane dod");
+        if (!seen[8]) options->gc_policy = ZRG_GC_SLACK;
+        if (options->gc_policy != ZRG_GC_SLACK)
+            return error("--host-api session", "requires --gc-policy slack");
+        if (seen[10]) return error("--gc-minor-interval", "requires --host-api library");
+    } else if (seen[15] || options->rewind) {
+        return error("--instruction-budget/--rewind", "requires --host-api session");
+    }
+    if (options->rewind && options->frames < 720)
+        return error("--rewind", "requires at least 720 frames (use --scenario arena_2k)");
     return options->help || options->project || error("--project", "is required");
 }

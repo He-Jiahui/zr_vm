@@ -15,9 +15,10 @@ typedef struct ZrgOptions {
     const char *scenario;
     const char *lane;
     uint32_t frames, seed, gc_budget_us, minor_interval;
+    uint32_t instruction_budget;
     int64_t expect_hash;
     ZrgGcPolicy gc_policy;
-    bool help;
+    bool help, session_api, rewind;
 } ZrgOptions;
 
 typedef struct ZrgHostVm {
@@ -40,5 +41,6 @@ bool zrg_platform_poll(void);
 void zrg_platform_present(void);
 bool zrg_platform_make_directory(const char *directory);
 int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options);
+int zrg_session_run(const ZrgOptions *options);
 
 #endif

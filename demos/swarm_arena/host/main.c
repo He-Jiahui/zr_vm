@@ -8,6 +8,7 @@ int main(int argc, char **argv) {
         zrg_options_usage();
         return 0;
     }
+    if (options.session_api) return zrg_session_run(&options);
     if (!zrg_host_vm_open(&vm, &options)) {
         zrg_host_vm_close(&vm);
         return 2;
