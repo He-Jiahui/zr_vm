@@ -16,6 +16,9 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
@@ -139,32 +142,58 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
-static void test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return(void) {
+/* Supply the boxed receiver independently of AOT constructor stores. This
+ * smoke isolates the class-member read contract; AOT inline-source stores
+ * have a separate pre-existing gap. */
+static TZrInt64 aot_member_receiver_native(SZrState *state) {
+    SZrCallInfo *caller = state->callInfoList->previous;
+    SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, caller);
+    SZrObjectPrototype *prototype = ZR_NULL;
+    SZrObject *point;
+    SZrTypeValue pointValue;
+    SZrTypeValue value;
+    const SZrTypeValue *boxValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer + 1);
+    if (function == ZR_NULL) return 0;
+    for (TZrUInt32 i = 0u; i < function->frameSlotLayoutLength; i++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[i];
+        if (layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            prototype = ZrCore_Function_ResolvePrototypeFrameStructPrototype(state, function, layout->typeLayoutId);
+            break;
+        }
+    }
+    if (prototype == ZR_NULL) return 0;
+    point = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_STRUCT);
+    if (point == ZR_NULL) return 0;
+    point->prototype = prototype;
+    ZrCore_Object_Init(state, point);
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(point));
+    ZrCore_Value_InitAsRawObject(state, &pointValue, ZR_CAST_RAW_OBJECT_AS_SUPER(point));
+    pointValue.type = ZR_VALUE_TYPE_OBJECT;
+    ZrCore_Value_InitAsInt(state, &value, 42);
+    if (!ZrCore_Object_SetMember(state, &pointValue, ZrCore_String_Create(state, "x", 1u), &value)) return 0;
+    (void)ZrCore_Object_SetMember(state, boxValue, ZrCore_String_Create(state, "point", 5u), &pointValue);
+    return 0;
+}
+
+static void install_aot_member_receiver(SZrState *state) {
+    SZrClosureNative *closure = ZrCore_ClosureNative_New(state, 0u);
+    SZrTypeValue value;
+    TEST_ASSERT_NOT_NULL(closure);
+    closure->nativeFunction = aot_member_receiver_native;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    value.type = ZR_VALUE_TYPE_CLOSURE;
+    value.isNative = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCore_Object_SetMember(state, &state->global->zrObject,
+            ZrCore_String_Create(state, "__aotMemberReceiver", 19u), &value));
+}
+
+static void run_aot_c_value_type_smoke(const char *source, TZrBool classFieldRead) {
 #if !defined(ZR_PLATFORM_UNIX)
+    ZR_UNUSED_PARAMETER(source);
+    ZR_UNUSED_PARAMETER(classFieldRead);
     TEST_IGNORE_MESSAGE("AOT C value-type shared-library smoke currently validates the Unix toolchain path");
 #else
-    const char *source =
-            "struct Label {\n"
-            "    pub var text: string;\n"
-            "    pub @constructor(text: string) {\n"
-            "        this.text = text;\n"
-            "    }\n"
-            "}\n"
-            "pub fn makeLabel(text: string): Label {\n"
-            "    var local: Label = init Label(text);\n"
-            "    return local;\n"
-            "}\n"
-            "var original: Label = init Label(\"left\");\n"
-            "var copied: Label = original;\n"
-            "copied.text = \"right\";\n"
-            "var items: Label[2];\n"
-            "items[0] = init Label(copied.text);\n"
-            "var returned: Label = makeLabel(items[0].text);\n"
-            "returned.text = \"done\";\n"
-            "if (original.text == \"left\" && copied.text == \"right\") {\n"
-            "    return returned.text;\n"
-            "}\n"
-            "return \"bad\";";
     const char *projectJson =
             "{"
             "\"name\":\"aot-value-type-string-field-smoke\","
@@ -190,6 +219,7 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
     char command[4096];
 
     TEST_ASSERT_NOT_NULL(state);
+    if (classFieldRead) install_aot_member_receiver(state);
     function = compile_source(state, source, "main.zr");
     TEST_ASSERT_NOT_NULL(function);
 
@@ -245,23 +275,28 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_load"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrCore_Value_Copy(state, zr_aot_dense_destination, "
-                                "(const SZrTypeValue *)zr_aot_field);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_store"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrCore_TypeLayout_CopyInlineWithRegistry(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateInlineArray"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_BindInlineArrayElementPlace"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Gc_WriteBarrier("));
-    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT value SemIR field"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT dynamic value access"));
+    if (classFieldRead) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame,"));
+    }
+    if (!classFieldRead) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_load"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                    "ZrCore_Value_Copy(state, zr_aot_dense_destination, "
+                                    "(const SZrTypeValue *)zr_aot_field);"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_store"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                    "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                    "ZrCore_TypeLayout_CopyInlineWithRegistry(state,"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateInlineArray"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_BindInlineArrayElementPlace"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Gc_WriteBarrier("));
+        TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT value SemIR field"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT dynamic value access"));
+    }
     free(generatedCText);
 
     snprintf(command,
@@ -293,12 +328,21 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
                                                           ZR_TRUE));
 
     ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+    TZrBool executed = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result);
+    if (!executed && state->hasCurrentException) {
+        ZrCore_Exception_PrintUnhandled(state, &state->currentException, stderr);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(executed,
                              ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
-    TEST_ASSERT_NOT_NULL(result.value.object);
-    TEST_ASSERT_EQUAL_STRING("done",
-                             ZrCore_String_GetNativeString(ZR_CAST_STRING(state, result.value.object)));
+    if (classFieldRead) {
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+        TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
+    } else {
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+        TEST_ASSERT_NOT_NULL(result.value.object);
+        TEST_ASSERT_EQUAL_STRING("done",
+                                 ZrCore_String_GetNativeString(ZR_CAST_STRING(state, result.value.object)));
+    }
     TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
                           ZrLibrary_AotRuntime_GetExecutedVia(state->global));
 
@@ -308,6 +352,40 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
+}
+
+static void test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return(void) {
+    const char *source =
+            "struct Label {\n"
+            "    pub var text: string;\n"
+            "    pub @constructor(text: string) {\n"
+            "        this.text = text;\n"
+            "    }\n"
+            "}\n"
+            "pub fn makeLabel(text: string): Label {\n"
+            "    var local: Label = init Label(text);\n"
+            "    return local;\n"
+            "}\n"
+            "var original: Label = init Label(\"left\");\n"
+            "var copied: Label = original;\n"
+            "copied.text = \"right\";\n"
+            "var items: Label[2];\n"
+            "items[0] = init Label(copied.text);\n"
+            "var returned: Label = makeLabel(items[0].text);\n"
+            "returned.text = \"done\";\n"
+            "if (original.text == \"left\" && copied.text == \"right\") {\n"
+            "    return returned.text;\n"
+            "}\n"
+            "return \"bad\";";
+    run_aot_c_value_type_smoke(source, ZR_FALSE);
+}
+
+static void test_aot_c_generated_shared_library_copies_class_struct_member_into_inline_destination(void) {
+    const char *source =
+            "struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }\n"
+            "class Box { pub var point: Point; }\n"
+            "var box = new Box(); zr.__aotMemberReceiver(box); var copy = box.point; return copy.x;";
+    run_aot_c_value_type_smoke(source, ZR_TRUE);
 }
 
 static void test_aot_c_generated_union_type_layout_token_uses_local_type_def(void) {
@@ -847,6 +925,7 @@ static void test_aot_c_span_artifact_executes_equivalently_to_vm(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return);
+    RUN_TEST(test_aot_c_generated_shared_library_copies_class_struct_member_into_inline_destination);
     RUN_TEST(test_aot_c_generated_union_type_layout_token_uses_local_type_def);
     RUN_TEST(test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod);
     RUN_TEST(test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields);

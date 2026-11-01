@@ -7686,6 +7686,26 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
     return ZR_TRUE;
 }
 
+static void aot_runtime_store_member_result_inline(SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    SZrTypeValue *destination) {
+    const SZrFunctionFrameSlotLayout *layout;
+    const SZrFunction *function;
+    if (destination->type != ZR_VALUE_TYPE_OBJECT) {
+        return;
+    }
+    function = aot_runtime_frame_function(frame);
+    layout = ZrCore_Function_FindFrameSlotLayout(function, destinationSlot);
+    if (layout == ZR_NULL || layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        return;
+    }
+    if (ZrCore_Function_CopyObjectValueToFrameSlotInline(
+                state, function, frame->slotBase, destinationSlot, destination)) {
+        ZrCore_Value_ResetAsNull(destination);
+    }
+}
+
 /** @brief 按成员表符号读取对象成员。
  * @note 局部接收者副本防止目的槽与接收者同槽覆盖；副本不是新增持有凭据。生成调用须符合编译与已绑定访问上下文；core 负责模块 pending 等实际运行限制、属性回调和目的值所有权，不补全 private/protected 访问范围检查。
  */
@@ -7712,6 +7732,8 @@ TZrBool ZrLibrary_AotRuntime_GetMember(SZrState *state,
         aot_runtime_fail(state, runtimeState, "GET_MEMBER: missing member");
         return ZR_FALSE;
     }
+    aot_runtime_store_member_result_inline(
+            state, frame, destinationSlot, ZrCore_Stack_GetValue(destinationPointer));
     return ZR_TRUE;
 }
 
@@ -7810,6 +7832,8 @@ TZrBool ZrLibrary_AotRuntime_GetMemberSlot(SZrState *state,
                     ZrCore_CallBinding_StatusName(state->lastCallBindingError.status));
             return ZR_FALSE;
         }
+        aot_runtime_store_member_result_inline(
+                state, frame, destinationSlot, ZrCore_Stack_GetValue(destinationPointer));
         return ZR_TRUE;
     }
     if (state == ZR_NULL || destinationPointer == ZR_NULL || receiverPointer == ZR_NULL ||
@@ -7835,6 +7859,8 @@ TZrBool ZrLibrary_AotRuntime_GetMemberSlot(SZrState *state,
         aot_runtime_fail(state, runtimeState, "GET_MEMBER_SLOT: missing member");
         return ZR_FALSE;
     }
+    aot_runtime_store_member_result_inline(
+            state, frame, destinationSlot, ZrCore_Stack_GetValue(destinationPointer));
     return ZR_TRUE;
 }
 

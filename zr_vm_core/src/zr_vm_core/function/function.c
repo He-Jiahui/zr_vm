@@ -26,6 +26,8 @@
 
 #include "function/function_precall_internal.h"
 #include "function/function_ir_owners_internal.h"
+#include "function/function_return_internal.h"
+#include "gc/gc_temporary_roots.h"
 
 /*
  * VM call setup/teardown stays on the main interpreter path. Keep the public
@@ -2793,10 +2795,12 @@ static TZrBool function_frame_layout_slot_from_frame_pointer(SZrState *state,
     return ZR_FALSE;
 }
 
-static ZR_FORCE_INLINE const SZrTypeValue *function_get_frame_return_source_value(
+const SZrTypeValue *function_get_frame_return_source_value(
         SZrState *state,
         const SZrCallInfo *callInfo,
-        TZrStackValuePointer returnSource) {
+        TZrStackValuePointer returnSource,
+        TZrStackValuePointer returnDestination,
+        SZrTypeValue *materializedValue) {
     SZrFunction *calleeFunction;
     TZrStackValuePointer calleeFrameBase;
     TZrUInt32 sourceStackSlot;
@@ -2827,6 +2831,39 @@ static ZR_FORCE_INLINE const SZrTypeValue *function_get_frame_return_source_valu
     }
 
     sourceSlotLayout = ZrCore_Function_FindFrameSlotLayout(calleeFunction, sourceStackSlot);
+    if (sourceSlotLayout != ZR_NULL &&
+        sourceSlotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        /* Inline destinations use payload copies, even when the layouts did
+         * not match. Never turn that path into an allocating boxed return. */
+        if (callInfo->previous != ZR_NULL && ZR_CALL_INFO_IS_VM(callInfo->previous) &&
+            returnDestination != ZR_NULL) {
+            SZrFunction *callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
+            TZrStackValuePointer callerFrameBase = function_inline_frame_base_from_call_info(callInfo->previous);
+            TZrUInt32 destinationStackSlot;
+            if (callerFunction != ZR_NULL && callerFrameBase != ZR_NULL &&
+                (function_frame_layout_slot_from_frame_pointer(state, callerFunction, callerFrameBase,
+                                                                returnDestination, &destinationStackSlot) ||
+                 function_stack_slot_from_frame_pointer(callerFrameBase, returnDestination, &destinationStackSlot))) {
+                const SZrFunctionFrameSlotLayout *destinationLayout =
+                        ZrCore_Function_FindFrameSlotLayout(callerFunction, destinationStackSlot);
+                if (destinationLayout != ZR_NULL &&
+                    destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+                    return ZrCore_Stack_GetValue(returnSource);
+                }
+            }
+        }
+        if (materializedValue == ZR_NULL ||
+            !ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                    state, calleeFunction, calleeFrameBase, sourceStackSlot, materializedValue)) {
+            ZrCore_Debug_RunError(state, "RETURN: failed to materialize inline value");
+            return ZR_NULL;
+        }
+        if (!ZrCore_Gc_TemporaryRootPush(state, materializedValue->value.object)) {
+            ZrCore_Debug_RunError(state, "RETURN: failed to root inline value");
+            return ZR_NULL;
+        }
+        return materializedValue;
+    }
     if (sourceSlotLayout != ZR_NULL &&
         sourceSlotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
         sourceSlotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
@@ -5345,14 +5382,16 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state,
                 }
             } else {
                 TZrStackValuePointer returnSource = state->stackTop.valuePointer - returnCount;
-                const SZrTypeValue *returnSourceValue =
-                        function_get_frame_return_source_value(state, callInfo, returnSource);
                 if (!ZrCore_Function_TryCopyInlineFrameReturnValue(state,
                                                                    callInfo,
                                                                    returnSource,
                                                                    stackPointer,
                                                                    ZrCore_Function_ResolvePrototypeFrameTypeLayout,
                                                                    state)) {
+                    SZrTypeValue materializedValue;
+                    TZrSize rootDepth = state->temporaryRootLength;
+                    const SZrTypeValue *returnSourceValue = function_get_frame_return_source_value(
+                            state, callInfo, returnSource, stackPointer, &materializedValue);
                     TZrBool copiedObjectInline = ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
                             state, callInfo, stackPointer, returnSourceValue);
                     SZrTypeValue *destinationFrameValue =
@@ -5375,6 +5414,7 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state,
                             ZrCore_Ownership_ReleaseValue(state, stackDestinationValue);
                         }
                     }
+                    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
                 }
             }
             state->stackTop.valuePointer = stackPointer + 1;
@@ -5389,9 +5429,16 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state,
         returnCount = expectedReturnCount;
     }
     for (TZrSize i = 0; i < returnCount; i++) {
-        ZrCore_Stack_CopyValue(state,
-                               stackPointer + i,
-                               function_get_frame_return_source_value(state, callInfo, first + i));
+        if (!ZrCore_Function_TryCopyInlineFrameReturnValue(
+                    state, callInfo, first + i, stackPointer + i,
+                    ZrCore_Function_ResolvePrototypeFrameTypeLayout, state)) {
+            SZrTypeValue materializedValue;
+            TZrSize rootDepth = state->temporaryRootLength;
+            ZrCore_Stack_CopyValue(state, stackPointer + i,
+                    function_get_frame_return_source_value(
+                            state, callInfo, first + i, stackPointer + i, &materializedValue));
+            ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+        }
     }
     for (TZrSize i = returnCount; i < expectedReturnCount; i++) {
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stackPointer + i));
@@ -5409,6 +5456,8 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
     SZrTypeValue *destinationFrameValue;
     SZrTypeValue *stackDestinationValue;
     TZrBool frameOverlapsStack;
+    SZrTypeValue materializedValue;
+    TZrSize rootDepth = state->temporaryRootLength;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(callInfo != ZR_NULL);
@@ -5457,7 +5506,7 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
         }
     } else if (returnSource != destination) {
         const SZrTypeValue *returnSourceValue =
-                function_get_frame_return_source_value(state, callInfo, returnSource);
+                function_get_frame_return_source_value(state, callInfo, returnSource, destination, &materializedValue);
         TZrBool copiedObjectInline = ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
                 state, callInfo, destination, returnSourceValue);
         if (copiedObjectInline) {
@@ -5495,6 +5544,7 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
                                            ? previousFrameStorageTop
                                            : destination + 1;
     state->callInfoList = callInfo->previous;
+    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
 }
 void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount) {
     TZrSize expectedReturnCount = callInfo->expectedReturnCount;

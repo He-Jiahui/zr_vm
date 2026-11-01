@@ -1,0 +1,5 @@
+class Box { pub var x: int; }
+var box = new Box();
+box.x = 42;
+if (box.x != 42) { throw box.x; }
+return 0;

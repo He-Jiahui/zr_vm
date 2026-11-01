@@ -1,0 +1,9 @@
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+fn readX(p: Point): int { return p.x; }
+class Box { pub var point: Point = init Point(1); }
+var box = new Box();
+var c = init Point(42);
+box.point = c;
+var r = readX(box.point);
+if (r != 42) { throw r; }
+return 0;
