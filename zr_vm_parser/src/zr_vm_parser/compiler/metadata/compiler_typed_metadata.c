@@ -1896,6 +1896,63 @@ TZrBool compiler_find_inline_type_layout_for_inferred(
             cs, &typeRef, outLayoutId, outSize, outAlign, ZR_NULL);
 }
 
+TZrBool compiler_stack_slot_has_direct_inline_frame_storage(SZrCompilerState *cs, TZrUInt32 stackSlot) {
+    const SZrCompilerStackSlotTypeHint *hint;
+    SZrFunctionTypedTypeRef typeRef;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE ||
+        compiler_stack_slot_is_reference_parameter(cs, stackSlot) ||
+        (stackSlot == 0u && typed_metadata_current_function_borrows_receiver(cs))) {
+        return ZR_FALSE;
+    }
+    hint = find_stack_slot_type_hint_for_slot(cs, stackSlot);
+    if (hint != ZR_NULL) {
+        if (hint->isArrayElementAlias || hint->isReadonlyAggregateCallWindowSlot) {
+            return ZR_FALSE;
+        }
+        if ((hint->isFieldAlias || hint->isInlineReceiverArgument) &&
+            (hint->aliasParentStackSlot >= stackSlot ||
+             !compiler_stack_slot_has_direct_inline_frame_storage(cs, hint->aliasParentStackSlot))) {
+            return ZR_FALSE;
+        }
+    }
+
+    /* Typed local metadata is finalized after expression lowering. Consult
+     * the active local bindings and parameter declarations at this point. */
+    for (TZrSize index = cs->localVars.length; index > 0u; index--) {
+        const SZrFunctionLocalVariable *local = ZrCore_Array_Get(&cs->localVars, index - 1u);
+        const SZrTypeBinding *binding;
+        const SZrCompilerBindingIdentity *identity;
+        TZrUInt32 passingRole;
+        if (local == ZR_NULL || local->stackSlot != stackSlot) continue;
+        passingRole = typed_local_binding_parameter_passing_role(cs, (TZrUInt32)(index - 1u), local);
+        if (passingRole != ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE &&
+            passingRole != ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE) {
+            return ZR_FALSE;
+        }
+        if (typed_type_ref_from_injected_receiver(cs, local, &typeRef)) {
+            return compiler_find_inline_type_layout(cs, &typeRef, ZR_NULL, ZR_NULL, ZR_NULL, ZR_NULL);
+        }
+        identity = index <= cs->localBindingIdentities.length
+                           ? ZrCore_Array_Get(&cs->localBindingIdentities, index - 1u) : ZR_NULL;
+        binding = cs->typeEnv != ZR_NULL && local->name != ZR_NULL
+                          ? ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                                    cs->typeEnv, local->name,
+                                    identity != ZR_NULL ? identity->syntaxContext : ZrParser_SyntaxContext_Root())
+                          : ZR_NULL;
+        if (binding != ZR_NULL) {
+            return (TZrBool)(binding->type.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                             compiler_find_inline_type_layout_for_inferred(cs, &binding->type, ZR_NULL, ZR_NULL, ZR_NULL));
+        }
+        if (typed_type_ref_from_current_parameter(cs, local->name, &typeRef)) {
+            return compiler_find_inline_type_layout(cs, &typeRef, ZR_NULL, ZR_NULL, ZR_NULL, ZR_NULL);
+        }
+        break;
+    }
+    return (TZrBool)(hint != ZR_NULL && hint->type.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                     compiler_find_inline_type_layout_for_inferred(cs, &hint->type, ZR_NULL, ZR_NULL, ZR_NULL));
+}
+
 TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,
                                                const SZrInferredType *type) {
@@ -2443,6 +2500,8 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
                     rawHint->aliasMemberEntryIndex].symbol;
             if (parentLayout->slotKind !=
                         (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+                (parentLayout->reserved0 &
+                 (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS | ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u ||
                 memberName == ZR_NULL ||
                 !ZrCore_Function_ResolvePrototypeFrameFieldLayout(
                         cs->state,

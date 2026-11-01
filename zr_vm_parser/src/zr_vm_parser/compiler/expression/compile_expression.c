@@ -1228,17 +1228,6 @@ static EZrDirectFieldConstructResult compile_assignment_try_direct_field_constru
     }
     parentSlot = assignment_target_direct_local_slot(cs, primary->property);
     memberNode = primary->members->nodes[0U];
-    if (memberNode != ZR_NULL &&
-        memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
-        memberNode->data.memberExpression.computed) {
-        return compile_assignment_try_direct_array_element_construct(
-                cs,
-                primary,
-                memberNode,
-                right,
-                rightType,
-                location);
-    }
     if (parentSlot == ZR_PARSER_SLOT_NONE || memberNode == ZR_NULL ||
         memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
         memberNode->data.memberExpression.computed) {
@@ -1262,8 +1251,8 @@ static EZrDirectFieldConstructResult compile_assignment_try_direct_field_constru
                                    cs, parentTypeName, memberSymbol)
                          : ZR_NULL;
     if (memberInfo == ZR_NULL ||
-        (memberInfo->memberType != ZR_AST_STRUCT_FIELD &&
-         memberInfo->memberType != ZR_AST_CLASS_FIELD) ||
+        memberInfo->memberType != ZR_AST_STRUCT_FIELD ||
+        !compiler_stack_slot_has_direct_inline_frame_storage(cs, parentSlot) ||
         find_type_member_is_const(cs, parentTypeName, memberSymbol)) {
         goto cleanup;
     }
@@ -1639,9 +1628,23 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     if (hasCompatibleSimpleAssignment &&
         assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX) &&
         right->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
-        EZrDirectFieldConstructResult directResult =
-                compile_assignment_try_direct_field_construct(
-                        cs, left, right, &rightType, node->location);
+        EZrDirectFieldConstructResult directResult = ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE;
+        /* Array elements have their own indirect-place construction contract. */
+        if (left->type == ZR_AST_PRIMARY_EXPRESSION) {
+            SZrPrimaryExpression *primary = &left->data.primaryExpression;
+            if (primary->property != ZR_NULL && primary->members != ZR_NULL && primary->members->count == 1u) {
+                SZrAstNode *member = primary->members->nodes[0u];
+                if (member != ZR_NULL && member->type == ZR_AST_MEMBER_EXPRESSION &&
+                    member->data.memberExpression.computed) {
+                    directResult = compile_assignment_try_direct_array_element_construct(
+                            cs, primary, member, right, &rightType, node->location);
+                }
+            }
+        }
+        if (directResult == ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE) {
+            directResult = compile_assignment_try_direct_field_construct(
+                    cs, left, right, &rightType, node->location);
+        }
         if (directResult != ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE) {
             ZrParser_InferredType_Free(cs->state, &leftType);
             ZrParser_InferredType_Free(cs->state, &rightType);

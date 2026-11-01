@@ -1,0 +1,15 @@
+struct Point {
+    pub var x: int;
+    pub @constructor(x: int) { this.x = x; }
+}
+struct Box {
+    pub var point: Point;
+    pub property x: int {
+        get { return this.point.x; }
+        set { var constructed = init Point(value); this.point = constructed; }
+    }
+}
+var box: Box = init Box();
+box.x = 42;
+if (box.point.x != 42) { throw "setter field"; }
+return 0;
