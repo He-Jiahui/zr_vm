@@ -9879,23 +9879,42 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(PROPERTY_REF_LOAD) {
+                PROTECT_E(state, callInfo, {
+                    if (!ZrCore_PropertyReference_Load(state,
+                                                      FRAME_VALUE_SLOT(A2(instruction)),
+                                                      FRAME_VALUE_SLOT(E(instruction)))) {
+                        ZrCore_Debug_RunError(
+                                state, "PROPERTY_REF_LOAD: invalid managed property reference");
+                    }
+                });
                 destination = FRAME_VALUE_SLOT(E(instruction));
-                opA = FRAME_VALUE_SLOT(A2(instruction));
-                if (!ZrCore_PropertyReference_Load(state, opA, destination)) {
-                    ZrCore_Debug_RunError(
-                            state, "PROPERTY_REF_LOAD: invalid managed property reference");
-                }
+                execution_store_member_result_to_inline_struct_destination_if_needed(
+                        state, currentFunction, base, E(instruction), destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(PROPERTY_REF_STORE) {
-                opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
-                              ? &ret
-                              : FRAME_VALUE_SLOT(E(instruction));
-                if (!ZrCore_PropertyReference_Store(state, opA, opB)) {
-                    ZrCore_Debug_RunError(
-                            state, "PROPERTY_REF_STORE: invalid managed property reference");
-                }
+                PROTECT_E(state, callInfo, {
+                    SZrTypeValue materializedValue;
+                    const SZrTypeValue *source = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                                        ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                    TZrSize rootDepth = state->temporaryRootLength;
+                    if (E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG) {
+                        source = execution_effective_member_store_value(
+                                state, currentFunction, base, E(instruction), source, &materializedValue);
+                    }
+                    if (source == &materializedValue &&
+                        !ZrCore_Gc_TemporaryRootPush(state, materializedValue.value.object)) {
+                        ZrCore_Debug_RunError(state, "PROPERTY_REF_STORE: failed to root inline value");
+                    }
+                    UPDATE_BASE(callInfo);
+                    TZrBool stored = ZrCore_PropertyReference_Store(
+                            state, FRAME_VALUE_SLOT(A1(instruction)), source);
+                    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+                    if (!stored) {
+                        ZrCore_Debug_RunError(
+                                state, "PROPERTY_REF_STORE: invalid managed property reference");
+                    }
+                });
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_WAKE) {

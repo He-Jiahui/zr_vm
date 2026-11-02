@@ -2886,11 +2886,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                             ZR_AST_STRUCT_METHOD &&
                                     typeMember->receiverEffect ==
                                             ZR_CANONICAL_RECEIVER_MUTABLE) {
-                                    pendingReceiverSourceSlot = directLocalSlot;
+                                    pendingReceiverSourceSlot =
+                                            compiler_stack_slot_is_reference_parameter(cs, directLocalSlot)
+                                                    ? currentSlot : directLocalSlot;
                                     pendingReceiverWritebackSlot = directLocalSlot;
                                 } else if (typeMember->memberType ==
                                            ZR_AST_STRUCT_METHOD) {
-                                    pendingReceiverSourceSlot = directLocalSlot;
+                                    pendingReceiverSourceSlot =
+                                            compiler_stack_slot_is_reference_parameter(cs, directLocalSlot)
+                                                    ? currentSlot : directLocalSlot;
                                 }
                             }
                         }
@@ -4417,10 +4421,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
             }
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 pendingReceiverWritebackSlot != ZR_PARSER_SLOT_NONE) {
-                emit_instruction(cs,
-                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
-                                                      (TZrUInt16)pendingReceiverWritebackSlot,
-                                                      (TZrInt32)pendingReceiverSlot));
+                if (compiler_stack_slot_is_reference_parameter(cs, pendingReceiverWritebackSlot)) {
+                    if (!compiler_property_reference_store(cs,
+                                                           pendingReceiverWritebackSlot,
+                                                           pendingReceiverSlot,
+                                                           member->location)) {
+                        goto cleanup;
+                    }
+                } else {
+                    emit_instruction(cs,
+                                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                          (TZrUInt16)pendingReceiverWritebackSlot,
+                                                          (TZrInt32)pendingReceiverSlot));
+                }
             }
             if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
                 currentSlot = pendingDirectMemberCallResultSlot;

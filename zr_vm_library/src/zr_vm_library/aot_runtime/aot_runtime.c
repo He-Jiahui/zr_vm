@@ -23,6 +23,7 @@
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/math.h"
@@ -7619,6 +7620,11 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateLocal(
     return ZR_TRUE;
 }
 
+static void aot_runtime_store_member_result_inline(SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 destinationSlot,
+                                                   SZrTypeValue *destination);
+
 /** @brief 经位置种类读取到目的槽。
  * @note 由 core 校验帧锚点、成员描述符或动态索引；目的槽覆盖沿值所有权规则，回调失败不保证保留原目的值。
  */
@@ -7650,6 +7656,7 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceLoad(
                 "PROPERTY_REF_LOAD: invalid managed property reference");
         return ZR_FALSE;
     }
+    aot_runtime_store_member_result_inline(state, frame, destinationSlot, destinationValue);
     return ZR_TRUE;
 }
 
@@ -7666,6 +7673,17 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
     TZrStackValuePointer referencePointer = aot_runtime_frame_slot(frame, referenceSlot);
     SZrTypeValue *sourceValue;
     SZrTypeValue *referenceValue;
+    SZrTypeValue materializedValue;
+    const SZrFunction *function = aot_runtime_frame_function(frame);
+    const SZrFunctionFrameSlotLayout *layout;
+    static const SZrAotGcRootSlot rootSlot = {
+        0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u
+    };
+    static const SZrAotGcRootMap rootMap = {1u, &rootSlot};
+    SZrAotGcRootFrame rootFrame;
+    SZrRawObject *root = ZR_NULL;
+    TZrBool rooted = ZR_FALSE;
+    TZrBool stored;
 
     runtimeState =
             state != ZR_NULL && state->global != ZR_NULL
@@ -7674,13 +7692,33 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
     sourceValue = sourcePointer != ZR_NULL ? ZrCore_Stack_GetValue(sourcePointer) : ZR_NULL;
     referenceValue =
             referencePointer != ZR_NULL ? ZrCore_Stack_GetValue(referencePointer) : ZR_NULL;
-    if (state == ZR_NULL || sourceValue == ZR_NULL ||
-        referenceValue == ZR_NULL ||
-        !ZrCore_PropertyReference_Store(state, referenceValue, sourceValue)) {
+    if (state == ZR_NULL || sourceValue == ZR_NULL || referenceValue == ZR_NULL) {
         aot_runtime_fail(
                 state,
                 runtimeState,
                 "PROPERTY_REF_STORE: invalid managed property reference");
+        return ZR_FALSE;
+    }
+    layout = ZrCore_Function_FindFrameSlotLayout(function, sourceSlot);
+    if (layout != ZR_NULL && layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        if (!ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                    state, function, frame->slotBase, sourceSlot, &materializedValue)) {
+            aot_runtime_fail(state, runtimeState, "PROPERTY_REF_STORE: failed to materialize inline value");
+            return ZR_FALSE;
+        }
+        root = materializedValue.value.object;
+        if (!ZrCore_Gc_AotRootFramePush(state, &rootFrame, (TZrStackValuePointer)&root, &rootMap)) {
+            aot_runtime_fail(state, runtimeState, "PROPERTY_REF_STORE: failed to root inline value");
+            return ZR_FALSE;
+        }
+        rooted = ZR_TRUE;
+        sourceValue = &materializedValue;
+        referenceValue = ZrCore_Stack_GetValue(aot_runtime_frame_slot(frame, referenceSlot));
+    }
+    stored = ZrCore_PropertyReference_Store(state, referenceValue, sourceValue);
+    if (rooted) ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+    if (!stored) {
+        aot_runtime_fail(state, runtimeState, "PROPERTY_REF_STORE: invalid managed property reference");
         return ZR_FALSE;
     }
     return ZR_TRUE;

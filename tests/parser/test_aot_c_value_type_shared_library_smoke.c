@@ -188,10 +188,11 @@ static void install_aot_member_receiver(SZrState *state) {
             ZrCore_String_Create(state, "__aotMemberReceiver", 19u), &value));
 }
 
-static void run_aot_c_value_type_smoke(const char *source, TZrBool classFieldRead) {
+static void run_aot_c_value_type_smoke(const char *source, TZrBool classFieldRead, TZrBool propertyReference) {
 #if !defined(ZR_PLATFORM_UNIX)
     ZR_UNUSED_PARAMETER(source);
     ZR_UNUSED_PARAMETER(classFieldRead);
+    ZR_UNUSED_PARAMETER(propertyReference);
     TEST_IGNORE_MESSAGE("AOT C value-type shared-library smoke currently validates the Unix toolchain path");
 #else
     const char *projectJson =
@@ -278,7 +279,11 @@ static void run_aot_c_value_type_smoke(const char *source, TZrBool classFieldRea
     if (classFieldRead) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame,"));
     }
-    if (!classFieldRead) {
+    if (propertyReference) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PropertyReferenceLoad(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PropertyReferenceStore(state, &frame,"));
+    }
+    if (!classFieldRead && !propertyReference) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_load"));
         TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                     "ZrCore_Value_Copy(state, zr_aot_dense_destination, "
@@ -334,7 +339,7 @@ static void run_aot_c_value_type_smoke(const char *source, TZrBool classFieldRea
     }
     TEST_ASSERT_TRUE_MESSAGE(executed,
                              ZrLibrary_AotRuntime_GetLastError(state->global));
-    if (classFieldRead) {
+    if (classFieldRead || propertyReference) {
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
         TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
     } else {
@@ -377,7 +382,7 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
             "    return returned.text;\n"
             "}\n"
             "return \"bad\";";
-    run_aot_c_value_type_smoke(source, ZR_FALSE);
+    run_aot_c_value_type_smoke(source, ZR_FALSE, ZR_FALSE);
 }
 
 static void test_aot_c_generated_shared_library_copies_class_struct_member_into_inline_destination(void) {
@@ -385,7 +390,15 @@ static void test_aot_c_generated_shared_library_copies_class_struct_member_into_
             "struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }\n"
             "class Box { pub var point: Point; }\n"
             "var box = new Box(); zr.__aotMemberReceiver(box); var copy = box.point; return copy.x;";
-    run_aot_c_value_type_smoke(source, ZR_TRUE);
+    run_aot_c_value_type_smoke(source, ZR_TRUE, ZR_FALSE);
+}
+
+static void test_aot_c_generated_ref_struct_load_store_preserves_inline_payload(void) {
+    const char *source =
+            "struct Box { pub var x: int; pub @constructor(x: int) { this.x = x; } }\n"
+            "fn replace(b: ref Box): void { b = init Box(41); b.x += 1; }\n"
+            "var box = init Box(1); replace(ref box); return box.x;";
+    run_aot_c_value_type_smoke(source, ZR_FALSE, ZR_TRUE);
 }
 
 static void test_aot_c_generated_union_type_layout_token_uses_local_type_def(void) {
@@ -926,6 +939,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return);
     RUN_TEST(test_aot_c_generated_shared_library_copies_class_struct_member_into_inline_destination);
+    RUN_TEST(test_aot_c_generated_ref_struct_load_store_preserves_inline_payload);
     RUN_TEST(test_aot_c_generated_union_type_layout_token_uses_local_type_def);
     RUN_TEST(test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod);
     RUN_TEST(test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields);

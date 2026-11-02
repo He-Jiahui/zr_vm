@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 0; }
+fn f(a: ref Actor): void { var b = new Actor(); b.n = 7; a = b; }
+var a = new Actor();
+f(ref a);
+if (a.n != 7) { throw a.n; }
+return 0;

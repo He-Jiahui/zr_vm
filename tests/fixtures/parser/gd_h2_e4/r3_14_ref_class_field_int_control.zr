@@ -1,0 +1,6 @@
+class Box { pub var x: int = 0; }
+fn add(value: ref int, amount: int): void { value += amount; }
+var box = new Box();
+add(ref box.x, 42);
+if (box.x != 42) { throw box.x; }
+return 0;

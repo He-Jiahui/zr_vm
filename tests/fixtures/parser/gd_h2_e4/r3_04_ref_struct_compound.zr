@@ -1,0 +1,7 @@
+struct Box { pub var x: int; }
+fn add(box: ref Box): void { box.x += 5; }
+var box = init Box();
+box.x = 1;
+add(ref box);
+if (box.x != 6) { throw box.x; }
+return 0;

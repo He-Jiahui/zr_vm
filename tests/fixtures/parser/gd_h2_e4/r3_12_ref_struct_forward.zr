@@ -1,0 +1,7 @@
+struct Box { pub var x: int; }
+fn inner(box: ref Box): void { box.x = 11; }
+fn outer(box: ref Box): void { inner(ref box); }
+var box = init Box();
+outer(ref box);
+if (box.x != 11) { throw box.x; }
+return 0;

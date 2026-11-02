@@ -1,0 +1,6 @@
+struct Box { pub var x: int; pub fn bump(): void { this.x = this.x + 1; } }
+fn f(b: ref Box): void { b.bump(); }
+var box = init Box();
+f(ref box);
+if (box.x != 1) { throw box.x; }
+return 0;

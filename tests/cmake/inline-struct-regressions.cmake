@@ -8,7 +8,8 @@ if(TARGET zr_vm_cli_executable)
         p19_fnret_to_local_control p20_struct_in_struct_field_read
         q_m1_method_return_into_class_field q_r4_fnret_to_class_field_readfn
         q_v1_copy_semantics_after_fix q_v2_gc_string_struct_field q_v3_generic_class_struct_field
-        r1_native_callable_in_inline_result_slot)
+        r1_native_callable_in_inline_result_slot
+        v3_ref_parameter v3_ref_parameter_control)
     foreach(case IN LISTS inline_struct_regressions)
         foreach(mode interp compile binary)
             add_test(NAME inline_struct_${case}_${mode}
@@ -23,17 +24,26 @@ if(TARGET zr_vm_cli_executable)
         endforeach()
     endforeach()
 
-    # E1b must remove the layout error without hiding the independent runtime
-    # defects R3 (ref parameter) and R4 (borrowed property setter). Compare each
-    # runtime outcome to the explicit-local control, then report it as skipped.
-    foreach(case v3_ref_parameter v4_borrowed_setter)
-        if(case STREQUAL "v3_ref_parameter")
-            set(defect R3)
-            set(diagnostic "PROPERTY_REF_LOAD: invalid managed property reference")
-        else()
-            set(defect R4)
-            set(diagnostic "setter field")
-        endif()
+    file(GLOB r3_regression_sources "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/gd_h2_e4/*.zr")
+    foreach(source IN LISTS r3_regression_sources)
+        get_filename_component(case "${source}" NAME_WE)
+        foreach(mode interp compile binary)
+            add_test(NAME inline_struct_${case}_${mode}
+                COMMAND ${CMAKE_COMMAND}
+                "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+                "-DSOURCE_FILE=${source}"
+                "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/inline_struct_${case}_${mode}"
+                "-DEXECUTION_MODE=${mode}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_inline_struct_regression.cmake")
+            set_tests_properties(inline_struct_${case}_${mode} PROPERTIES
+                TIMEOUT 90 LABELS "gd_h2_e4;inline_struct;R3")
+        endforeach()
+    endforeach()
+
+    # R4 remains an independent runtime expected failure until E4b.
+    foreach(case v4_borrowed_setter)
+        set(defect R4)
+        set(diagnostic "setter field")
         foreach(mode interp compile binary)
             set(test_name inline_struct_${case}_${mode})
             add_test(NAME ${test_name}

@@ -1,0 +1,5 @@
+fn inc(x: ref int): void { x = x + 1; }
+var v = 41;
+inc(ref v);
+if (v != 42) { throw v; }
+return 0;

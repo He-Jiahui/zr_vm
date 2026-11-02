@@ -5,6 +5,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 
 /* 引用以普通对象承载定位字段；不同种类只读取各自需要的字段集合。 */
 #define ZR_PROPERTY_REFERENCE_BASE_MEMBER "__zr_property_ref_base"
@@ -680,11 +681,19 @@ TZrBool ZrCore_PropertyReference_Load(
         TZrStackValuePointer frameBase;
         TZrUInt32 stackSlot;
         SZrTypeValue *source;
+        const SZrFunctionFrameSlotLayout *layout;
 
         if (!property_reference_get_frame_slot_binding(
-                    state, reference, &function, &frameBase, &stackSlot) ||
-            (source = property_reference_get_frame_slot_value(
-                     state, function, frameBase, stackSlot)) == ZR_NULL) {
+                    state, reference, &function, &frameBase, &stackSlot)) {
+            return ZR_FALSE;
+        }
+        layout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+        if (layout != ZR_NULL && layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            return ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                    state, function, frameBase, stackSlot, result);
+        }
+        source = property_reference_get_frame_slot_value(state, function, frameBase, stackSlot);
+        if (source == ZR_NULL) {
             return ZR_FALSE;
         }
         ZrCore_Value_Copy(state, result, source);
@@ -754,11 +763,34 @@ TZrBool ZrCore_PropertyReference_Store(
         TZrStackValuePointer cleanupMirror;
         TZrUInt32 stackSlot;
         SZrTypeValue *destination;
+        const SZrFunctionFrameSlotLayout *layout;
 
         if (!property_reference_get_frame_slot_binding(
-                    state, reference, &function, &frameBase, &stackSlot) ||
-            (destination = property_reference_get_frame_slot_value(
-                     state, function, frameBase, stackSlot)) == ZR_NULL) {
+                    state, reference, &function, &frameBase, &stackSlot)) {
+            return ZR_FALSE;
+        }
+        layout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+        if (layout != ZR_NULL && layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            const SZrTypeLayout *typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+                    function, layout->typeLayoutId, state);
+            if (value->type != ZR_VALUE_TYPE_OBJECT || value->isNative ||
+                value->value.object == ZR_NULL || typeLayout == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            if (typeLayout->kind == ZR_TYPE_LAYOUT_KIND_STRUCT) {
+                SZrObjectPrototype *prototype = ZrCore_Function_ResolvePrototypeFrameStructPrototype(
+                        state, function, layout->typeLayoutId);
+                SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
+                if (prototype == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT ||
+                    object->prototype != prototype) {
+                    return ZR_FALSE;
+                }
+            }
+            return ZrCore_Function_CopyObjectValueToFrameSlotInline(
+                    state, function, frameBase, stackSlot, value);
+        }
+        destination = property_reference_get_frame_slot_value(state, function, frameBase, stackSlot);
+        if (destination == ZR_NULL) {
             return ZR_FALSE;
         }
         ZrCore_Value_Copy(state, destination, value);

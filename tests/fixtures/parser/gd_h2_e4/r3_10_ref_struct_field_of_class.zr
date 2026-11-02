@@ -1,0 +1,7 @@
+struct Box { pub var x: int; }
+class Holder { pub var box: Box; }
+fn replace(box: ref Box): void { box.x = 42; }
+var h = new Holder();
+replace(ref h.box);
+if (h.box.x != 42) { throw h.box.x; }
+return 0;

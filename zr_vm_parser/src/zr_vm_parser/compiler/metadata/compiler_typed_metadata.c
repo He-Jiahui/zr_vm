@@ -2542,7 +2542,13 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             slotTypeRef = &hintTypeRef;
         }
 
-        if (!(slotIsParameter && compiler_stack_slot_is_reference_parameter(cs, slot)) &&
+        /* Parameter scopes have closed by layout time. The retained typed
+         * binding, rather than the current type environment, owns this role. */
+        if (!(slotIsParameter && binding != ZR_NULL &&
+              (binding->roleFlags &
+               (ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF |
+                ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF |
+                ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_OUT)) != 0u) &&
             compiler_find_inline_type_layout(cs, slotTypeRef,
                                              &typeLayoutId,
                                              &byteSize,

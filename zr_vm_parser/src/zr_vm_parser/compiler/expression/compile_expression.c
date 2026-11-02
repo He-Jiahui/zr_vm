@@ -501,8 +501,12 @@ static TZrUInt32 assignment_target_direct_local_slot(SZrCompilerState *cs, SZrAs
         return ZR_PARSER_SLOT_NONE;
     }
 
-    return find_local_var_with_context(
+    TZrUInt32 slot = find_local_var_with_context(
             cs, node->data.identifier.name, node->data.identifier.syntaxContext);
+    /* A ref/out parameter contains a managed reference, not its referent. */
+    return slot != ZR_PARSER_SLOT_NONE && compiler_stack_slot_is_reference_parameter(cs, slot)
+                   ? ZR_PARSER_SLOT_NONE
+                   : slot;
 }
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
@@ -732,6 +736,30 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
         rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
         if (cs->hasError) {
             return ZR_FALSE;
+        }
+        if (primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+            writebacks != ZR_NULL && outWritebackCount != ZR_NULL &&
+            assignment_field_type_is_inline_struct(cs, rootTypeName)) {
+            TZrUInt32 referenceSlot = find_local_var_with_context(
+                    cs,
+                    primary->property->data.identifier.name,
+                    primary->property->data.identifier.syntaxContext);
+            if (referenceSlot != ZR_PARSER_SLOT_NONE &&
+                compiler_stack_slot_is_reference_parameter(cs, referenceSlot)) {
+                if (*outWritebackCount >= writebackCapacity) {
+                    ZrParser_Compiler_Error(cs, "Too many inline struct parent writebacks", primary->property->location);
+                    return ZR_FALSE;
+                }
+                /* Record the root first so nested parents are stored before
+                 * the final write through the parameter reference. */
+                SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[(*outWritebackCount)++];
+                writeback->parentSlot = referenceSlot;
+                writeback->childSlot = currentSlot;
+                writeback->memberId = ZR_PARSER_MEMBER_ID_NONE;
+                writeback->indexSlot = ZR_PARSER_SLOT_NONE;
+                writeback->propertyReference = ZR_TRUE;
+                writeback->location = primary->property->location;
+            }
         }
     }
 
@@ -1733,7 +1761,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                             cs, "Failed to lower store through pre-execution Semantic IR", left->location);
                     return;
                 }
-                update_identifier_assignment_type_environment(cs, name, right);
+                /* Assigning through a parameter reference changes its
+                 * referent, not the declared parameter binding or role. */
+                if (!compiler_stack_slot_is_reference_parameter(cs, localVarIndex)) {
+                    update_identifier_assignment_type_environment(cs, name, right);
+                }
                 compile_assignment_record_identifier_write_fact(cs,
                                                                 left,
                                                                 hasIdentifierWriteBinding,

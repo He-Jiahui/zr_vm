@@ -1,0 +1,21 @@
+struct Box {
+    pub var x: int;
+    pub @constructor(x: int) { this.x = x; }
+    pub fn bump(): void { this.x += 1; }
+}
+fn replace(b: ref Box): void { b = init Box(40); b.x += 1; b.bump(); }
+fn make(b: out Box): void { b = init Box(40); b.x += 1; b.bump(); }
+var box = init Box(1);
+replace(ref box);
+if (box.x != 42) { throw box.x; }
+make(out box);
+if (box.x != 42) { throw "out struct mutation"; }
+class Actor { pub var n: int; }
+fn replaceActor(a: ref Actor): void { a = new Actor(); a.n = 42; }
+fn makeActor(a: out Actor): void { a = new Actor(); a.n = 42; }
+var actor = new Actor();
+replaceActor(ref actor);
+if (actor.n != 42) { throw actor.n; }
+makeActor(out actor);
+if (actor.n != 42) { throw "out class mutation"; }
+return 0;

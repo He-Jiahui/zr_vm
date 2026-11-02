@@ -9,8 +9,10 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "gc/gc_temporary_roots.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
@@ -946,6 +948,63 @@ static void test_uncached_class_struct_member_read_populates_inline_destination(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static TZrInt64 probe_inline_frame_reference_native(SZrState *state) {
+    SZrCallInfo *nativeCall = state->callInfoList;
+    SZrCallInfo *caller = nativeCall->previous;
+    SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, caller);
+    TZrStackValuePointer frameBase = caller->functionBase.valuePointer + 1;
+    SZrString *xName = ZrCore_String_CreateFromNative(state, "x");
+    SZrTypeValue reference, loaded, invalid, other;
+    TZrUInt32 targetSlot = (TZrUInt32)-1;
+    TZrUInt32 otherSlot = (TZrUInt32)-1;
+    TZrSize rootDepth = state->temporaryRootLength;
+    for (TZrUInt32 i = 0u; i < function->localVariableLength; i++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[i];
+        if (local->name == ZR_NULL) continue;
+        if (strcmp(ZrCore_String_GetNativeString(local->name), "box") == 0) targetSlot = local->stackSlot;
+        if (strcmp(ZrCore_String_GetNativeString(local->name), "other") == 0) otherSlot = local->stackSlot;
+    }
+    TEST_ASSERT_NOT_EQUAL((TZrUInt32)-1, targetSlot);
+    TEST_ASSERT_NOT_EQUAL((TZrUInt32)-1, otherSlot);
+    TEST_ASSERT_TRUE(ZrCore_PropertyReference_CreateFrameSlot(state, function, frameBase, targetSlot, &reference));
+    TEST_ASSERT_TRUE(ZrCore_Gc_TemporaryRootPush(state, reference.value.object));
+    TEST_ASSERT_TRUE(ZrCore_PropertyReference_Load(state, &reference, &loaded));
+    TEST_ASSERT_TRUE(ZrCore_Gc_TemporaryRootPush(state, loaded.value.object));
+    TEST_ASSERT_TRUE(ZrCore_Function_CopyFrameSlotInlineToObjectValue(state, function, frameBase, otherSlot, &other));
+    TEST_ASSERT_TRUE(ZrCore_Gc_TemporaryRootPush(state, other.value.object));
+    ZrCore_Value_ResetAsNull(&invalid);
+    TEST_ASSERT_FALSE(ZrCore_PropertyReference_Store(state, &reference, &invalid));
+    ZrCore_Value_InitAsInt(state, &invalid, 42);
+    TEST_ASSERT_FALSE(ZrCore_PropertyReference_Store(state, &reference, &invalid));
+    /* Equal field shapes do not make two struct types interchangeable. */
+    TEST_ASSERT_FALSE(ZrCore_PropertyReference_Store(state, &reference, &other));
+    TEST_ASSERT_TRUE(ZrCore_Object_SetMember(state, &loaded, xName, &invalid));
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TEST_ASSERT_TRUE(ZrCore_PropertyReference_Store(state, &reference, &loaded));
+    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(nativeCall->functionBase.valuePointer), 1);
+    state->stackTop.valuePointer = nativeCall->functionBase.valuePointer + 1;
+    return 1;
+}
+
+static void test_inline_frame_reference_load_store_rejects_incompatible_values(void) {
+    const char *source =
+            "struct Box { pub var x: int; pub @constructor(x: int) { this.x = x; } }\n"
+            "struct Other { pub var x: int; pub @constructor(x: int) { this.x = x; } }\n"
+            "var box = init Box(1); var other = init Other(99);\n"
+            "if (zr.__probeInlineReference() != 1 || other.x != 99) { throw \"reference probe\"; } return box.x;";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    install_zr_native_probe(state, "__probeInlineReference", probe_inline_frame_reference_native);
+    SZrFunction *function = compile_source(state, source, "inline_frame_reference.zr");
+    TZrInt64 result = 0;
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+    TEST_ASSERT_EQUAL_size_t(0u, state->temporaryRootLength);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static TZrUInt32 inline_return_hook_count;
 
 static void inline_return_hook(SZrState *state, SZrDebugInfo *debugInfo) {
@@ -1001,5 +1060,6 @@ int main(void) {
     RUN_TEST(test_type_layout_visit_gc_values_uses_metadata_offsets_when_available);
     RUN_TEST(test_uncached_class_struct_member_read_populates_inline_destination);
     RUN_TEST(test_inline_struct_returns_reach_boxed_destinations_with_debug_hooks);
+    RUN_TEST(test_inline_frame_reference_load_store_rejects_incompatible_values);
     return UNITY_END();
 }
