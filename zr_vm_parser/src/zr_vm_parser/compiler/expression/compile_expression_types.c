@@ -2786,9 +2786,34 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                             goto cleanup;
                         }
                     } else {
+                        TZrUInt32 getterReceiverSlot = currentSlot;
+                        if (!getterAccessor->isStatic &&
+                            type_name_is_inline_struct_or_union_prototype(cs, rootTypeName)) {
+                            TZrUInt32 localSlot = i == memberStartIndex && !currentSegmentGuarded
+                                                          ? primary_member_chain_direct_local_slot(cs, propertyNode)
+                                                          : ZR_PARSER_SLOT_NONE;
+                            if (localSlot != ZR_PARSER_SLOT_NONE &&
+                                !compiler_stack_slot_is_reference_parameter(cs, localSlot)) {
+                                getterReceiverSlot = localSlot;
+                            } else {
+                                /* The result may be scalar. Its function-wide
+                                 * layout cannot also hold a borrowed receiver. */
+                                getterReceiverSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                                if (getterReceiverSlot == ZR_PARSER_SLOT_NONE ||
+                                    !note_inline_struct_result_slot(cs, getterReceiverSlot, rootTypeName) ||
+                                    !stage_pending_receiver_binding(cs,
+                                                                    currentSlot,
+                                                                    getterReceiverSlot,
+                                                                    rootOwnershipQualifier,
+                                                                    member->location,
+                                                                    &getterReceiverSlot)) {
+                                    goto cleanup;
+                                }
+                            }
+                        }
                         if (!emit_property_getter_call(cs,
                                                        currentSlot,
-                                                       currentSlot,
+                                                       getterReceiverSlot,
                                                        i == memberStartIndex &&
                                                                        primary_member_chain_direct_local_slot(
                                                                                cs, propertyNode) !=

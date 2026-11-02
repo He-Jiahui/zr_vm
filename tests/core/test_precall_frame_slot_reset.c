@@ -6,10 +6,13 @@
 
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
 // 记录强制搬迁次数，证明预调用的栈增长场景没有依赖偶然的原地扩容。
@@ -1280,6 +1283,163 @@ static void test_reset_thread_initializes_native_reserved_roots(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+typedef enum TestBorrowedPrecallVariant {
+    TEST_BORROWED_PRECALL_GENERIC,
+    TEST_BORROWED_PRECALL_KNOWN_VALUE,
+    TEST_BORROWED_PRECALL_KNOWN_VM,
+    TEST_BORROWED_PRECALL_ARGUMENT_SOURCE,
+    TEST_BORROWED_PRECALL_RECEIVER_SOURCE,
+    TEST_BORROWED_PRECALL_RESOLVED,
+    TEST_BORROWED_PRECALL_PREPARED,
+    TEST_BORROWED_PRECALL_PREPARED_ARGUMENT_SOURCE,
+    TEST_BORROWED_PRECALL_STEADY_STATE_FALLBACK
+} TestBorrowedPrecallVariant;
+
+typedef struct TestBorrowedPrecall {
+    TestBorrowedPrecallVariant variant;
+    SZrFunction *function;
+    TZrStackValuePointer callBase;
+    TZrStackValuePointer sourceFrameBase;
+    TZrBool returnedNormally;
+} TestBorrowedPrecall;
+
+/* A boxed/untyped call window cannot supply the frame place required by a
+ * borrowed struct receiver. Every public VM precall entry must propagate it. */
+static void invoke_borrowed_precall(SZrState *state, TZrPtr arguments) {
+    TestBorrowedPrecall *call = (TestBorrowedPrecall *)arguments;
+    SZrTypeValue *callable = ZrCore_Stack_GetValue(call->callBase);
+
+    switch (call->variant) {
+        case TEST_BORROWED_PRECALL_GENERIC:
+            (void)ZrCore_Function_PreCall(state, call->callBase, 1u, ZR_NULL);
+            break;
+        case TEST_BORROWED_PRECALL_KNOWN_VALUE:
+            (void)ZrCore_Function_PreCallKnownValue(state, call->callBase, callable, 1u, ZR_NULL);
+            break;
+        case TEST_BORROWED_PRECALL_KNOWN_VM:
+            (void)ZrCore_Function_PreCallKnownVmValue(state, call->callBase, callable, 1u, ZR_NULL);
+            break;
+        case TEST_BORROWED_PRECALL_ARGUMENT_SOURCE:
+            (void)ZrCore_Function_PreCallKnownVmValueWithArgumentSource(
+                    state, call->callBase, callable, 1u, ZR_NULL, call->sourceFrameBase, 0u);
+            break;
+        case TEST_BORROWED_PRECALL_RECEIVER_SOURCE:
+            (void)ZrCore_Function_PreCallKnownVmValueWithReceiverSource(
+                    state, call->callBase, callable, 1u, ZR_NULL, call->sourceFrameBase, 0u);
+            break;
+        case TEST_BORROWED_PRECALL_RESOLVED:
+            (void)ZrCore_Function_PreCallResolvedVmFunction(
+                    state, call->callBase, call->function, 1u, 1u, ZR_NULL);
+            break;
+        case TEST_BORROWED_PRECALL_PREPARED:
+            (void)ZrCore_Function_PreCallPreparedResolvedVmFunction(
+                    state, call->callBase, call->function, 1u, 1u, ZR_NULL);
+            break;
+        case TEST_BORROWED_PRECALL_PREPARED_ARGUMENT_SOURCE:
+            (void)ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
+                    state, call->callBase, call->function, 1u, 1u, ZR_NULL, call->sourceFrameBase, 0u);
+            break;
+        case TEST_BORROWED_PRECALL_STEADY_STATE_FALLBACK:
+            if (ZrCore_Function_TryPreCallPreparedResolvedVmFunctionExactArgsSteadyState(
+                        state, call->callBase, call->function, 1u, 1u, ZR_NULL) == ZR_NULL) {
+                (void)ZrCore_Function_PreCallPreparedResolvedVmFunction(
+                        state, call->callBase, call->function, 1u, 1u, ZR_NULL);
+            }
+            break;
+    }
+    call->returnedNormally = ZR_TRUE;
+}
+
+static void assert_borrowed_precall_fails_closed(TestBorrowedPrecallVariant variant) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunctionFrameSlotLayout *layout;
+    TestBorrowedPrecall call = {0};
+    SZrTypeValue messageKey;
+    const SZrTypeValue *message;
+    EZrThreadStatus status;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2u;
+    function->parameterCount = 1u;
+    assign_owned_instructions(state, function, 1u)[0].instruction.operationCode =
+            ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    layout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global, sizeof(*layout), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layout);
+    memset(layout, 0, sizeof(*layout));
+    layout->stackSlot = 0u;
+    layout->byteOffset = 2u * (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    layout->byteSize = (TZrUInt32)sizeof(TZrUInt64);
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+    layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layout->isParameter = 1u;
+    layout->reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    function->frameSlotLayouts = layout;
+    function->frameSlotLayoutLength = 1u;
+    function->frameByteSize = layout->byteOffset + (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+    function->frameByteAlign = layout->byteAlign;
+
+    call.variant = variant;
+    call.function = function;
+    call.callBase = ZrCore_Function_CheckStackAndGc(
+            state, 4u + ZrCore_Function_GetFrameStorageSlotCount(function), state->stackTop.valuePointer);
+    TEST_ASSERT_NOT_NULL(call.callBase);
+    init_function_callable_value(state, call.callBase, function);
+    write_int_argument_slot(state, call.callBase, 0u, 42, 0u);
+    state->stackTop.valuePointer = call.callBase + 2u;
+    function->functionName = ZrCore_String_CreateFromNative(state, "borrowed_accessor_probe");
+    TEST_ASSERT_NOT_NULL(function->functionName);
+    call.sourceFrameBase = state->baseCallInfo.functionBase.valuePointer + 1u;
+
+    status = ZrCore_Exception_TryRun(state, invoke_borrowed_precall, &call);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_RUNTIME_ERROR, status);
+    TEST_ASSERT_FALSE(call.returnedNormally);
+    TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
+    TEST_ASSERT_TRUE(state->hasCurrentException);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, state->currentException.type);
+    ZrCore_Value_InitAsRawObject(state, &messageKey,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(ZrCore_String_CreateFromNative(state, "message")));
+    message = ZrCore_Object_GetValue(state, (SZrObject *)state->currentException.value.object, &messageKey);
+    TEST_ASSERT_NOT_NULL(message);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, message->type);
+    TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString((SZrString *)message->value.object),
+                              "failed to bind inline receiver/parameters for 'borrowed_accessor_probe'"));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_generic_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_GENERIC);
+}
+static void test_known_value_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_KNOWN_VALUE);
+}
+static void test_known_vm_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_KNOWN_VM);
+}
+static void test_argument_source_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_ARGUMENT_SOURCE);
+}
+static void test_receiver_source_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_RECEIVER_SOURCE);
+}
+static void test_resolved_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_RESOLVED);
+}
+static void test_prepared_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_PREPARED);
+}
+static void test_prepared_argument_source_precall_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_PREPARED_ARGUMENT_SOURCE);
+}
+static void test_precall_steady_state_fallback_rejects_unbound_borrowed_receiver(void) {
+    assert_borrowed_precall_fails_closed(TEST_BORROWED_PRECALL_STEADY_STATE_FALLBACK);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reset_thread_initializes_native_reserved_roots);
@@ -1302,6 +1462,15 @@ int main(void) {
     RUN_TEST(test_precall_growth_reuses_cached_zero_capture_closure_across_repeated_growths_with_dirty_allocator);
     RUN_TEST(test_precall_growth_with_existing_vm_closure_clears_newly_exposed_entry_local_slots_with_dirty_allocator);
     RUN_TEST(test_resolved_vm_precall_preserves_multiple_explicit_arguments_across_repeated_growth_with_dirty_allocator);
+    RUN_TEST(test_generic_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_known_value_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_known_vm_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_argument_source_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_receiver_source_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_resolved_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_prepared_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_prepared_argument_source_precall_rejects_unbound_borrowed_receiver);
+    RUN_TEST(test_precall_steady_state_fallback_rejects_unbound_borrowed_receiver);
 
     return UNITY_END();
 }

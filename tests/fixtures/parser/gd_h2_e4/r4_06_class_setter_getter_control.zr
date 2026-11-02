@@ -1,0 +1,6 @@
+class Box { pub var stored: int = 0; pub property x: int { get { return this.stored; } set { this.stored = value; } } }
+var box = new Box();
+box.x = 42;
+if (box.x != 42) { throw box.x; }
+if (box.stored != 42) { throw box.stored; }
+return 0;

@@ -4564,6 +4564,9 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
                     state);
             function_call_info_stack_anchors_restore(state, callInfo, &callInfoAnchors);
             state->callInfoList = previousCallInfo;
+            ZrCore_Debug_RunError(state, "FUNCTION_PRECALL: failed to bind inline receiver/parameters for '%s'",
+                                 function->functionName != ZR_NULL
+                                         ? ZrCore_String_GetNativeString(function->functionName) : "<anonymous>");
             return ZR_NULL;
         }
         function_call_info_stack_anchors_restore(state, callInfo, &callInfoAnchors);
@@ -4652,6 +4655,9 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
                 state);
         function_call_info_stack_anchors_restore(state, callInfo, &callInfoAnchors);
         state->callInfoList = previousCallInfo;
+        ZrCore_Debug_RunError(state, "FUNCTION_PRECALL: failed to bind inline receiver/parameters for '%s'",
+                             function->functionName != ZR_NULL
+                                     ? ZrCore_String_GetNativeString(function->functionName) : "<anonymous>");
         return ZR_NULL;
     }
     function_call_info_stack_anchors_restore_and_reanchor(state, callInfo, &callInfoAnchors, &stackPointer);

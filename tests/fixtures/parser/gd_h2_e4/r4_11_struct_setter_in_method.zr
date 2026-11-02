@@ -1,0 +1,5 @@
+struct Box { pub var stored: int; pub property x: int { get { return this.stored; } set { this.stored = value; } } pub fn put(v: int): void { this.x = v; } }
+var box = init Box();
+box.put(42);
+if (box.stored != 42) { throw box.stored; }
+return 0;

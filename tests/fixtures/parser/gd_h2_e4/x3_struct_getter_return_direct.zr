@@ -1,0 +1,3 @@
+struct Box { pub var stored: int; pub @constructor(v: int) { this.stored = v; } pub property x: int { get { return this.stored; } } }
+var box: Box = init Box(5);
+return box.x;

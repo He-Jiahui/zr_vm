@@ -1,0 +1,5 @@
+struct Point { pri var stored: int; pub @constructor(value: int) { this.stored = value; } pub property value: int { get { return this.stored; } set { this.stored = value; } } }
+var point: Point = init Point(4);
+point.value += 3;
+if (point.value != 7) { throw point.value; }
+return 0;

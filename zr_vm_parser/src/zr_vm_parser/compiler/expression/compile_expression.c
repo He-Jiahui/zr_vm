@@ -2083,6 +2083,21 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                          node->location) == ZR_PARSER_SLOT_NONE) {
                                         return;
                                     }
+                                    if (primary->members != ZR_NULL && primary->members->count == 1u &&
+                                        assignment_field_type_is_inline_struct(cs, rootTypeName)) {
+                                        TZrUInt32 localSlot = rootUsesSuperLookup
+                                                                      ? superReceiverSlot
+                                                                      : assignment_target_direct_local_slot(cs, primary->property);
+                                        TZrUInt32 receiverSlot = rootUsesSuperLookup ? superReceiverSlot : objSlot;
+                                        if (localSlot != ZR_PARSER_SLOT_NONE && localSlot != receiverSlot &&
+                                            !compiler_semantic_ir_lower_store(cs, localSlot, receiverSlot, node->location)) {
+                                            ZrParser_Compiler_Error(cs, "Failed to lower property receiver writeback", node->location);
+                                            return;
+                                        }
+                                    }
+                                    if (!emit_assignment_inline_struct_writebacks(cs, inlineWritebacks, inlineWritebackCount)) {
+                                        return;
+                                    }
                                     return;
                                 }
 

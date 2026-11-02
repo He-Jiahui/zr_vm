@@ -1,0 +1,6 @@
+struct Box { pub var stored: int; pub property x: int { get { return this.stored; } } }
+var box = init Box();
+box.stored = 5;
+var v: int = box.x;
+if (v != 5) { throw v; }
+return 0;

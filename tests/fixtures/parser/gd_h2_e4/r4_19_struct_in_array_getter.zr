@@ -1,0 +1,7 @@
+let {Array} = import("zr.container");
+struct Box { pub var stored: int; pub @constructor(v: int) { this.stored = v; } pub property x: int { get { return this.stored; } } }
+var arr = new Array<Box>();
+arr.add(init Box(5));
+var v: int = arr[0].x;
+if (v != 5) { throw v; }
+return 0;
