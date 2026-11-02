@@ -32,6 +32,11 @@ TZrBool compiler_type_field_capture_annotation(
         ZrParser_InferredType_Free(cs->state, &inferredType);
         return ZR_FALSE;
     }
+    /* Module aliases are source spellings, not runtime layout identities. */
+    if (fieldType->subType != ZR_NULL && fieldType->dimensions == 0 &&
+        inferredType.baseType == ZR_VALUE_TYPE_OBJECT && inferredType.typeName != ZR_NULL) {
+        memberInfo->fieldTypeName = inferredType.typeName;
+    }
     compiler_type_field_move_inferred_type(cs, memberInfo, &inferredType);
     return ZR_TRUE;
 }

@@ -874,6 +874,7 @@ endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/swarm-gd-c1-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/inline-struct-regressions.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/imported-struct-init-regressions.cmake")
 
 if(TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     zr_vm_add_unity_test_target(zr_vm_interpreter_gc_test

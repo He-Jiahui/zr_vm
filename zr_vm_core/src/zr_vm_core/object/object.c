@@ -2028,9 +2028,12 @@ void ZrCore_ObjectPrototype_AddMeta(SZrState *state, SZrObjectPrototype *prototy
         return;
     }
     
-    // 创建 Meta 对象
+    // Reuse the owned record when another constructor overload replaces the slot.
     SZrGlobalState *global = state->global;
-    SZrMeta *meta = (SZrMeta *)ZrCore_Memory_RawMallocWithType(global, sizeof(SZrMeta), ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    SZrMeta *meta = prototype->metaTable.metas[metaType];
+    if (meta == ZR_NULL) {
+        meta = (SZrMeta *)ZrCore_Memory_RawMallocWithType(global, sizeof(SZrMeta), ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
     if (meta == ZR_NULL) {
         return;
     }

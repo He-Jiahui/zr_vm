@@ -1,0 +1,9 @@
+let Module = import("geometry");
+
+var point = init Module.Vec2(3, 4);
+if (point.x != 3 || point.y != 4) { throw "declaration"; }
+var copy = point;
+point = init Module.Vec2(8, 9);
+if (point.x != 8 || point.y != 9) { throw "assignment"; }
+if (copy.x != 3 || copy.y != 4) { throw "copy independence"; }
+return 0;

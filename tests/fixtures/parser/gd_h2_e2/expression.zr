@@ -1,0 +1,7 @@
+let Module = import("geometry");
+
+fn score(point: Module.Vec2): int { return point.x * 10 + point.y; }
+fn make(): Module.Vec2 { return init Module.Vec2(5, 6); }
+if (score(init Module.Vec2(3, 4)) != 34) { throw "argument expression"; }
+if (score(make()) != 56) { throw "return expression"; }
+return 0;

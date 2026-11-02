@@ -2,6 +2,9 @@
 # mode which hides the source before execution.
 file(REMOVE_RECURSE "${TEST_WORK_DIR}")
 file(MAKE_DIRECTORY "${TEST_WORK_DIR}/src")
+if(DEFINED SUPPORT_SOURCE_DIR)
+    file(COPY "${SUPPORT_SOURCE_DIR}/" DESTINATION "${TEST_WORK_DIR}/src")
+endif()
 configure_file("${SOURCE_FILE}" "${TEST_WORK_DIR}/src/main.zr" COPYONLY)
 set(project "${TEST_WORK_DIR}/probe.zrp")
 file(WRITE "${project}" "{\"name\":\"inline_struct_regression\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\"}\n")

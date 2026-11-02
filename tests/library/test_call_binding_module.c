@@ -55,7 +55,7 @@ static void assert_module_call(const char *providerSource, const char *consumer,
     function = compile_consumer(consumer);
     TEST_ASSERT_NOT_NULL(function);
     entry = module_binding(function);
-    TEST_ASSERT_NOT_NULL_MESSAGE(entry, "Imported static call must publish a provider binding");
+    TEST_ASSERT_NOT_NULL_MESSAGE(entry, "Imported call must publish a provider binding");
     TEST_ASSERT_NOT_EQUAL_UINT32(0u, entry->binding.contract.targetMetadataToken);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
     TEST_ASSERT_EQUAL_INT64(expected, result);
@@ -80,6 +80,16 @@ static void test_source_module_call_meta_is_token_bound(void) {
     assert_module_call("pub class Callable { pub @call(value: int): int { return value + 5; } }",
             "var provider = import(\"call_binding_provider\"); "
             "var callable = new provider.Callable(); return callable(3);", 8);
+}
+
+static void test_imported_struct_constructor_overload_is_token_bound(void) {
+    assert_module_call(
+            "pub struct Point { pub var x: int; "
+            "pub @constructor() { this.x = 40; } "
+            "pub @constructor(x: int) { this.x = x; } }",
+            "var provider = import(\"call_binding_provider\"); "
+            "var first = init provider.Point(); "
+            "var second = init provider.Point(2); return first.x + second.x;", 42);
 }
 
 /* 直接绑定不得绕开模块初始化产生的闭包状态。 */
@@ -110,6 +120,24 @@ static void test_binary_provider_keeps_function_and_type_contracts(void) {
     TEST_ASSERT_NOT_NULL(module_binding(consumer));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, consumer, &result));
     TEST_ASSERT_EQUAL_INT64(28, result);
+    free(bytes);
+    remove(path);
+}
+
+static void test_binary_provider_keeps_struct_init_contract(void) {
+    TZrChar path[512];
+    TZrByte *bytes;
+    snprintf(path, sizeof(path), "%s/call_binding_struct_provider.zro", ZR_VM_TESTS_BINARY_DIR);
+    bytes = ZrTests_Fixture_BuildBinaryFile(state,
+            "pub struct Point { pub var x: int; "
+            "pub @constructor(x: int = 42) { this.x = x; } }",
+            path, ZR_FALSE, &provider.length);
+    TEST_ASSERT_NOT_NULL(bytes);
+    provider.bytes = bytes;
+    provider.isBinary = ZR_TRUE;
+    assert_module_call(ZR_NULL,
+            "var provider = import(\"call_binding_provider\"); "
+            "var point = init provider.Point(); return point.x;", 42);
     free(bytes);
     remove(path);
 }
@@ -151,14 +179,18 @@ int main(void) {
     RUN_TEST(test_source_module_function_is_token_bound);
     RUN_TEST(test_source_module_static_type_method_is_token_bound);
     RUN_TEST(test_source_module_call_meta_is_token_bound);
+    RUN_TEST(test_imported_struct_constructor_overload_is_token_bound);
     RUN_TEST(test_module_function_keeps_captured_module_state);
     RUN_TEST(test_binary_provider_keeps_function_and_type_contracts);
+    RUN_TEST(test_binary_provider_keeps_struct_init_contract);
     RUN_TEST(test_provider_reload_rebinds_existing_calls);
     RUN_TEST(test_source_module_meta_call_is_token_bound);
     RUN_TEST(test_imported_meta_rejects_missing_or_wrong_call_slot);
     RUN_TEST(test_imported_meta_rejects_ambiguous_meta_function);
     RUN_TEST(test_imported_meta_rejects_static_call_receiver_abi);
     RUN_TEST(test_imported_meta_keeps_contract_layout_and_receiver_guards);
+    RUN_TEST(test_imported_constructor_binding_rejects_class_call_meta);
+    RUN_TEST(test_imported_constructor_binding_rejects_struct_call_meta);
     RUN_TEST(test_source_module_instance_method_uses_provider_dispatch);
     return UNITY_END();
 }

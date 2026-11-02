@@ -119,9 +119,10 @@ static TZrBool imported_fail(SZrImportedBindingContext *context, SZrFunctionCall
     return ZR_FALSE;
 }
 
-/* META_CALL consumes an instance @call, proved by the serialized owning member. */
+/* Prove the selected instance meta function from its serialized owning member. */
 static EZrCallBindingStatus imported_meta_member(const SZrFunction *provider,
-        TZrUInt32 prototypeIndex, TZrUInt32 constantIndex, SZrCompiledMemberInfo *selected) {
+        TZrUInt32 prototypeIndex, TZrUInt32 constantIndex, EZrMetaType metaType,
+        SZrCompiledMemberInfo *selected) {
     TZrUInt32 count;
     TZrSize offset = sizeof(count);
     TZrBool found = ZR_FALSE;
@@ -141,6 +142,8 @@ static EZrCallBindingStatus imported_meta_member(const SZrFunction *provider,
         if (bytes > provider->prototypeDataLength - offset)
             return ZR_CALL_BINDING_INVALID_RELOCATION;
         if (index == prototypeIndex) {
+            if (metaType == ZR_META_CONSTRUCTOR && info.type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT)
+                return ZR_CALL_BINDING_INVALID_RELOCATION;
             for (TZrUInt32 row = 0u; row < info.membersCount; ++row) {
                 SZrCompiledMemberInfo member;
                 memcpy(&member, provider->prototypeData + offset + (TZrSize)prefix +
@@ -161,7 +164,7 @@ static EZrCallBindingStatus imported_meta_member(const SZrFunction *provider,
     if (!found) return ZR_CALL_BINDING_TARGET_NOT_FOUND;
     if ((selected->memberType != ZR_AST_CONSTANT_CLASS_META_FUNCTION &&
          selected->memberType != ZR_AST_CONSTANT_STRUCT_META_FUNCTION) ||
-        selected->isMetaMethod != ZR_TRUE || selected->metaType != ZR_META_CALL ||
+        selected->isMetaMethod != ZR_TRUE || selected->metaType != (TZrUInt32)metaType ||
         selected->isStatic != ZR_FALSE)
         return ZR_CALL_BINDING_INVALID_RELOCATION;
     return ZR_CALL_BINDING_OK;
@@ -200,7 +203,21 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
     guard->cachedReceiverVersion = prototype->super.memberVersion;
     guard->cachedFunction = candidate->target.vm.function;
     guard->cachedDescriptorIndex = ZR_CALL_BINDING_SLOT_NONE;
-    if (entry->binding.contract.operation == ZR_CALL_BINDING_OPERATION_META ||
+    if (entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL &&
+        entry->binding.contract.operation == ZR_CALL_BINDING_OPERATION_CALL &&
+        candidate->contract.operation == ZR_CALL_BINDING_OPERATION_META &&
+        entry->binding.contract.bindingKind == ZR_CALL_BINDING_DIRECT &&
+        candidate->contract.bindingKind == ZR_CALL_BINDING_DIRECT &&
+        definition->reserved0 == ZR_METADATA_TOKEN_RECORD_CALLABLE_CONSTANT) {
+        SZrCompiledMemberInfo member;
+        EZrCallBindingStatus status = imported_meta_member(context->provider,
+                owner->ownerIndex, definition->ownerIndex, ZR_META_CONSTRUCTOR, &member);
+        if (status != ZR_CALL_BINDING_OK) return imported_fail(context, entry, status);
+        /* init selects an overload statically. The runtime meta table stores
+         * only the last constructor; the validated provider token selects it. */
+        candidate->contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+        guard->cachedIsStatic = ZR_FALSE;
+    } else if (entry->binding.contract.operation == ZR_CALL_BINDING_OPERATION_META ||
         candidate->contract.operation == ZR_CALL_BINDING_OPERATION_META) {
         SZrCompiledMemberInfo member;
         const SZrMeta *meta;
@@ -220,7 +237,8 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
             candidate->target.vm.function->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION ||
             candidate->target.vm.function->super.isNative)
             return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_KIND_MISMATCH);
-        status = imported_meta_member(context->provider, owner->ownerIndex, definition->ownerIndex, &member);
+        status = imported_meta_member(context->provider, owner->ownerIndex, definition->ownerIndex,
+                                      ZR_META_CALL, &member);
         if (status != ZR_CALL_BINDING_OK) return imported_fail(context, entry, status);
         meta = prototype->metaTable.metas[member.metaType];
         if (meta == ZR_NULL) return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);

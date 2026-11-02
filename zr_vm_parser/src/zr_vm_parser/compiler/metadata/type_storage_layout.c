@@ -1,5 +1,24 @@
 #include "compiler_internal.h"
 #include "compiler_type_prototype_lookup.h"
+#include "zr_vm_parser/type_inference.h"
+
+static const SZrTypePrototypeInfo *compiler_qualified_struct_prototype(
+        SZrCompilerState *cs, SZrType *type) {
+    SZrInferredType inferred;
+    SZrTypePrototypeInfo *prototype = ZR_NULL;
+
+    if (type->subType == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrParser_InferredType_Init(cs->state, &inferred, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_AstTypeToInferredType_Convert(cs, type, &inferred) &&
+        inferred.baseType == ZR_VALUE_TYPE_OBJECT && inferred.typeName != ZR_NULL) {
+        prototype = find_compiler_type_prototype(cs, inferred.typeName);
+    }
+    ZrParser_InferredType_Free(cs->state, &inferred);
+    return prototype != ZR_NULL && prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
+                   ? prototype : ZR_NULL;
+}
 
 static TZrBool compiler_type_name_is_inline_value_slot(const TZrChar *typeNameStr) {
     if (typeNameStr == ZR_NULL) {
@@ -99,6 +118,13 @@ TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
         // 注意：数组元素的实际大小在运行时确定，这里只返回指针大小
         return sizeof(TZrPtr); // 8 bytes
     }
+
+    {
+        const SZrTypePrototypeInfo *prototype = compiler_qualified_struct_prototype(cs, type);
+        if (prototype != ZR_NULL && prototype->layoutByteSize > 0U) {
+            return prototype->layoutByteSize;
+        }
+    }
     
     // 处理基本类型（通过类型名称字符串匹配）
     if (type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -190,6 +216,13 @@ TZrUInt32 get_type_alignment(SZrCompilerState *cs, SZrType *type) {
     }
     if (type->dimensions > 0) {
         return (TZrUInt32)_Alignof(TZrPtr);
+    }
+
+    {
+        const SZrTypePrototypeInfo *prototype = compiler_qualified_struct_prototype(cs, type);
+        if (prototype != ZR_NULL && prototype->layoutByteAlign > 0U) {
+            return prototype->layoutByteAlign;
+        }
     }
 
     if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {

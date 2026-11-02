@@ -256,6 +256,18 @@
     zr_vm_link_parser_core_plus_library(zr_vm_struct_value_init_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_imported_struct_init_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_imported_struct_init.c
+    )
+    target_include_directories(zr_vm_imported_struct_init_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_imported_struct_init_test)
+    add_test(NAME imported_struct_init_metadata COMMAND zr_vm_imported_struct_init_test)
+    set_tests_properties(imported_struct_init_metadata PROPERTIES LABELS "gd_h2_e2;parser")
+
+    zr_vm_add_unity_test_target(
             zr_vm_property_unified_ast_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_property_unified_ast.c
     )

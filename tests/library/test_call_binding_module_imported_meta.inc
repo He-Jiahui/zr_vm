@@ -480,5 +480,33 @@ cleanup:
     TEST_ASSERT_TRUE_MESSAGE(failure == ZR_NULL, failure);
 }
 
+/* A normal CALL may consume an imported struct constructor, never an @call.
+ * Change the actual opcode too so rejection reaches provider member validation. */
+static void assert_constructor_binding_rejects_call_meta(const char *source) {
+    SZrImportedMetaNegativeFixture fixture = {0};
+    const char *failure = imported_meta_negative_open(&fixture, source);
+    if (failure != ZR_NULL) goto cleanup;
+    fixture.consumer->instructionsList[fixture.entry->instructionIndex].instruction.operationCode =
+            ZR_INSTRUCTION_ENUM(FUNCTION_CALL);
+    fixture.entry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL;
+    fixture.entry->binding.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    META_NEG_REQUIRE(imported_meta_negative_link(
+            &fixture, "call-is-not-constructor", ZR_CALL_BINDING_INVALID_RELOCATION),
+            "Constructor binding must reject an ordinary CALL meta function");
+cleanup:
+    imported_meta_negative_close(&fixture);
+    TEST_ASSERT_TRUE_MESSAGE(failure == ZR_NULL, failure);
+}
+
+static void test_imported_constructor_binding_rejects_class_call_meta(void) {
+    assert_constructor_binding_rejects_call_meta(
+            "pub class Callable { pub @call(value: int): int { return value + 1; } }");
+}
+
+static void test_imported_constructor_binding_rejects_struct_call_meta(void) {
+    assert_constructor_binding_rejects_call_meta(
+            "pub struct Callable { pub @call(value: int): int { return value + 1; } }");
+}
+
 #undef META_NEG_REQUIRE
 #undef META_NEG_CHECK

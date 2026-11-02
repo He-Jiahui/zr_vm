@@ -1,0 +1,22 @@
+let Module = import("geometry");
+let system = import("zr.system");
+
+struct Holder { pub var point: Module.Vec2; }
+struct TaggedHolder { pub var tag: Module.Tagged; }
+class Box {
+    pub var point: Module.Vec2 = init Module.Vec2(1, 2);
+    pub @constructor() { this.point = init Module.Vec2(3, 4); }
+}
+
+var holder = init Holder();
+holder.point = init Module.Vec2(5, 6);
+if (holder.point.x != 5 || holder.point.y != 6) { throw "inline field"; }
+var box = new Box();
+if (box.point.x != 3 || box.point.y != 4) { throw "constructor field"; }
+box.point = init Module.Vec2(7, 8);
+if (box.point.x != 7 || box.point.y != 8) { throw "class field"; }
+var taggedHolder = init TaggedHolder();
+taggedHolder.tag = init Module.Tagged("tag" + <string>42, 42);
+system.gc.collect("full");
+if (taggedHolder.tag.label != "tag42" || taggedHolder.tag.value != 42) { throw "managed inline field"; }
+return 0;

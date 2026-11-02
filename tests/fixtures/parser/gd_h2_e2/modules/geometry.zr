@@ -1,0 +1,18 @@
+pub struct Vec2 {
+    pub var x: int;
+    pub var y: int;
+
+    pub @constructor() { this.x = 10; this.y = 20; }
+    pub @constructor(x: int, y: int = 7) { this.x = x; this.y = y; }
+}
+
+pub struct Empty { pub var value: int; }
+
+pub struct Tagged {
+    pub var label: string;
+    pub var value: int;
+    pub @constructor(label: string, value: int) {
+        this.label = label;
+        this.value = value;
+    }
+}

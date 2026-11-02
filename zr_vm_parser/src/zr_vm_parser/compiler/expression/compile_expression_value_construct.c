@@ -155,7 +155,9 @@ static TZrBool value_construct_emit_explicit_constructor(
     TZrBool *provided = ZR_NULL;
     TZrSize parameterCount;
     TZrBool success = ZR_FALSE;
-    TZrBool nativeConstructor;
+    TZrBool runtimeConstructor;
+    TZrBool constructorReturnsValue;
+    TZrBool importedScriptConstructor;
 
     if (cs == ZR_NULL || node == ZR_NULL || expression == ZR_NULL ||
         typeName == ZR_NULL || bound == ZR_NULL || targetSlot == 0U) {
@@ -170,15 +172,17 @@ static TZrBool value_construct_emit_explicit_constructor(
     prototype = find_compiler_type_prototype(cs, typeName);
     if (prototype == ZR_NULL ||
         prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
-        (member->compiledFunction == ZR_NULL && !prototype->isNativeRuntime)) {
+        (member->compiledFunction == ZR_NULL && !prototype->isImportedNative)) {
         ZrParser_Compiler_Error(
                 cs, "Resolved struct constructor target is unavailable", node->location);
         return ZR_FALSE;
     }
     /* Compiling arguments can import modules and reallocate typePrototypes.
      * Keep the decision by value; prototype is borrowed only until that point. */
-    nativeConstructor = (TZrBool)(member->compiledFunction == ZR_NULL);
-    if (nativeConstructor) {
+    runtimeConstructor = (TZrBool)(member->compiledFunction == ZR_NULL);
+    constructorReturnsValue = runtimeConstructor && prototype->isNativeRuntime;
+    importedScriptConstructor = runtimeConstructor && !prototype->isNativeRuntime;
+    if (runtimeConstructor) {
         ZrCore_Value_InitAsRawObject(
                 cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
         typeNameValue.type = ZR_VALUE_TYPE_STRING;
@@ -294,17 +298,20 @@ static TZrBool value_construct_emit_explicit_constructor(
         }
     }
 
-    if (!nativeConstructor) {
+    if (!runtimeConstructor) {
         if (!emit_member_function_constant_to_slot(
                     cs, functionSlot, member, node->location)) {
             goto cleanup;
         }
     } else {
+        SZrString *constructorName = importedScriptConstructor
+                ? ZrCore_String_CreateFromNative(cs->state, "__constructor")
+                : member->name;
         constructorMemberId = compiler_get_or_add_member_entry_for_type_member(
-                cs, member->name, member, 0U);
+                cs, constructorName, member, 0U);
         if (constructorMemberId == ZR_PARSER_MEMBER_ID_NONE) {
             ZrParser_Compiler_Error(
-                    cs, "Failed to bind resolved native constructor", node->location);
+                    cs, "Failed to bind resolved struct constructor", node->location);
             goto cleanup;
         }
         emit_instruction(
@@ -334,6 +341,21 @@ static TZrBool value_construct_emit_explicit_constructor(
                 cs, "Failed to lower struct init Semantic IR", node->location);
         goto cleanup;
     }
+    if (importedScriptConstructor) {
+        TZrUInt16 cacheIndex;
+        SZrFunctionCallSiteCacheEntry *entry;
+
+        /* An explicitly selected constructor is called as an ordinary function.
+         * Preserve its module identity rather than the last __constructor slot. */
+        if (!reserve_member_slot_get_cache(cs, ZR_PARSER_MEMBER_ID_NONE, member,
+                                           (TZrUInt32)parameterCount + 1U,
+                                           &cacheIndex, node->location)) {
+            goto cleanup;
+        }
+        entry = &cs->currentFunction->callSiteCaches[cacheIndex];
+        entry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL;
+        entry->binding.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    }
     emit_instruction(
             cs,
             create_instruction_2(
@@ -341,7 +363,7 @@ static TZrBool value_construct_emit_explicit_constructor(
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)(parameterCount + 1U)));
-    if (nativeConstructor) {
+    if (constructorReturnsValue) {
         emit_instruction(
                 cs,
                 create_instruction_1(

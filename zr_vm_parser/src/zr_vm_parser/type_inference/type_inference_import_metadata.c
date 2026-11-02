@@ -9,6 +9,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_parser/canonical_type.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -1435,6 +1436,96 @@ void type_inference_publish_property_contracts(
     }
 }
 
+static TZrBool import_register_canonical_struct(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *prototype) {
+    TZrTypeId typeId;
+    TZrUInt32 capabilities = ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
+                            ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE |
+                            ZR_CANONICAL_TYPE_CAPABILITY_HAS_GC_REFERENCES;
+
+    if (prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        return ZR_TRUE;
+    }
+    typeId = ZrParser_CanonicalType_FromName(cs->semanticContext, prototype->name);
+    if ((prototype->modifierFlags & ZR_DECLARATION_MODIFIER_READONLY) != 0U) {
+        capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_READONLY_TYPE;
+    }
+    if ((prototype->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) != 0U) {
+        capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_REF_LIKE;
+    }
+    /* Serialized prototypes do not carry a canonical scan kind. Keep the same
+     * conservative GC contract as imported native value definitions. */
+    if (!ZrParser_CanonicalType_RegisterDefinition(
+                cs->semanticContext, typeId, capabilities,
+                ZR_CANONICAL_GC_SCAN_BARRIERED)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize memberIndex = 0U; memberIndex < prototype->members.length; memberIndex++) {
+        SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &prototype->members, memberIndex);
+        SZrArray parameters;
+        TZrBool registered = ZR_TRUE;
+
+        if (member == ZR_NULL || !member->isMetaMethod ||
+            member->metaType != ZR_META_CONSTRUCTOR) {
+            continue;
+        }
+        if (member->name == ZR_NULL ||
+            member->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+            member->parameterTypes.length != member->parameterCount ||
+            member->parameterNames.length != member->parameterCount) {
+            return ZR_FALSE;
+        }
+        member->symbolId = ZrParser_Semantic_RegisterSymbol(
+                cs->semanticContext, member->name, ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                typeId, ZR_SEMANTIC_ID_INVALID, ZR_NULL, (SZrFileRange){0});
+        if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        ZrCore_Array_Init(cs->state, &parameters,
+                          sizeof(SZrCanonicalConstructorParameter),
+                          member->parameterCount > 0U ? member->parameterCount : 1U);
+        for (TZrSize index = 0U; index < member->parameterCount; index++) {
+            const SZrInferredType *parameterType =
+                    (const SZrInferredType *)ZrCore_Array_Get(&member->parameterTypes, index);
+            SZrString **name = (SZrString **)ZrCore_Array_Get(&member->parameterNames, index);
+            const TZrBool *hasDefault =
+                    (const TZrBool *)ZrCore_Array_Get(&member->parameterHasDefaultValues, index);
+            SZrCanonicalConstructorParameter parameter;
+
+            memset(&parameter, 0, sizeof(parameter));
+            parameter.name = *name;
+            parameter.contract.typeId = ZrParser_CanonicalType_FromInferred(
+                    cs->semanticContext, parameterType);
+            parameter.contract.escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+            parameter.contract.entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+            parameter.contract.exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+            parameter.contract.acceptsTemporary = ZR_TRUE;
+            parameter.contract.passingForm = ZR_CANONICAL_PASSING_VALUE;
+            parameter.contract.callSiteMarker = ZR_CANONICAL_CALL_SITE_NONE;
+            parameter.hasDefaultValue = hasDefault != ZR_NULL && *hasDefault;
+            if (parameter.contract.typeId == ZR_SEMANTIC_ID_INVALID) {
+                registered = ZR_FALSE;
+                break;
+            }
+            ZrCore_Array_Push(cs->state, &parameters, &parameter);
+        }
+        if (registered) {
+            registered = ZrParser_CanonicalType_RegisterConstructorContract(
+                    cs->semanticContext, typeId, member->symbolId,
+                    (const SZrCanonicalConstructorParameter *)parameters.head,
+                    parameters.length, member->accessModifier == ZR_ACCESS_PUBLIC);
+        }
+        ZrCore_Array_Free(cs->state, &parameters);
+        if (!registered) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
         SZrCompilerState *cs,
         const SZrFunction *function) {
@@ -1683,6 +1774,9 @@ TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
                         cs->state,
                         &cs->typePrototypes,
                         &typePrototype);
+            }
+            if (!import_register_canonical_struct(cs, &typePrototype)) {
+                return ZR_FALSE;
             }
         }
 

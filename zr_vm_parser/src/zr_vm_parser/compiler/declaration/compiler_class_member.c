@@ -1001,7 +1001,7 @@ class_member_type_scope_cleanup:
     if (!compiler_build_function_parameter_metadata(
                 cs,
                 params,
-                ZR_FALSE,
+                node->type == ZR_AST_STRUCT_META_FUNCTION && isConstructor,
                 &newFunc->parameterMetadata,
                 &newFunc->parameterMetadataCount)) {
         ZrParser_Compiler_Error(

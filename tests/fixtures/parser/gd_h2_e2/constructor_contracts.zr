@@ -1,0 +1,16 @@
+let Module = import("geometry");
+let system = import("zr.system");
+
+var explicitDefault = init Module.Vec2();
+if (explicitDefault.x != 10 || explicitDefault.y != 20) { throw "zero argument constructor"; }
+var named = init Module.Vec2(y: 6, x: 5);
+if (named.x != 5 || named.y != 6) { throw "named arguments"; }
+var omitted = init Module.Vec2(4);
+if (omitted.x != 4 || omitted.y != 7) { throw "default argument"; }
+var empty = init Module.Empty();
+empty.value = 42;
+if (empty.value != 42) { throw "implicit default"; }
+var tagged = init Module.Tagged("tag" + <string>42, 42);
+system.gc.collect("full");
+if (tagged.label != "tag42" || tagged.value != 42) { throw "managed field"; }
+return 0;

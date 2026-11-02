@@ -237,6 +237,12 @@ TZrBool compiler_type_prototype_serializes_to_runtime(
     if (!info->isImportedNative) {
         return ZR_TRUE;
     }
+    /* Imported script structs retain their full field layout, including GC
+     * slots. Their methods remain owned by the provider module. */
+    if (!info->isNativeRuntime && info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+        info->layoutByteSize > 0u && info->layoutByteAlign > 0u) {
+        return ZR_TRUE;
+    }
     TZrBool scalarStruct = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
             info->genericParameters.length == 0u && info->allowValueConstruction &&
             (info->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) == 0u;
