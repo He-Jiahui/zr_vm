@@ -127,7 +127,11 @@ static bool zone_errors_and_capacity(void) {
 }
 
 static bool sinks(void) {
-    char path[] = "/tmp/zr-swarm-gd-c2-sink-XXXXXX";
+    char path[4096];
+    const char *directory = getenv("TMPDIR");
+    if (!directory) directory = ".";
+    int length = snprintf(path, sizeof(path), "%s/zr-swarm-sink-XXXXXX", directory);
+    CHECK(length > 0 && (size_t)length < sizeof(path));
     int fd = mkstemp(path);
     CHECK(fd >= 0);
     close(fd);

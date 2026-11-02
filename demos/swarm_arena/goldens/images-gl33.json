@@ -1,0 +1,31 @@
+{
+  "schema": "zr-swarm-gl33-goldens/1",
+  "recorded": "2026-10-29",
+  "resolution": [
+    640,
+    360
+  ],
+  "renderer": "llvmpipe (LLVM 19.1.7, 256 bits), Mesa 25.0.7-2+deb13u1",
+  "tolerance": {
+    "max_channel_delta": 2,
+    "minimum_matching_pixel_fraction": 0.995
+  },
+  "images": {
+    "gl33-fixture.ppm": {
+      "sha256": "e4d247c0262d8a2d8e75e258b3aa115909e6f3d4a3d6dbc433118313eebb1d5d"
+    },
+    "gl33-smoke.ppm": {
+      "sha256": "427d0729cbbac7c2afd8e869dc2d353a788d109ce57afbdd0505cf20c2570566",
+      "scenario": "smoke",
+      "seed": 12345,
+      "frames": 120,
+      "simulation_hash": 552988638,
+      "lanes": [
+        "c",
+        "dod"
+      ]
+    }
+  },
+  "review": "Geometry, color packing, alpha and readback assertions plus analytic quad coverage; PNG previews visually inspected.",
+  "coverage_reference": "Analytic fixture only; GD-H5 soft-backend comparison remains unavailable on this branch."
+}

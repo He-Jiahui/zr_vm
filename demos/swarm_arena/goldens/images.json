@@ -1,0 +1,123 @@
+{
+  "schema": "zr-swarm-soft-goldens/1",
+  "recorded": "2026-10-29",
+  "resolution": [
+    640,
+    360
+  ],
+  "backend": "soft",
+  "base_sha": "d5a5aca8d401cacdc551b89738b74f7fcc6398be",
+  "toolchain": "GCC 14.2.0, Release, -fno-fast-math -ffp-contract=off",
+  "geometry": "rot == 0: circles (size=diameter); rot != 0: rotated squares (size=side); pixel-center coverage",
+  "png": "engine vendored miniz 3.0.0, compression level 6, RGBA8, no row flip",
+  "reason": "Initial GD-H5 baseline; native pixel assertions, independent PNG decode, repeated C/DOD parity, fixture and smoke PNG visually inspected.",
+  "images": {
+    "soft-fixture.ppm": {
+      "sha256": "b6e39c6c521d3181e86c917e1633b4660291edb2ba932513d74afabb2875c962",
+      "rgba8_sha256": "a385e7084695782b034f2aff266cdb163c2b80273b944afe5629d508e0d54ed1",
+      "image_hash": 913875865
+    },
+    "soft-fixture.png": {
+      "sha256": "84190e79cb944fe12ad8e5db6c4e249d254c826090704292e714e4411ad69642",
+      "rgba8_sha256": "a385e7084695782b034f2aff266cdb163c2b80273b944afe5629d508e0d54ed1",
+      "image_hash": 913875865
+    },
+    "soft-smoke-000060.ppm": {
+      "sha256": "2e0d1f96466cd38a5d0d95d4acff4597ef9c9c3cbc89e8c505c027b4ab626a0e",
+      "scenario": "smoke",
+      "frame": 60,
+      "seed": 12345,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "rolling_hash": 42922906,
+      "rgba8_sha256": "9ab35424828c8da3955e4fc541ea761b78b6dc8f6245353f52037ad715798903",
+      "image_hash": 1250431385
+    },
+    "soft-smoke-000120.ppm": {
+      "sha256": "926991db8cbd1f91fb3b7d4a9af7e3a7d0a4261252c8ee743108087284a1ac82",
+      "scenario": "smoke",
+      "frame": 120,
+      "seed": 12345,
+      "simulation_hash": 552988638,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "rolling_hash": 836256283,
+      "rgba8_sha256": "884b3682003074b8e07112d1b8c60781e5725c109c73ad558992caf7ea5ebcb6",
+      "image_hash": 1153449898
+    },
+    "soft-arena_2k-000060.ppm": {
+      "sha256": "b75862dff2dd25825ad15ef1bab94098bbcd7576b7aac9a12c9f93131ecbab43",
+      "scenario": "arena_2k",
+      "frame": 60,
+      "seed": 12345,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "simulation_hash": 953167514,
+      "rolling_hash": 131330391,
+      "rgba8_sha256": "5a9e4bb41d907277f7308d832bcaaadfaaf51d7b1bd830875fb8691584c6e97a",
+      "image_hash": 1957931670
+    },
+    "soft-swarm_10k-000060.ppm": {
+      "sha256": "50b439c241ea5f6b5330c4ef8e46d1be14f1518c7b6971f87dae790fdd7cfe1d",
+      "scenario": "swarm_10k",
+      "frame": 60,
+      "seed": 12345,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "simulation_hash": 759534681,
+      "rolling_hash": 422884711,
+      "rgba8_sha256": "9b437a0cd1ba58144b04ca085ca2722f3198ad2d9be1b25927bfb6ccd99bdf0e",
+      "image_hash": 1517101974
+    },
+    "soft-bullet_storm-000060.ppm": {
+      "sha256": "50d915fd88c608112408167468b29f37b956cbc886e3a53f837d9788d0c3e400",
+      "scenario": "bullet_storm",
+      "frame": 60,
+      "seed": 12345,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "simulation_hash": 195388232,
+      "rolling_hash": 433197618,
+      "rgba8_sha256": "68e1467db8f27a44118b540e491d4c2b824a1791bd37016a52aaffd5477589b2",
+      "image_hash": 2036569270
+    },
+    "soft-particle_burst-000060.ppm": {
+      "sha256": "e548f2cff9a04c90bea4c1d3e0936402d7ba35d3ea3ad28e82ef712adba71129",
+      "scenario": "particle_burst",
+      "frame": 60,
+      "seed": 12345,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "simulation_hash": 227767830,
+      "rolling_hash": 96337168,
+      "rgba8_sha256": "3c95453eb8f3d9419ed6e590ed2fa10bf268580eae5beeebcdd246441a70f4fa",
+      "image_hash": 45820666
+    },
+    "soft-smoke-000120.png": {
+      "sha256": "ccb76642f06aaea2d9f076152c42fccdf915d7ed30814ab18bcf3e5362f418ca",
+      "scenario": "smoke",
+      "frame": 120,
+      "seed": 12345,
+      "simulation_hash": 552988638,
+      "lanes": [
+        "c",
+        "dod"
+      ],
+      "rolling_hash": 836256283,
+      "rgba8_sha256": "884b3682003074b8e07112d1b8c60781e5725c109c73ad558992caf7ea5ebcb6",
+      "image_hash": 1153449898
+    }
+  }
+}

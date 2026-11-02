@@ -4,7 +4,7 @@ Linux C11 targets, enabled by `ZR_VM_BUILD_DEMOS=ON`:
 
 | Target | Output / purpose |
 | --- | --- |
-| `zrgame_runtime` | `native/libzrgame_runtime.so`: clock, zones, sinks, batch and null backend |
+| `zrgame_runtime` | `native/libzrgame_runtime.so`: clock, zones, sinks, batch and null/soft/optional GL backends |
 | `zrgame_modules` | Static descriptor archive exposing `ZrGame_HostModule()` and `ZrGame_GfxModule()` for `zr_swarm` |
 | `zrgame_plugins` | Builds `native/zrvm_native_zrgame_host.so` and `native/zrvm_native_zrgame_gfx.so` |
 | `zrgame_ffi` | Existing `native/libzrgame_ffi.so` |
@@ -56,8 +56,8 @@ sink writes and I/O failures raise a catchable `RuntimeError`.
 | `spriteInst(inst: SpriteInstance): void` | Mode B: consume a checked `InlineArgumentView`, then narrow numeric fields into the C instance |
 | `submitSoA(xs: Array<float>, ys: Array<float>, sizes: Array<float>, colors: Array<int>, first: int, count: int): void` | Mode C: append a slice of `zr.container.Array` columns with rotation 0 |
 | `text(x: float, y: float, msg: string): void` | Copy text into fixed frame storage |
-| `endFrame(): int` | Consume the frame with the null backend and return sprite count |
-| `snapshot(path: string): int` | Return the last completed frame's stable hash; path is ignored and no file is created |
+| `endFrame(): int` | Consume the frame with the selected backend and return sprite count |
+| `snapshot(path: string): int` | Null: batch hash and no file. Host soft/GL: RGBA8 image hash and P6 PPM or miniz PNG output by extension. Readback/I/O/extension failures raise `RuntimeError` |
 
 `SpriteInstance` is a native STRUCT with constructor
 `init gfx.SpriteInstance(x: float, y: float, size: float, rot: float, rgba: int)`.
@@ -88,9 +88,13 @@ positive zero, and returns the low 31 bits. Frame number and snapshot path do
 not affect the content hash. The smoke's one-sprite/HUD golden is `299488900`,
 identical across modes A, B and C and across interpreter/binary execution.
 
-The runtime is a singleton for one owner thread. Per-VM worlds, concurrency,
-software/GL backends, kernels and images remain later milestones. GD-C3 game
-content and the GD-C4 host use this same runtime contract.
+The runtime is a singleton for one owner thread. Per-VM worlds, concurrency
+and kernels remain later milestones. GD-H5 adds the always-available
+[software backend and exact snapshots](gd-h5.md). GD-M1 adds an optional
+GL backend with an owner-thread current context, top-to-bottom RGBA8 readback,
+and FNV-1a image hashes (low 31 bits). See [GD-M1](gd-m1.md) for the host options,
+frame-list snapshots and graphics/desktop acceptance status. Null behavior and
+its existing hashes remain unchanged.
 
 ## Validation
 

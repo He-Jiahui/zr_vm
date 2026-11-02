@@ -211,7 +211,13 @@ static TZrBool end_frame(ZrLibCallContext *ctx, SZrTypeValue *result) {
 static TZrBool snapshot(ZrLibCallContext *ctx, SZrTypeValue *result) {
     SZrString *path;
     ZrLib_CallContext_ReadString(ctx, 0, &path);
-    ZrLib_Value_SetInt(ctx->state, result, zrg_snapshot(ZrCore_String_GetNativeString(path)));
+    const char *bytes = ZrCore_String_GetNativeString(path);
+    size_t length = ZrCore_String_GetByteLength(path);
+    for (size_t i = 0; i < length; ++i)
+        if (!bytes[i]) return zrg_module_error(ctx, "snapshot path contains NUL");
+    uint32_t hash;
+    if (!zrg_snapshot_result(bytes, &hash)) return zrg_module_error(ctx, "snapshot readback or image write failed");
+    ZrLib_Value_SetInt(ctx->state, result, hash);
     return ZR_TRUE;
 }
 
@@ -266,7 +272,7 @@ const ZrLibModuleDescriptor *ZrGame_GfxModule(void) {
         .functions = functions, .functionCount = ZR_ARRAY_COUNT(functions),
         .types = types, .typeCount = ZR_ARRAY_COUNT(types),
         .moduleLinks = links, .moduleLinkCount = ZR_ARRAY_COUNT(links),
-        .documentation = "Fixed-capacity sprite/text submission, modes A/B/C, null backend.",
+        .documentation = "Fixed-capacity sprite/text submission, modes A/B/C, null, software or host OpenGL backend.",
         .moduleVersion = "1.0.0", .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         .requiredCapabilities = ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS | ZR_LIB_MODULE_CAPABILITY_TYPE_METADATA,
         .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, .publicContractHash = "zrgame.gfx:v1",

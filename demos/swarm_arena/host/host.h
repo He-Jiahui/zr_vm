@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "platform.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 
@@ -14,10 +15,15 @@ typedef struct ZrgOptions {
     const char *out;
     const char *scenario;
     const char *lane;
+    const char *render;
+    const char *snapshot;
     uint32_t frames, seed, gc_budget_us, minor_interval;
     int64_t expect_hash;
     ZrgGcPolicy gc_policy;
     bool help;
+    bool headless, interactive;
+    bool snapshot_sequence;
+    bool snapshot_frames[1800];
 } ZrgOptions;
 
 typedef struct ZrgHostVm {
@@ -36,9 +42,6 @@ bool zrg_host_vm_call_int(ZrgHostVm *vm, const char *name,
 bool zrg_host_vm_gc_step(ZrgHostVm *vm);
 bool zrg_host_vm_shutdown(ZrgHostVm *vm, char *summary, size_t capacity);
 void zrg_host_vm_close(ZrgHostVm *vm);
-bool zrg_platform_poll(void);
-void zrg_platform_present(void);
-bool zrg_platform_make_directory(const char *directory);
 int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options);
 
 #endif

@@ -233,4 +233,6 @@ Goldens and final counters live in [hashes.json](../goldens/hashes.json).
 CLI interpreter/source-removed binary smoke repetition and CLI/host parity
 remain required. Full scenario completion establishes correctness, without a
 performance-budget or cross-platform libm claim. OOP/Hybrid lanes, `sweep`,
-software/GL renderers, interactive input and GD-H2+ / M work remain deferred.
+software rendering and other GD-H2+ / M work remain deferred. GD-M1 host GL
+rendering preserves these bot-run rules and hashes. Its opt-in windowed
+keyboard input replaces only step 1, as described in [GD-M1](gd-m1.md).

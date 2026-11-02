@@ -226,7 +226,7 @@ def main():
             require(zero["gc"]["slack_steps"] == 0, "zero GC budget performed slack work")
             bad = [["--scenario", "unknown"], ["--scenario", "sweep"], ["--scenario", "arena_2K"],
                    ["--frames", "1801", "--scenario", "arena_2k"],
-                   ["--lane", "oop"], ["--render", "soft"], ["--submit", "percall"],
+                   ["--lane", "oop"], ["--render", "unknown"], ["--submit", "percall"],
                    ["--gc-policy", "bad"], ["--frames", "0"], ["--frames", "121"], ["--frames", "bad"],
                    ["--seed", "0"], ["--seed", "2147483647"], ["--gc-budget-us", "-1"],
                    ["--gc-budget-us", "1000001"], ["--warmup", "1"], ["--seed", "1", "--seed", "2"],

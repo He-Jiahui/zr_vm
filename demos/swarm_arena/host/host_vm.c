@@ -40,6 +40,7 @@ bool zrg_host_vm_call_int(ZrgHostVm *vm, const char *name,
         else if (!strcmp(name, "render") && count == 1) value = zrg_csim_render(vm->csim, arguments[0]);
         else if (!strcmp(name, "fullHash") && count == 0) value = zrg_csim_full_hash(vm->csim);
         else if (!strcmp(name, "entityMax") && count == 1) value = zrg_csim_entity_max(vm->csim, arguments[0]);
+        else if (!strcmp(name, "input") && count == 2) value = zrg_csim_input(vm->csim, arguments[0], arguments[1]);
         else {
             fprintf(stderr, "SWARM_ERROR c lane unknown operation %s\n", name);
             return false;

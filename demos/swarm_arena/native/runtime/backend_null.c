@@ -19,7 +19,7 @@ static uint32_t hash_float(uint32_t hash, float value) {
     return hash_word(hash, bits);
 }
 
-static uint32_t submit(const ZrgBatch *batch) {
+uint32_t zrg_batch_hash(const ZrgBatch *batch) {
     uint32_t hash = UINT32_C(2166136261);
     hash = hash_float(hash, batch->camera_x);
     hash = hash_float(hash, batch->camera_y);
@@ -43,7 +43,7 @@ static uint32_t submit(const ZrgBatch *batch) {
     return hash & UINT32_C(0x7fffffff);
 }
 
-const ZrgBackend *zrg_backend_null(void) {
-    static const ZrgBackend backend = {.name = "null", .submit = submit};
+ZrgBackend *zrg_backend_null(void) {
+    static ZrgBackend backend = {.name = "null"};
     return &backend;
 }

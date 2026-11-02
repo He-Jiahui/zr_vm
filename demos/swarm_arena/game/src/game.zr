@@ -19,6 +19,10 @@ pub fn tick(frame: int): int {
     if (!hostBooted) { throw new exception.RuntimeError("host tick requires boot"); }
     return hosted.tick(frame);
 }
+pub fn input(x: int, y: int): int {
+    if (!hostBooted) { throw new exception.RuntimeError("host input requires boot"); }
+    hosted.setInput(x, y); return 0;
+}
 pub fn render(frame: int): int {
     if (!hostBooted) { throw new exception.RuntimeError("host render requires boot"); }
     return hosted.render(frame);

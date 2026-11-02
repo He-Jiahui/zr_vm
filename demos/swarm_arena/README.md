@@ -1,5 +1,13 @@
 # Swarm Arena
 
+GD-H5 adds CPU rendering, deterministic PPM/PNG snapshots and exact image
+goldens. See [software renderer and snapshots](docs/gd-h5.md).
+GD-M1 adds optional host OpenGL 3.3 rendering, headless snapshots and
+windowed WASD input. See [build, test and desktop acceptance](docs/gd-m1.md)
+for the current graphics path and private dependency prefix. The desktop
+acceptance is tracked there separately; the graphics CTest now records GD-H5
+soft coverage alongside the GL goldens.
+
 GD-C5 implements full v1 gameplay on the existing DOD lane: separation,
 Grunt/Runner/Tank enemies, nearest and radial weapons, pierce, XP pickups,
 magnet collection, deterministic upgrades, boss waves and cosmetic particles.
@@ -143,5 +151,6 @@ still bridges the stock CLI's source discovery to `game/tests`.
 Demos remain off by default with CTest label `demo`. Core inventory stays 515;
 use `-LE demo -E '^performance_report$'` to inspect it. Native plugins share
 `libzrgame_runtime.so` and load from `ZR_VM_NATIVE_PATH`. OOP/Hybrid lanes, `sweep`,
-software/GL rendering, images, interactive input, performance harnesses and all
-GD-H2+ / M milestones remain deferred. The null backend writes no image.
+software rendering, performance harnesses and other GD-H2+ / M milestones
+remain deferred. Host GL images/input are described in the GD-M1 note above;
+the null backend writes no image.

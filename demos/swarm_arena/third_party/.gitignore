@@ -1,0 +1,2 @@
+# Retain the upstream documentation source map despite the root *.map rule.
+!glfw/docs/extra.css.map

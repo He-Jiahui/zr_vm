@@ -10,6 +10,7 @@ typedef struct ZrgCSim ZrgCSim;
 
 ZrgCSim *zrg_csim_new(const char *scenario, uint32_t seed, uint32_t frames);
 void zrg_csim_free(ZrgCSim *sim);
+int64_t zrg_csim_input(ZrgCSim *sim, int64_t x, int64_t y);
 int64_t zrg_csim_tick(ZrgCSim *sim, int64_t frame);
 /* Leaves one shared bulk batch active; the host owns end_frame/present. */
 int64_t zrg_csim_render(ZrgCSim *sim, int64_t frame);

@@ -1,10 +1,34 @@
 # These tests are registered after the engine's inventory under the "demo"
 # label, and have no effect when ZR_VM_BUILD_DEMOS is OFF.
+include(cmake/graphics.cmake)
 add_library(zrgame_runtime SHARED native/runtime/clock.c native/runtime/sprite_batch.c
-    native/runtime/metrics_sink.c native/runtime/backend_null.c)
+    native/runtime/metrics_sink.c native/runtime/backend_null.c native/runtime/backend_soft.c
+    native/runtime/image_ppm.c native/runtime/image_png.c)
 target_include_directories(zrgame_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/native/runtime")
+target_link_libraries(zrgame_runtime PRIVATE zr_third_party_zr_miniz_static)
+if (UNIX)
+    target_link_libraries(zrgame_runtime PRIVATE m)
+endif()
+if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(native/runtime/backend_soft.c PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+endif()
 set_target_properties(zrgame_runtime PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+add_library(zrgame_platform STATIC host/platform_null.c)
+target_include_directories(zrgame_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(zrgame_platform PUBLIC zrgame_runtime)
+if (swarm_has_gl)
+    target_sources(zrgame_runtime PRIVATE native/runtime/backend_gl33.c)
+    target_link_libraries(zrgame_runtime PRIVATE zrgame_glad)
+    target_compile_definitions(zrgame_runtime PUBLIC ZRG_HAS_GL33=1)
+    target_sources(zrgame_platform PRIVATE host/platform_glfw.c)
+    target_include_directories(zrgame_platform PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad/include")
+    target_link_libraries(zrgame_platform PRIVATE glfw)
+endif()
+if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(zrgame_runtime PRIVATE -Werror)
+    target_compile_options(zrgame_platform PRIVATE -Werror)
+endif()
 
 # The same descriptors serve zr_swarm's static registration and CLI plugins.
 add_library(zrgame_modules STATIC native/modules/mod_host.c native/modules/mod_gfx.c)
@@ -46,7 +70,7 @@ set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$
 
 # DOD uses the core/library path and the same runtime providers as the CLI;
 # the independent C reference shares its host loop, artifacts and null batch.
-add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c host/platform_null.c
+add_executable(zr_swarm host/main.c host/options.c host/host_vm.c host/host_loop.c
     native/runtime/csim.c)
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(native/runtime/csim.c PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
@@ -58,7 +82,7 @@ foreach(component zr_vm_common zr_vm_core zr_vm_library zr_vm_parser zr_vm_lib_m
         zr_vm_lib_system zr_vm_lib_container zr_vm_lib_ffi)
     target_include_directories(zr_swarm PRIVATE "${PROJECT_SOURCE_DIR}/${component}/include")
 endforeach()
-target_link_libraries(zr_swarm PRIVATE zrgame_modules zr_vm_parser_shared
+target_link_libraries(zr_swarm PRIVATE zrgame_platform zrgame_modules zr_vm_parser_shared
     zr_vm_lib_math_shared zr_vm_lib_system_shared zr_vm_lib_container_shared
     zr_vm_lib_ffi_shared zr_vm_library_shared zr_vm_core_shared)
 if (TARGET zr_vm_lib_network_shared)
@@ -94,6 +118,39 @@ if (BUILD_TESTS)
         message(FATAL_ERROR "Swarm Arena feature probes require BUILD_CLI=ON")
     endif ()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(ZR_SWARM_TEST_ARTIFACT_DIR "${CMAKE_CURRENT_BINARY_DIR}/test-artifacts"
+        CACHE PATH "Directory for demo graphics test logs and snapshots")
+    add_executable(zrgame_soft_tests native/tests/test_soft.c)
+    target_link_libraries(zrgame_soft_tests PRIVATE zrgame_runtime)
+    if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(zrgame_soft_tests PRIVATE -Werror)
+    endif()
+    add_test(NAME demo_soft_snapshot
+        COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_soft.py"
+        --host $<TARGET_FILE:zr_swarm> --fixture $<TARGET_FILE:zrgame_soft_tests>
+        --out "${ZR_SWARM_TEST_ARTIFACT_DIR}/soft-snapshot")
+    set_tests_properties(demo_soft_snapshot PROPERTIES LABELS "demo;graphics" TIMEOUT 900)
+    find_program(swarm_xvfb Xvfb)
+    if (swarm_has_gl)
+        add_executable(zrgame_gl_tests native/tests/test_gl33.c)
+        target_link_libraries(zrgame_gl_tests PRIVATE zrgame_platform)
+        if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(zrgame_gl_tests PRIVATE -Werror)
+        endif()
+    endif()
+    if (swarm_has_gl AND swarm_xvfb)
+        add_test(NAME demo_gl_xvfb
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gl.py"
+            --host $<TARGET_FILE:zr_swarm> --fixture $<TARGET_FILE:zrgame_gl_tests>
+            --soft-fixture $<TARGET_FILE:zrgame_soft_tests>
+            --xvfb "${swarm_xvfb}" --out "${ZR_SWARM_TEST_ARTIFACT_DIR}/gl-xvfb")
+    else()
+        add_test(NAME demo_gl_xvfb
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gl.py"
+            --unavailable "${swarm_gl_reason}; Xvfb=${swarm_xvfb}"
+            --out "${ZR_SWARM_TEST_ARTIFACT_DIR}/gl-xvfb")
+    endif()
+    set_tests_properties(demo_gl_xvfb PROPERTIES LABELS "demo;graphics" SKIP_RETURN_CODE 77 TIMEOUT 600)
     add_executable(zrgame_native_tests native/tests/test_runtime.c)
     target_link_libraries(zrgame_native_tests PRIVATE zrgame_runtime)
     add_test(NAME demo_native_runtime COMMAND zrgame_native_tests)

@@ -30,6 +30,9 @@ pub class Session {
     pri var hash: int = 1;
     pri var hash60: int = 0;
     pri var sprites: int = 0;
+    pri var interactive: bool = false;
+    pri var inputX: int = 0;
+    pri var inputY: int = 0;
     pri var enemiesMax: int = 0;
     pri var bulletsMax: int = 0;
     pri var particlesMax: int = 0;
@@ -50,13 +53,20 @@ pub class Session {
         this.framesDone = 0; this.hash = 1; this.hash60 = 0; this.booted = true;
         this.enemiesMax = 0; this.bulletsMax = 0; this.particlesMax = 0;
     }
+    pub fn setInput(x: int, y: int): void {
+        if (x < -1 || x > 1 || y < -1 || y > 1) {
+            throw new exception.RuntimeError("input axes out of range");
+        }
+        this.interactive = true; this.inputX = x; this.inputY = y;
+    }
     pub fn tick(frame: int): int {
         let systems = import("lanes/dod/systems");
         if (!this.booted || frame != this.framesDone || frame >= this.cfg.frames) {
             throw new exception.RuntimeError("tick requires the next configured frame");
         }
         {
-            this.p.input(frame); this.p.dodge(this.w);                             // 1 input
+            if (this.interactive) { this.p.keyboard(this.inputX, this.inputY); }
+            else { this.p.input(frame); this.p.dodge(this.w); }                    // 1 input
             this.wave.advance(frame, this.w.count, this.rng, this.p.x, this.p.y);  // 2 director
             var i = 0;
             while (i < this.wave.pending) {                                       // 3 spawn

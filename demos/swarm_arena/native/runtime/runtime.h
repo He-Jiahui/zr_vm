@@ -59,6 +59,10 @@ bool zrg_sprite(ZrgSprite sprite);
 bool zrg_text(float x, float y, const char *bytes, size_t length);
 int zrg_end_frame(void);
 uint32_t zrg_snapshot(const char *path);
+bool zrg_snapshot_result(const char *path, uint32_t *hash);
+/* Writes the completed graphics frame as P6 PPM or RGBA PNG by extension;
+ * false on unsupported extension, I/O or readback failure. */
+bool zrg_snapshot_write(const char *path);
 
 /* open returns 0 on failure; write appends a newline and flushes; close is idempotent. */
 int64_t zrg_sink_open(const char *path);

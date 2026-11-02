@@ -42,6 +42,15 @@ pub class Bot {
         }
     }
     pub fn input(frame: int): void { this.x = this.xs[frame]; this.y = this.ys[frame]; }
+    pub fn keyboard(x: int, y: int): void {
+        var step = 4.0;
+        if (x != 0 && y != 0) { step = 4.0 * 0.7071067811865476; }
+        this.x += <float>x * step; this.y += <float>y * step;
+        if (this.x < 0.0) { this.x = 0.0; }
+        if (this.x > 4095.0) { this.x = 4095.0; }
+        if (this.y < 0.0) { this.y = 0.0; }
+        if (this.y > 4095.0) { this.y = 4095.0; }
+    }
     pub fn nearest(w: world.World): int {
         var nearest = -1; var best = 100000000.0; var i = 0;
         var px = w.px; var py = w.py;

@@ -66,6 +66,8 @@ struct ZrgCSim {
     Player player;
     Director director;
     int frames_done, sprites;
+    bool interactive;
+    int input_x, input_y;
 };
 
 static int64_t fail(const char *message) {
@@ -172,6 +174,12 @@ static int nearest(const ZrgCSim *s) {
 
 static void input(ZrgCSim *s, int frame) {
     Player *p = &s->player;
+    if (s->interactive) {
+        double step = s->input_x && s->input_y ? 4.0 * 0.7071067811865476 : 4.0;
+        p->x = clamp_position(p->x + (double)s->input_x * step);
+        p->y = clamp_position(p->y + (double)s->input_y * step);
+        return;
+    }
     p->x = s->bot_x[frame]; p->y = s->bot_y[frame];
     int slot = nearest(s);
     if (slot < 0) return;
@@ -554,6 +562,13 @@ static int64_t positions_hash(const ZrgCSim *s, int64_t h) {
 }
 
 int64_t zrg_csim_full_hash(const ZrgCSim *s) { return positions_hash(s, s->hash); }
+
+int64_t zrg_csim_input(ZrgCSim *s, int64_t x, int64_t y) {
+    if (x < -1 || x > 1 || y < -1 || y > 1) return fail("input axes out of range");
+    s->interactive = true;
+    s->input_x = (int)x; s->input_y = (int)y;
+    return 0;
+}
 
 int64_t zrg_csim_tick(ZrgCSim *s, int64_t frame) {
     if (frame != s->frames_done || frame < 0 || (uint64_t)frame >= s->frames)

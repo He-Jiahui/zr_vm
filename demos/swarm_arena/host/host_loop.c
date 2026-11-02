@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "host.h"
 #include "runtime.h"
+#include "backend.h"
 #include "zr_vm_core/gc.h"
 
 #include <errno.h>
@@ -127,11 +128,11 @@ static bool summary_file(const char *path, const char *temporary, const ZrgOptio
     else fputs(" \"load_avg\": null,\n", file);
     bool native = !strcmp(options->lane, "c");
     fprintf(file, "  \"scenario\": \"%s\", \"lane\": \"%s\", \"drive\": \"host\", \"exec\": \"%s\",\n"
-        "  \"render\": \"null\", \"submit\": \"bulk\", \"gc_policy\": \"%s\", \"gc_budget_us\": %u,\n"
+        "  \"render\": \"%s\", \"submit\": \"bulk\", \"gc_policy\": \"%s\", \"gc_budget_us\": %u,\n"
         "  \"seed\": %u, \"frames\": %u, \"warmup\": 0, \"hash\": %" PRId64 ",\n"
         "  \"status\": \"%s\",\n",
         options->scenario, options->lane, native ? "native" : "interp",
-        zrg_gc_policy_name(options->gc_policy), options->gc_budget_us, options->seed,
+        options->render, zrg_gc_policy_name(options->gc_policy), options->gc_budget_us, options->seed,
         options->frames, hash, options->expect_hash >= 0 && hash != options->expect_hash ? "hash_mismatch" : "ok");
     timing(file, "frame_us", frames, options->frames, offsetof(Frame, frame_us));
     timing(file, "tick_us", frames, options->frames, offsetof(Frame, tick_us));
@@ -192,13 +193,20 @@ int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options) {
     }
     fputs("frame,hash,sprites,frame_us,tick_us,render_us,backend_us,gc_step_us,gc_minor,gc_major,gc_full,"
           "gc_total_us,gc_max_pause_us,managed_bytes,gc_debt_bytes,alloc_bytes_estimate,rss_kb,gc_steps,manual_minor_requests\n", csv);
+    uint32_t completed_frames = 0;
     for (uint32_t f = 0; f < options->frames; ++f) {
         Frame *row = &frames[f];
         SZrGarbageCollectorStatsSnapshot before = {0}, after = {0};
         if (vm->global) ZrCore_GarbageCollector_GetStatsSnapshot(vm->global, &before);
         uint64_t t0 = zrg_now_us();
         int64_t argument = f;
-        if (!zrg_platform_poll() || !zrg_host_vm_call_int(vm, "tick", &argument, 1, &row->hash)) goto done;
+        if (!zrg_platform_poll()) break; /* Closing the window is a normal stop. */
+        if (options->interactive) {
+            int64_t axes[2];
+            zrg_platform_input(axes);
+            if (!zrg_host_vm_call_int(vm, "input", axes, 2, NULL)) goto done;
+        }
+        if (!zrg_host_vm_call_int(vm, "tick", &argument, 1, &row->hash)) goto done;
         uint64_t t1 = zrg_now_us();
         if (!zrg_host_vm_call_int(vm, "render", &argument, 1, &row->sprites)) goto done;
         uint64_t t2 = zrg_now_us();
@@ -208,6 +216,7 @@ int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options) {
             goto done;
         }
         zrg_platform_present();
+        if (!zrg_backend_ok()) goto done;
         uint64_t t3 = zrg_now_us();
         if (!policy_step(vm, options, f, t0, row)) goto done;
         uint64_t t4 = zrg_now_us();
@@ -233,6 +242,20 @@ int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options) {
             fprintf(stderr, "SWARM_ERROR --out frames.csv write failed\n");
             goto done;
         }
+        if (options->snapshot_frames[f]) {
+            char name[32], path[4096];
+            (void)snprintf(name, sizeof(name), "frame-%06u.ppm", f + 1);
+            if (!output_path(path, sizeof(path), options->out, name) || !zrg_snapshot_write(path)) {
+                fprintf(stderr, "SWARM_ERROR --snapshot frame %u readback or image write failed\n", f + 1);
+                goto done;
+            }
+        }
+        ++completed_frames;
+    }
+    if (!completed_frames) { status = 0; goto done; }
+    if (options->snapshot && !options->snapshot_sequence && !zrg_snapshot_write(options->snapshot)) {
+        fprintf(stderr, "SWARM_ERROR --snapshot readback or image write failed\n");
+        goto done;
     }
     if (!zrg_host_vm_call_int(vm, "fullHash", NULL, 0, &hash)) goto done;
     for (int64_t kind = 0; kind < 3; ++kind)
@@ -244,7 +267,9 @@ int zrg_host_loop(ZrgHostVm *vm, const ZrgOptions *options) {
         goto done;
     }
     csv = NULL;
-    if (!summary_file(json_path, temporary, options, frames, hash, entities)) {
+    ZrgOptions completed = *options;
+    completed.frames = completed_frames;
+    if (!summary_file(json_path, temporary, &completed, frames, hash, entities)) {
         fprintf(stderr, "SWARM_ERROR --out summary.json write failed\n");
         goto done;
     }
