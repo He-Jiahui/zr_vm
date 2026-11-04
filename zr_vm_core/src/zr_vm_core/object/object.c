@@ -3122,17 +3122,52 @@ TZrBool ZrCore_Object_TrySetMemberWithKeyFastUncheckedStackOperands(struct SZrSt
             state, receiver, memberName, memberKey, value, ZR_TRUE, outHandled);
 }
 
+TZrBool ZrCore_Object_MemberCallUsesReceiver(SZrState *state,
+                                            const SZrTypeValue *receiver,
+                                            SZrString *memberName,
+                                            const SZrTypeValue *callee) {
+    SZrObjectPrototype *prototype;
+    const SZrMemberDescriptor *descriptor;
+    SZrFunction *function;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL ||
+        callee == ZR_NULL || callee->value.object == ZR_NULL) return ZR_FALSE;
+    if (callee->type == ZR_VALUE_TYPE_CLOSURE) {
+        if (callee->isNative) {
+            if (callee->value.object->type != ZR_RAW_OBJECT_TYPE_CLOSURE ||
+                !callee->value.object->isNative) return ZR_FALSE;
+            SZrClosureNative *native = ZR_CAST_NATIVE_CLOSURE(state, callee->value.object);
+            if (native->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_CAPTURED)
+                return ZR_FALSE;
+            if (native->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_FRAME)
+                return ZR_TRUE;
+        }
+    }
+    function = ZrCore_Closure_GetMetadataFunctionFromValue(state, callee);
+    if (function == ZR_NULL) return ZR_FALSE;
+    prototype = object_value_resolve_prototype(state, receiver);
+    if (receiver->type == ZR_VALUE_TYPE_OBJECT && receiver->value.object != ZR_NULL &&
+        ZR_CAST_OBJECT(state, receiver->value.object)->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
+        prototype = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, receiver->value.object);
+    descriptor = prototype != ZR_NULL
+            ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE) : ZR_NULL;
+    /* Own lookup wins. A different closure shadowing a METHOD cannot inherit
+     * its receiver convention merely because the names match. */
+    return descriptor != ZR_NULL && descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_METHOD &&
+           !descriptor->isStatic && descriptor->methodFunction == function;
+}
+
 TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
                                    SZrTypeValue *receiver,
                                    struct SZrString *memberName,
                                    const SZrTypeValue *arguments,
                                    TZrSize argumentCount,
                                    SZrTypeValue *result) {
-    SZrObject *object;
-    SZrObjectPrototype *prototype;
-    const SZrMemberDescriptor *descriptor;
     SZrTypeValue callableValue;
     const SZrTypeValue *callReceiver;
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    SZrTypeValue key;
 
     if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -3144,29 +3179,31 @@ TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
-                     ? ZR_CAST_OBJECT(state, receiver->value.object)
-                     : ZR_NULL;
-
-    prototype = (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
-                         ? (SZrObjectPrototype *)object
-                         : object_value_resolve_prototype(state, receiver);
-    descriptor = prototype != ZR_NULL
-                         ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
-                         : ZR_NULL;
-
     ZrCore_Value_ResetAsNull(&callableValue);
     if (!ZrCore_Object_GetMember(state, receiver, memberName, &callableValue)) {
         return ZR_FALSE;
     }
 
-    callReceiver = (descriptor != ZR_NULL && descriptor->isStatic) ? ZR_NULL : receiver;
-    if (callableValue.type == ZR_VALUE_TYPE_CLOSURE && callableValue.isNative &&
-        callableValue.value.object != ZR_NULL && callableValue.value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE &&
-        callableValue.value.object->isNative &&
-        ZR_CAST_NATIVE_CLOSURE(state, callableValue.value.object)->nativeBindingUsesReceiver ==
-                ZR_NATIVE_BINDING_RECEIVER_CAPTURED) {
-        callReceiver = ZR_NULL;
+    callReceiver = ZrCore_Object_MemberCallUsesReceiver(state, receiver, memberName, &callableValue)
+                           ? receiver : ZR_NULL;
+    /* Keep the host API's legacy descriptorless prototype protocol (notably
+     * __constructor). Own fields use the optional ABI's strict identity rule;
+     * a shadow must never acquire a receiver from a same-named prototype slot. */
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object) : ZR_NULL;
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    prototype = object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+                        ? (SZrObjectPrototype *)object : object_value_resolve_prototype(state, receiver);
+    if (callReceiver == ZR_NULL && prototype != ZR_NULL &&
+        (object == ZR_NULL || object_get_own_value_unchecked(state, object, &key) == ZR_NULL) &&
+        ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE) == ZR_NULL &&
+        !(callableValue.type == ZR_VALUE_TYPE_CLOSURE && callableValue.isNative &&
+          callableValue.value.object != ZR_NULL &&
+          callableValue.value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE &&
+          callableValue.value.object->isNative &&
+          ZR_CAST_NATIVE_CLOSURE(state, callableValue.value.object)->nativeBindingUsesReceiver ==
+                  ZR_NATIVE_BINDING_RECEIVER_CAPTURED)) {
+        callReceiver = receiver;
     }
 
     return ZrCore_Object_CallValue(state,

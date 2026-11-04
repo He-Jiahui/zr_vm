@@ -514,6 +514,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             return;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
+            info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;
@@ -521,6 +522,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             return;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
+            info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;

@@ -573,8 +573,18 @@ typedef enum EZrFunctionCallSiteCacheKind {
     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL = 8,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET = 9,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET = 10,
-    ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL = 11
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL = 11,
+    /* Optional receiver ABI: memberEntryIndex names the member; argumentCount
+     * includes the staged receiver (and only the fixed prefix for SPREAD). */
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL = 12,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL = 13,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD = 14
 } EZrFunctionCallSiteCacheKind;
+
+#define ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(kind) \
+    ((kind) == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL || \
+     (kind) == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL || \
+     (kind) == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD)
 
 typedef enum EZrFunctionCallSitePicAccessKind {
     ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_NONE = 0,
@@ -627,6 +637,14 @@ typedef struct SZrFunctionCallSiteCacheEntry {
     SZrCallBinding binding;
     SZrCallBindingLocation bindingLocation;
 } SZrFunctionCallSiteCacheEntry;
+
+/* No allocation: retain the receiver or advance the callable over its staging
+ * slot, leaving explicit arguments in place. NULL means malformed metadata. */
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_PrepareOptionalReceiverCall(
+        struct SZrState *state, const struct SZrFunction *function,
+        const SZrFunctionCallSiteCacheEntry *entry, TZrStackValuePointer callWindow);
+ZR_CORE_API const SZrFunctionCallSiteCacheEntry *ZrCore_Function_FindOptionalReceiverCallSite(
+        const struct SZrFunction *function, TZrUInt32 instructionIndex);
 
 struct ZR_STRUCT_ALIGN SZrFunction {
     SZrRawObject super;

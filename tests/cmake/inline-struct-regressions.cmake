@@ -37,7 +37,7 @@ if(TARGET zr_vm_cli_executable)
         endif()
         if(case STREQUAL "x6_struct_setter_then_return_backing")
             set(expected_result 42)
-        elseif(case MATCHES "^(r4_19_|r4_20_|x2_)")
+        elseif(case MATCHES "^(r4_19_|r4_20_)")
             # Array-element receiver typing is the separately diagnosed R7.
             # These assertions require an error; they are ordinary passing tests.
             set(expected_exit 1)
@@ -74,15 +74,9 @@ if(TARGET zr_vm_cli_executable)
         set(expected_diagnostic "")
         set(expectation positive)
         if(case MATCHES "^r5_10_" OR case STREQUAL "r5_14_untyped_tail_receiver" OR
-           case STREQUAL "m1_untyped_param_method")
-            # R5-U: truly untyped methods retain E4b callable-value semantics.
-            set(expected_exit 1)
-            set(expected_diagnostic "GET_MEMBER: receiver must be an object, array, or string")
-            set(expectation R5-U)
-        elseif(case MATCHES "^m1[01]_untyped_native_")
-            set(expected_exit 1)
-            set(expected_diagnostic "expected 1 arguments but got 0")
-            set(expectation R5-U)
+           case STREQUAL "m1_untyped_param_method" OR case MATCHES "^m1[01]_untyped_native_")
+            # R5-U-B: these formerly pinned failures now use the optional receiver ABI.
+            set(expectation R5-U-B)
         endif()
         foreach(mode interp compile binary)
             add_test(NAME inline_struct_${case}_${mode}

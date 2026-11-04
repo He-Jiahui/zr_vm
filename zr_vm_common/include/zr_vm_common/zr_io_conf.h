@@ -95,7 +95,9 @@ static const union {
  * Earlier artifacts contain ABI-dependent raw offsets; rebuild from source. */
 #define ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT 46U
 #define ZR_IO_SOURCE_PATCH_MIN_SUPPORTED ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT
-#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT
+/* Cache kinds 12..14 carry an optional receiver; old readers must reject them. */
+#define ZR_IO_SOURCE_PATCH_HAS_OPTIONAL_RECEIVER 47U
+#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_OPTIONAL_RECEIVER
 
 /* 历史布局速记 .MODULE；非现行格式规范；当前规则见 EOF 同名单元。
  * NAME [string]

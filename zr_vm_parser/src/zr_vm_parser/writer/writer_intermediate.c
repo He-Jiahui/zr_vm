@@ -607,6 +607,9 @@ static const TZrChar *writer_intermediate_callsite_cache_kind_name(TZrUInt32 kin
             return "META_SET_STATIC";
         case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL:
             return "META_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL: return "DYN_MEMBER_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL: return "DYN_MEMBER_TAIL_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD: return "DYN_MEMBER_CALL_SPREAD";
         case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL:
             return "DYN_CALL";
         case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL:

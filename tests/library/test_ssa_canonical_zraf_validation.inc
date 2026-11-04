@@ -122,7 +122,7 @@ static void canonical_zraf_init_manifest(
     manifest->contentHash = contentHash;
     manifest->baseModuleHash = TEST_MODULE_HASH;
     manifest->publicContractHash = TEST_CONTRACT_HASH;
-    manifest->targetAbiVersion = 17u;
+    manifest->targetAbiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION;
     manifest->targetProfile = 2u;
     manifest->requirementCount = 1u;
     manifest->requirements = requirement;
@@ -153,7 +153,7 @@ static EZrHotPatchCapabilityStatus canonical_zraf_validate_with_selector(
     input.entrySignatureHash = entrySignatureHash;
     input.loadedBaseModuleHash = TEST_MODULE_HASH;
     input.loadedPublicContractHash = TEST_CONTRACT_HASH;
-    input.hostAbiVersion = 17u;
+    input.hostAbiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION;
     input.hostProfile = 2u;
     input.hostAllowedCapabilities = UINT64_C(0x03);
     input.expectedPatchId = 1u;
@@ -235,7 +235,7 @@ static void canonical_zraf_reject_oversized_span(
     input.entrySignatureHash = TEST_SIGNATURE_HASH;
     input.loadedBaseModuleHash = TEST_MODULE_HASH;
     input.loadedPublicContractHash = TEST_CONTRACT_HASH;
-    input.hostAbiVersion = 17u;
+    input.hostAbiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION;
     input.hostProfile = 2u;
     input.hostAllowedCapabilities = UINT64_C(0x03);
     input.expectedPatchId = manifest->patchId;
@@ -329,7 +329,7 @@ static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
                  tokenV1.publicContractHash == TEST_CONTRACT_HASH &&
                  tokenV1.requiredCapabilities == UINT64_C(0x03) &&
                  tokenV1.validationPolicyHash != 0u &&
-                 tokenV1.targetAbiVersion == 17u &&
+                 tokenV1.targetAbiVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION &&
                  tokenV1.targetProfile == 2u &&
                  tokenV1.signatureVerified &&
                  tokenV1.canonicalExecIrVerified,
@@ -371,7 +371,7 @@ static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
         mutationInput.entrySignatureHash = TEST_SIGNATURE_HASH;
         mutationInput.loadedBaseModuleHash = TEST_MODULE_HASH;
         mutationInput.loadedPublicContractHash = TEST_CONTRACT_HASH;
-        mutationInput.hostAbiVersion = 17u;
+        mutationInput.hostAbiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION;
         mutationInput.hostProfile = 2u;
         mutationInput.hostAllowedCapabilities = UINT64_C(0x03);
         mutationInput.expectedPatchId = 1u;
@@ -609,7 +609,7 @@ static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
                      "find nested graph for unsupported-ABI mutation");
         bundleOffset = (TZrSize)(bundle.data - v1Bytes);
         memcpy(mutated, v1Bytes, v1Length);
-        put16(mutated + bundleOffset + 8u, 16u);
+        put16(mutated + bundleOffset + 8u, 17u);
         unsupportedHash = canonical_zraf_hash(mutated, v1Length);
         canonical_zraf_init_manifest(&manifest, &requirement, unsupportedHash);
         canonical_zraf_init_verify_context(&verify, mutated, v1Length,
@@ -622,8 +622,8 @@ static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
         canonical_zraf_require_rejected(
                 status, ZR_HOT_PATCH_ARTIFACT_INVALID, &rejectedToken,
                 &diagnostic, "reject unsupported nested ExecIR ABI");
-        require_true(diagnostic.expected == 17u &&
-                     diagnostic.actual == 16u && diagnostic.sourceOffset > 0u &&
+        require_true(diagnostic.expected == ZR_EXECUTION_CONTRACT_ABI_VERSION &&
+                     diagnostic.actual == 17u && diagnostic.sourceOffset > 0u &&
                      verify.callCount == 1u && verify.sawFullOuterSpan,
                      "unsupported nested ABI keeps diagnostics after authentication");
     }

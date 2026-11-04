@@ -1121,7 +1121,8 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                TZrUInt32 destinationSlot,
                                                TZrUInt32 functionSlot,
                                                TZrUInt32 argumentCount,
-                                               TZrUInt32 deoptId);
+                                               TZrUInt32 deoptId,
+                                               TZrUInt32 optionalCacheIndex);
 /** @brief 发射恢复分派及异常控制流；目标索引必须属于当前函数。 */
 void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 instructionCount);
 void backend_aot_write_c_try(FILE *file, TZrUInt32 handlerIndex);

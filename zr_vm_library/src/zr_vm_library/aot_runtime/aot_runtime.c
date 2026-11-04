@@ -2155,6 +2155,7 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
     TZrUInt32 generatedFrameSlotCount;
     TZrSize frameSlotCount;
     TZrSize allocationSlotCount;
+    TZrBool hasInlineArguments = ZR_FALSE;
 
     if (directCall != ZR_NULL) {
         memset(directCall, 0, sizeof(*directCall));
@@ -2241,6 +2242,7 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
     /* inline struct 不是稠密 SZrTypeValue；跳过窗口复制，由 PreCall 的原帧 argument source 根据布局传参。 */
         if (slotLayout != ZR_NULL &&
             slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            if (offset != 0u) hasInlineArguments = ZR_TRUE;
             continue;
         }
         aot_runtime_copy_direct_call_staging_value(state, stagedValue, sourceValue);
@@ -2285,7 +2287,11 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
             argumentCount,
             1u,
             destinationPointer,
-            callerFrameBase,
+            /* Ordinary arguments were staged from the generated dense window.
+             * Reading physical VALUE slots again can revive stale values and
+             * discard optional-receiver normalization. Inline arguments still
+             * require their original frame layout. */
+            hasInlineArguments ? callerFrameBase : ZR_NULL,
             functionSlot + 1u);
     if (callInfo == ZR_NULL) {
         callBase = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);

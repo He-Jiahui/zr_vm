@@ -626,6 +626,13 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_execution_dispatch_callable_metadata_test)
+    zr_vm_add_unity_test_target(zr_vm_optional_receiver_abi_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_optional_receiver_abi.c)
+    target_include_directories(zr_vm_optional_receiver_abi_test PRIVATE
+            ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_core(zr_vm_optional_receiver_abi_test)
+    add_test(NAME optional_receiver_abi_core COMMAND zr_vm_optional_receiver_abi_test)
+    set_tests_properties(optional_receiver_abi_core PROPERTIES LABELS "R5-U-B;core")
     target_include_directories(zr_vm_object_call_known_native_fast_path_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

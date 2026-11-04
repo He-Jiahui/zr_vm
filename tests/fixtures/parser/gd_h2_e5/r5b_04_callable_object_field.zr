@@ -1,0 +1,9 @@
+class Callable {
+    pub var n: int = 10;
+    pub @call(v: int): int { return this.n + v; }
+}
+fn invoke(receiver) { var result = receiver.id(31); return result; }
+fn tail(receiver) { return receiver.id(32); }
+var holder = { id: new Callable() };
+if (invoke(holder) != 41 || tail(holder) != 42) { throw "callable object field"; }
+return 0;

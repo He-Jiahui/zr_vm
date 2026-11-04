@@ -2627,6 +2627,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
     SZrString *pendingContiguousViewReceiverTypeName = ZR_NULL;
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
+    SZrString *pendingOptionalReceiverMemberName = ZR_NULL;
     TZrBool pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
     TZrBool pendingInlineCompiledMemberCall = ZR_FALSE;
     TZrBool pendingContiguousViewCall = ZR_FALSE;
@@ -2715,6 +2716,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
             pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
             pendingReceiverRequiresBinding = ZR_FALSE;
+            pendingOptionalReceiverMemberName = ZR_NULL;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
             pendingInlineCompiledMemberCall = ZR_FALSE;
             pendingContiguousViewCall = ZR_FALSE;
@@ -2793,6 +2795,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                 if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
                     getterAccessor = ZR_NULL;
                 }
+            }
+
+            if (nextIsFunctionCall && memberName != ZR_NULL &&
+                typeMember == ZR_NULL && !declaredFieldMatch &&
+                getterAccessor == ZR_NULL && !rootIsTypeReference) {
+                bindReceiverForCall = ZR_TRUE;
+                pendingOptionalReceiverMemberName = memberName;
             }
 
             if (memberExpr->property != ZR_NULL) {
@@ -4326,6 +4335,24 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
                         goto cleanup;
                     }
+                } else if (pendingOptionalReceiverMemberName != ZR_NULL) {
+                    TZrUInt16 optionalCacheIndex;
+                    TZrUInt32 optionalMemberId = compiler_get_or_add_member_entry(
+                            cs, pendingOptionalReceiverMemberName);
+                    if (optionalMemberId == ZR_PARSER_MEMBER_ID_NONE ||
+                        !reserve_member_slot_get_cache(cs, optionalMemberId, ZR_NULL,
+                                hasSpreadArgument ? spreadPrefixArgumentCount : argCount,
+                                &optionalCacheIndex, member->location)) goto cleanup;
+                    cs->currentFunction->callSiteCaches[optionalCacheIndex].kind =
+                            hasSpreadArgument ? ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD
+                            : cs->isInTailCallContext ? ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL
+                            : ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL;
+                    emit_instruction(cs, create_instruction_2(
+                            hasSpreadArgument ? ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)
+                            : cs->isInTailCallContext ? ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)
+                            : ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED),
+                            (TZrUInt16)callResultSlot, (TZrUInt16)currentSlot,
+                            hasSpreadArgument ? (TZrUInt16)spreadPrefixArgumentCount : optionalCacheIndex));
                 } else {
                     if (!emitMetaCallOpcode &&
                         activeCallMemberInfo == ZR_NULL &&
@@ -4549,6 +4576,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
             currentSemanticPlace = ZR_PLACE_ID_INVALID;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverRequiresBinding = ZR_FALSE;
+            pendingOptionalReceiverMemberName = ZR_NULL;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
             pendingInlineCompiledMemberCall = ZR_FALSE;
             pendingContiguousViewCall = ZR_FALSE;

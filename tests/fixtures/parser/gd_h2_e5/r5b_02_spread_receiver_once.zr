@@ -1,0 +1,24 @@
+class Actor {
+    pub var n: int = 10;
+    pub fn sum(a: int, b: int): int { return this.n + a + b; }
+    pub fn zero(): int { return this.n; }
+}
+var receiverCount: int = 0;
+var argumentCount: int = 0;
+fn receiverOf(a) { receiverCount += 1; return a; }
+fn argument(v: int): int { argumentCount += 1; return v; }
+fn sum(a: int, b: int): int { return a + b; }
+fn zero(): int { return 0; }
+fn fixed(receiver, rest) { var result = receiverOf(receiver).sum(argument(2), ...rest); return result; }
+fn spread(receiver, values) { var result = receiver.sum(...values); return result; }
+fn empty(receiver) { var result = receiver.zero(...[]); return result; }
+var actor = new Actor();
+var field = { sum: sum, zero: zero };
+var methodResult = fixed(actor, [3]);
+var fieldResult = fixed(field, [3]);
+if (methodResult != 15) { throw methodResult; }
+if (fieldResult != 5) { throw fieldResult; }
+if (receiverCount != 2 || argumentCount != 2) { throw "evaluation count"; }
+if (spread(actor, [4, 5]) != 19 || spread(field, [4, 5]) != 9) { throw "spread"; }
+if (empty(actor) != 10 || empty(field) != 0) { throw "empty spread"; }
+return 0;

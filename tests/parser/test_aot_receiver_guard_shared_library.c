@@ -672,9 +672,59 @@ static void test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite(void) 
 #endif
 }
 
+
+#if defined(ZR_PLATFORM_UNIX)
+/* The same non-tail, tail and spread sites alternate methods and plain fields.
+ * Constants deliberately exercise AOT scalar-argument materialization. */
+static const char *optional_receiver_abi_source(void) {
+    return "class Actor { pub var n: int = 10; "
+           "pub fn id(v: int): int { return this.n + v; } "
+           "pub fn sum(a: int, b: int): int { return this.n + a + b; } }\n"
+           "class Callable { pub var n: int = 10; pub @call(v: int): int { return this.n + v; } }\n"
+           "fn plain(v: int): int { return v; }\n"
+           "fn sum(a: int, b: int): int { return a + b; }\n"
+           "fn invoke(o) { var v = o.id(31); return v; }\n"
+           "fn tail(o) { return o.id(32); }\n"
+           "fn invokeSum(o) { var v = o.sum(2, 3); return v; }\n"
+           "fn tailSum(o) { return o.sum(4, 5); }\n"
+           "fn spread(o, xs) { return o.sum(2, ...xs); }\n"
+           "var actor = new Actor(); var field = { id: plain, sum: sum };\n"
+           "if (invoke(actor) != 41 || invoke(field) != 31) { throw 1; }\n"
+           "if (tail(actor) != 42 || tail(field) != 32) { throw 2; }\n"
+           "if (invokeSum(actor) != 15 || invokeSum(field) != 5) { throw 5; }\n"
+           "if (tailSum(actor) != 19 || tailSum(field) != 9) { throw 6; }\n"
+           "if (spread(actor, [3]) != 15 || spread(field, [3]) != 5) { throw 3; }\n"
+           "var callableField = { id: new Callable() };\n"
+           "if (invoke(callableField) != 41 || tail(callableField) != 42) { throw 4; }\n"
+           "return 7;\n";
+}
+#endif
+
+static void test_aot_c_optional_receiver_abi(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(optional_receiver_abi_source(), 7, ZR_AOT_BACKEND_KIND_C,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C, ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+            "r5ub_optional_receiver_c", "aot_c");
+#endif
+}
+
+static void test_aot_llvm_optional_receiver_abi(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(optional_receiver_abi_source(), 7, ZR_AOT_BACKEND_KIND_LLVM,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM, ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+            "r5ub_optional_receiver_llvm", "aot_llvm");
+#endif
+}
+
 /* 注册 C 与 LLVM 共享库的接收者守卫及所有权合同用例。 */
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_aot_c_optional_receiver_abi);
+    RUN_TEST(test_aot_llvm_optional_receiver_abi);
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);
     RUN_TEST(test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts);
     RUN_TEST(test_aot_c_ownership_intrinsics_execute_all_operations);

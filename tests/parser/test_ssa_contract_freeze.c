@@ -574,12 +574,12 @@ int main(void) {
                 "legacy call-binding schema changed unexpectedly");
     expect_true(ZR_ARTIFACT_SCHEMA_VERSION == 6u,
                 "canonical artifact schema is not v6");
-    expect_true(ZR_VM_AOT_ABI_VERSION == 17u,
-                "AOT ABI is not v17");
+    expect_true(ZR_VM_AOT_ABI_VERSION == 18u,
+                "AOT ABI is not v18");
     expect_true(ZR_EXECUTION_CONTRACT_SCHEMA_VERSION == 6u,
                 "candidate execution schema is not v6");
-    expect_true(ZR_EXECUTION_CONTRACT_ABI_VERSION == 17u,
-                "candidate execution ABI is not v17");
+    expect_true(ZR_EXECUTION_CONTRACT_ABI_VERSION == 18u,
+                "candidate execution ABI is not v18");
     test_identical_contract_is_accepted();
     test_signature_and_layout_mismatch_are_structured();
     test_version_and_generation_fail_before_identity_resolution();

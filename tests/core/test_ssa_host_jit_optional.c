@@ -132,6 +132,14 @@ int main(void) {
     options.codeCacheBytes = 65536u;
     options.maxImports = 8u;
 
+    /* Reject consumers of the previous receiver ABI before allowing fallback. */
+    options.target.abiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION - 1u;
+    assert(ZrJit_Host_Register(&options, &executionDiagnostic) == ZR_FALSE);
+    assert(executionDiagnostic.code == ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH);
+    assert(executionDiagnostic.expectedVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION);
+    assert(executionDiagnostic.actualVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION - 1u);
+    options.target = test_target(ZR_HOST_JIT_PLATFORM_HOST);
+
     /* 注册成功只表示 facade 状态可用；机器码不可用由能力查询和 descriptor 回调分别核对。 */
     memset(&executionDiagnostic, 0, sizeof(executionDiagnostic));
     assert(ZrJit_Host_Register(&options, &executionDiagnostic) == ZR_TRUE);

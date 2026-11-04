@@ -1,0 +1,18 @@
+class Actor {
+    pub var n: int = 10;
+    pub fn id(v: int): int { return this.n + v; }
+}
+class Holder { pub var id: fn(int)->int; }
+fn plain(v: int): int { return v; }
+fn invoke(receiver, v) { var result = receiver.id(v); return result; }
+fn tail(receiver, v) { return receiver.id(v); }
+var actor = new Actor();
+var holder = new Holder();
+holder.id = plain;
+var literal = { id: plain };
+for (var i: int = 0; i < 100; i += 1) {
+    if (invoke(actor, 31) != 41 || tail(actor, 32) != 42) { throw "method"; }
+    if (invoke(holder, 31) != 31 || tail(holder, 32) != 32) { throw "field"; }
+    if (invoke(literal, 31) != 31 || tail(literal, 32) != 32) { throw "literal"; }
+}
+return 0;

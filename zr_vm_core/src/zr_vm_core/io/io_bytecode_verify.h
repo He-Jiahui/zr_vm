@@ -120,7 +120,7 @@ static TZrBool io_verify_function(const SZrIoFunction *f) {
     for (TZrSize n = 0; n < f->callSiteCacheLength; ++n) {
         const SZrIoFunctionCallSiteCacheEntry *c = &f->callSiteCaches[n];
         if (c->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE ||
-            c->kind > ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL ||
+            c->kind > ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD ||
             c->instructionIndex >= f->instructionsLength || c->argumentCount > f->stackSize) return ZR_FALSE;
     }
     for (TZrSize n = 0; n < f->closuresLength; ++n) {

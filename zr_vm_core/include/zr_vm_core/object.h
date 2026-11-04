@@ -348,6 +348,13 @@ ZR_CORE_API TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrS
                                                                      TZrUInt32 descriptorIndex,
                                                                      const SZrTypeValue *value);
 
+/* Shared by script optional-receiver calls and host InvokeMember. A captured
+ * native receiver is already bound and never consumes a staged receiver. */
+ZR_CORE_API TZrBool ZrCore_Object_MemberCallUsesReceiver(struct SZrState *state,
+                                                       const SZrTypeValue *receiver,
+                                                       struct SZrString *memberName,
+                                                       const SZrTypeValue *callee);
+
 ZR_CORE_API TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
                                                SZrTypeValue *receiver,
                                                struct SZrString *memberName,

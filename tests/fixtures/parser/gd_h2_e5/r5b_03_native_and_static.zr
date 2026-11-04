@@ -1,0 +1,14 @@
+let container = import("zr.container");
+class StaticOwner { pub static fn id(v: int): int { return v; } }
+fn append(receiver, v) { receiver.add(v); }
+fn count(receiver) { return receiver.length; }
+fn invoke(receiver) { return receiver.id(41); }
+fn bytesOf(receiver) { return receiver.toArray(); }
+var values = new container.Array<int>();
+append(values, 4);
+append(values, 5);
+if (count(values) != 2) { throw "native receiver"; }
+if (invoke(StaticOwner) != 41) { throw "static receiver"; }
+var bytes = bytesOf("A");
+if (bytes.length != 1 || <int>bytes[0] != 65) { throw "builtin native receiver"; }
+return 0;

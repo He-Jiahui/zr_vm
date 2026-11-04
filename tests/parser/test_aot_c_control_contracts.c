@@ -260,7 +260,7 @@ static void test_aot_c_source_inserts_gc_safepoints_at_controlled_boundaries(voi
             "backend_aot_write_c_direct_jump_if_not_equal_signed(",
             "backend_aot_write_c_direct_jump_if_not_equal_signed_const(",
             "backend_aot_write_c_direct_iter_move_next_jump_if_false(",
-            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);",
+            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);",
             "backend_aot_try_write_c_static_direct_typed_function_call(file,",
             "backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_gc_safepoint(file, \"    \", \"zr_aot_gc_safepoint_call\");",
