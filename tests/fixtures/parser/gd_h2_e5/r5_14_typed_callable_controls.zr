@@ -1,0 +1,12 @@
+class Actor {
+    pub var callback: fn(int) -> int;
+    pub @constructor(callback: fn(int) -> int) { this.callback = callback; }
+}
+fn twice(value: int): int { return value * 2; }
+var actor: Actor = new Actor(twice);
+var actors = [actor];
+var callbacks = [twice];
+if (actor.callback(4) != 8 || callbacks[0](5) != 10 || actors[0].callback(6) != 12) {
+    throw "callable arguments shifted";
+}
+return 0;

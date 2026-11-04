@@ -1,0 +1,2 @@
+fn idImpl(x) { return x; }
+pub var id = idImpl;

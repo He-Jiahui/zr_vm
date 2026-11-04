@@ -1254,6 +1254,43 @@ static TZrBool member_call_requires_bound_receiver(const SZrTypeMemberInfo *memb
     return memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD;
 }
 
+static SZrString *primary_member_chain_recover_index_element_type(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        const SZrAstNodeArray *members,
+        TZrSize memberIndex) {
+    SZrAstNode prefixNode;
+    SZrAstNodeArray prefixMembers;
+    SZrInferredType prefixType;
+    SZrString *typeName = ZR_NULL;
+
+    if (primaryNode == ZR_NULL || primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
+        members == ZR_NULL || memberIndex >= members->count) {
+        return ZR_NULL;
+    }
+
+    /* Reuse the inference for `var element = array[index]`, without compiling
+     * or evaluating the prefix again. Inline values retain their own path. */
+    prefixNode = *primaryNode;
+    prefixMembers = *members;
+    prefixMembers.count = memberIndex + 1u;
+    prefixNode.data.primaryExpression.members = &prefixMembers;
+    ZrParser_InferredType_Init(cs->state, &prefixType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_PrimaryExpressionType_Infer(cs, &prefixNode, &prefixType) &&
+        !compiler_find_inline_type_layout_for_inferred(
+                cs, &prefixType, ZR_NULL, ZR_NULL, ZR_NULL)) {
+        SZrString *inferredName = get_type_name_from_inferred_type(cs, &prefixType);
+        /* Registered prototypes exclude modules; do not recover R7 values. */
+        if (inferredName != ZR_NULL &&
+            type_name_is_registered_prototype(cs, inferredName) &&
+            !type_name_is_inline_struct_or_union_prototype(cs, inferredName)) {
+            typeName = inferredName;
+        }
+    }
+    ZrParser_InferredType_Free(cs->state, &prefixType);
+    return typeName;
+}
+
 static TZrUInt32 primary_member_chain_direct_local_slot(SZrCompilerState *cs, SZrAstNode *propertyNode) {
     if (cs == ZR_NULL || propertyNode == ZR_NULL || propertyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
         propertyNode->data.identifier.name == ZR_NULL) {
@@ -2671,6 +2708,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                      members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
             TZrBool memberUsesSuperLookup = superLookupActive && i == memberStartIndex;
             TZrBool computedInlineArrayElement = ZR_FALSE;
+            SZrString *recoveredIndexElementTypeName = ZR_NULL;
 
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
@@ -3386,6 +3424,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)keySlot));
+                                if (i + 1u < members->count && !currentSegmentGuarded &&
+                                    memberExpr->accessMode != ZR_POSTFIX_ACCESS_OPTIONAL) {
+                                    recoveredIndexElementTypeName =
+                                            primary_member_chain_recover_index_element_type(
+                                                    cs, primaryNode, members, i);
+                                    if (cs->hasError) {
+                                        goto cleanup;
+                                    }
+                                }
                             } else {
                                 currentSlot = resultSlot;
                                 if (currentSemanticPlace != ZR_PLACE_ID_INVALID) {
@@ -3405,6 +3452,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
 
                     if (computedInlineArrayElement) {
                         /* Root type was updated from the canonical array element contract. */
+                    } else if (recoveredIndexElementTypeName != ZR_NULL) {
+                        rootTypeName = recoveredIndexElementTypeName;
+                        rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                        rootIsTypeReference = ZR_FALSE;
                     } else if (declaredFieldMatch) {
                         rootTypeName = typeMember != ZR_NULL ? typeMember->fieldTypeName : declaredFieldTypeName;
                         rootOwnershipQualifier = typeMember != ZR_NULL ? typeMember->ownershipQualifier

@@ -1028,7 +1028,10 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     }
                     inlineElement = compiler_find_inline_type_layout_for_inferred(
                             cs, &elementType, ZR_NULL, ZR_NULL, ZR_NULL);
-                    rootTypeName = inlineElement ? get_type_name_from_inferred_type(cs, &elementType) : ZR_NULL;
+                    rootTypeName = get_type_name_from_inferred_type(cs, &elementType);
+                    if (!inlineElement && find_compiler_type_prototype(cs, rootTypeName) == ZR_NULL) {
+                        rootTypeName = ZR_NULL;
+                    }
                     if (inlineElement && !compiler_register_stack_slot_type_hint(cs, destinationSlot, &elementType)) {
                         ZrParser_InferredType_Free(cs->state, &elementType);
                         return ZR_FALSE;

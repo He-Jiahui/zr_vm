@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 0; pub fn bump(): void { this.n = this.n + 1; } }
+class World { pub var a: Actor = new Actor(); }
+var w = new World();
+w.a.bump();
+if (w.a.n != 1) { throw w.a.n; }
+return 0;

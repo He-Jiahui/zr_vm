@@ -1,0 +1,7 @@
+// R5-U: an untyped method receiver remains an E4b loud runtime failure.
+class Actor {
+    pub var n: int = 1;
+    pub fn value(): int { return this.n; }
+}
+fn invoke(receiver) { return receiver.value(); }
+return invoke(new Actor());

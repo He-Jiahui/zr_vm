@@ -1,0 +1,5 @@
+let math = import("zr.math");
+var nativeModule: object = math;
+var result = nativeModule.abs(-7.0);
+if (result != 7.0) { throw "native module callable receiver shift"; }
+return 0;

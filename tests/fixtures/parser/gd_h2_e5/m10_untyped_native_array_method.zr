@@ -1,0 +1,6 @@
+let {Array} = import("zr.container");
+fn push(arr) { arr.add(5); return arr.length; }
+var a = new Array<int>();
+var r = push(a);
+if (r != 1) { throw r; }
+return 0;

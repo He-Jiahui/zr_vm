@@ -1,0 +1,5 @@
+let lin = import("lin");
+fn use(m) { return m.project(2.0); }
+var r = use(lin);
+if (r != 3.0) { throw r; }
+return 0;

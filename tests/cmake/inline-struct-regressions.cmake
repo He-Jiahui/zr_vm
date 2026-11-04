@@ -58,4 +58,45 @@ if(TARGET zr_vm_cli_executable)
                 TIMEOUT 90 LABELS "gd_h2_e4;inline_struct;${defect}")
         endforeach()
     endforeach()
+    file(GLOB e5_regression_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/gd_h2_e5/*.zr"
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/gd_h2_e5/*/src/main.zr")
+    foreach(source IN LISTS e5_regression_sources)
+        get_filename_component(case "${source}" NAME_WE)
+        get_filename_component(source_dir "${source}" DIRECTORY)
+        set(runner "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_inline_struct_regression.cmake")
+        if(case STREQUAL "main")
+            get_filename_component(project_dir "${source_dir}" DIRECTORY)
+            get_filename_component(case "${project_dir}" NAME)
+            set(runner "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/gd_h2_e5/run_project.cmake")
+        endif()
+        set(expected_exit 0)
+        set(expected_diagnostic "")
+        set(expectation positive)
+        if(case MATCHES "^r5_10_" OR case STREQUAL "r5_14_untyped_tail_receiver" OR
+           case STREQUAL "m1_untyped_param_method")
+            # R5-U: truly untyped methods retain E4b callable-value semantics.
+            set(expected_exit 1)
+            set(expected_diagnostic "GET_MEMBER: receiver must be an object, array, or string")
+            set(expectation R5-U)
+        elseif(case MATCHES "^m1[01]_untyped_native_")
+            set(expected_exit 1)
+            set(expected_diagnostic "expected 1 arguments but got 0")
+            set(expectation R5-U)
+        endif()
+        foreach(mode interp compile binary)
+            add_test(NAME inline_struct_${case}_${mode}
+                COMMAND ${CMAKE_COMMAND}
+                "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+                "-DSOURCE_FILE=${source}"
+                "-DSOURCE_DIR=${source_dir}"
+                "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/inline_struct_${case}_${mode}"
+                "-DEXECUTION_MODE=${mode}"
+                "-DEXPECTED_EXIT=${expected_exit}"
+                "-DEXPECTED_DIAGNOSTIC=${expected_diagnostic}"
+                -P "${runner}")
+            set_tests_properties(inline_struct_${case}_${mode} PROPERTIES
+                TIMEOUT 90 LABELS "gd_h2_e5;inline_struct;R5;${expectation}")
+        endforeach()
+    endforeach()
 endif()

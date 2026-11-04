@@ -1,0 +1,2 @@
+fn projectImpl(seed: float) { return seed + 1.0; }
+pub var project = projectImpl;
