@@ -1,0 +1,7 @@
+let math = import("zr.math");
+fn dotOf(v, w) { return v.dot(w); }
+var a = init math.Vector3(1.0, 2.0, 3.0);
+var b = init math.Vector3(1.0, 1.0, 1.0);
+var r = dotOf(a, b);
+if (r != 6.0) { throw r; }
+return 0;

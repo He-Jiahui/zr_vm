@@ -1,0 +1,1 @@
+pub fn project(seed: float): float { return seed + 1.0; }

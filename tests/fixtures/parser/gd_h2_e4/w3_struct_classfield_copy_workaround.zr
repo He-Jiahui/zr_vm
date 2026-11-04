@@ -1,0 +1,9 @@
+struct Vec2 { pub var x: int; pub fn add(d: int): void { this.x = this.x + d; } pub property px: int { get { return this.x; } set { this.x = value; } } }
+class Actor { pub var pos: Vec2 = init Vec2(); }
+var a = new Actor();
+var p = a.pos;
+p.add(3);
+p.px = p.px + 4;
+a.pos = p;
+if (a.pos.x != 7) { throw a.pos.x; }
+return 0;

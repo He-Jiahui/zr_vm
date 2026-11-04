@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 0; pub fn bump(): void { this.n = this.n + 1; } }
+var g = new Actor();
+fn pick(): Actor { return g; }
+pick().bump();
+if (g.n != 1) { throw g.n; }
+return 0;

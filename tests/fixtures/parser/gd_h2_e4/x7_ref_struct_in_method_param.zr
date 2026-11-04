@@ -1,0 +1,7 @@
+struct Box { pub var x: int; }
+class Mover { pub fn push(b: ref Box): void { b.x = b.x + 3; } }
+var m = new Mover();
+var box = init Box();
+m.push(ref box);
+if (box.x != 3) { throw box.x; }
+return 0;

@@ -1,0 +1,6 @@
+let {Array} = import("zr.container");
+class Actor { pub var n: int = 5; pub fn value(): int { return this.n; } }
+var actors = new Array<Actor>(); actors.add(new Actor());
+var r = actors[0].value();
+if (r != 5) { throw r; }
+return 0;

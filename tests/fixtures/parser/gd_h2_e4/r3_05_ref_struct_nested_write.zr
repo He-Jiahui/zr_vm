@@ -1,0 +1,7 @@
+struct Inner { pub var x: int; }
+struct Outer { pub var inner: Inner; }
+fn f(o: ref Outer): void { o.inner.x = 3; }
+var o = init Outer();
+f(ref o);
+if (o.inner.x != 3) { throw o.inner.x; }
+return 0;

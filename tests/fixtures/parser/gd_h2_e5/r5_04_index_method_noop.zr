@@ -1,0 +1,5 @@
+let {Array} = import("zr.container");
+class Actor { pub var n: int = 5; pub fn poke(): void { } }
+var actors = new Array<Actor>(); actors.add(new Actor());
+actors[0].poke();
+return 0;

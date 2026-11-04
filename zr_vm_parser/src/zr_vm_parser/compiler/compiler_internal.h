@@ -1357,6 +1357,7 @@ TZrBool compiler_build_typed_closure_bindings(SZrCompilerState *cs,
                                               SZrFunctionTypedClosureBinding **outBindings,
                                               TZrUInt32 *outCount);
 TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrFunction *function);
+TZrBool compiler_stack_slot_has_direct_inline_frame_storage(SZrCompilerState *cs, TZrUInt32 stackSlot);
 TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,
                                                const SZrInferredType *type);

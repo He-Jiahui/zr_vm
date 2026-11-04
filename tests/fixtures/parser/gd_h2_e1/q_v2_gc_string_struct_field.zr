@@ -1,0 +1,12 @@
+let system = import("zr.system");
+struct Tag { pub var name: string; pub var n: int; pub @constructor(name: string, n: int) { this.name = name; this.n = n; } }
+class Holder { pub var tag: Tag = init Tag("a", 1); }
+var h = new Holder();
+var t = init Tag("b" + <string>42, 2);
+h.tag = t;
+system.gc.collect("full");
+var copy = h.tag;
+system.gc.collect("full");
+if (copy.name != "b42" || copy.n != 2) { throw "gc string struct"; }
+if (h.tag.name != "b42") { throw "gc field read"; }
+return 0;

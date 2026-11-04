@@ -1,0 +1,10 @@
+struct Point {
+    pub var x: int;
+    pub @constructor(x: int) { this.x = x; }
+}
+struct Box { pub var point: Point; }
+fn replace(box: ref Box): void { var constructed = init Point(42); box.point = constructed; }
+var box: Box = init Box();
+replace(ref box);
+if (box.point.x != 42) { throw "ref field"; }
+return 0;

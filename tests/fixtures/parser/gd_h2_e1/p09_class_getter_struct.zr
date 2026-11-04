@@ -1,0 +1,6 @@
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+class Box { pub var point: Point = init Point(7); pub property pos: Point { get { return this.point; } } }
+var box = new Box();
+var p = box.pos;
+if (p.x != 7) { throw p.x; }
+return 0;

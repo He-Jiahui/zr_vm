@@ -1,0 +1,23 @@
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+    pub static @add(a: Vec2, b: Vec2): Vec2 { return init Vec2(a.x + b.x, a.y + b.y); }
+    pub static @mul(a: Vec2, b: float): Vec2 { return init Vec2(a.x * b, a.y * b); }
+}
+
+class Actor {
+    pub var pos: Vec2;
+    pub var vel: Vec2;
+    pub @constructor(x: float, y: float) {
+        this.pos = init Vec2(x, y);
+        this.vel = init Vec2(0.0, 0.0);
+    }
+    pub virtual fn update(dt: float): void { this.pos = this.pos + this.vel * dt; }
+}
+var a = new Actor(2.0, 3.0);
+a.vel = init Vec2(60.0, 120.0);
+a.update(1.0 / 60.0);
+var pos = a.pos;
+if (pos.x != 3.0 || pos.y != 5.0) { throw "Actor position"; }
+return 0;

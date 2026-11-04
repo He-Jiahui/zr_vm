@@ -1,0 +1,12 @@
+struct Box {
+    pub var x: int;
+    pub fn bump(): int { this.x += 1; return this.x; }
+}
+fn inner(b: scoped ref Box): int { return b.bump(); }
+fn outer(b: ref Box): int { return inner(ref b); }
+class Holder { pub var box: Box = init Box(); }
+var local = init Box();
+if (outer(ref local) != 1 || local.x != 1) { throw "local method writeback"; }
+var holder = new Holder();
+if (outer(ref holder.box) != 1 || holder.box.x != 1) { throw "field method writeback"; }
+return 0;

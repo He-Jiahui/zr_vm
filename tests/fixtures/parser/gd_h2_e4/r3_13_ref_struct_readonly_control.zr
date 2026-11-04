@@ -1,0 +1,7 @@
+struct Box { pub var x: int; }
+fn rd(box: ref readonly Box): int { return box.x; }
+var box = init Box();
+box.x = 7;
+var r = rd(ref box);
+if (r != 7) { throw r; }
+return 0;

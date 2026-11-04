@@ -11,6 +11,7 @@
 #include "function/function_call_spread_internal.h"
 #include "function/function_precall_internal.h"
 #include "function/function_bytecode_internal.h"
+#include "function/function_return_internal.h"
 #include "call/call_binding_inline_frame.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
@@ -477,6 +478,8 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
     SZrTypeValue *destinationFrameValue;
     TZrBool copiedInlineReturn = ZR_FALSE;
     TZrBool frameOverlapsStack = ZR_FALSE;
+    SZrTypeValue materializedValue;
+    TZrSize rootDepth = state->temporaryRootLength;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(callInfo != ZR_NULL);
@@ -503,6 +506,10 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
             copiedInlineReturn = ZrCore_Function_TryCopyInlineFrameReturnValue(
                     state, callInfo, returnSource, destination,
                     ZrCore_Function_ResolvePrototypeFrameTypeLayout, state);
+            if (!copiedInlineReturn) {
+                returnSourceValue = function_get_frame_return_source_value(
+                        state, callInfo, returnSource, destination, &materializedValue);
+            }
         }
     }
     if (returnSource == ZR_NULL || returnSourceValue == ZR_NULL) {
@@ -548,6 +555,7 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
                                             ? previousFrameStorageTop
                                             : destination + 1;
     state->callInfoList = callInfo->previous;
+    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
 }
 
 static ZR_FORCE_INLINE void execution_prepare_destination_for_direct_store_no_profile(SZrState *state,
@@ -584,6 +592,22 @@ static ZR_FORCE_INLINE TZrBool execution_store_result_to_inline_struct_destinati
     }
 
     return ZrCore_Function_CopyObjectValueToFrameSlotInline(state, function, frameBase, stackSlot, source);
+}
+
+static ZR_FORCE_INLINE void execution_store_member_result_to_inline_struct_destination_if_needed(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        SZrTypeValue *destination) {
+    /* Scalar reads skip layout lookup. A callable OBJECT can occupy the same
+     * slot as its later struct result; retain it if the inline copy declines. */
+    if (destination->type == ZR_VALUE_TYPE_OBJECT &&
+        stackSlot != ZR_INSTRUCTION_USE_RET_FLAG &&
+        execution_frame_slot_is_inline_struct_destination(function, stackSlot) &&
+        ZrCore_Function_CopyObjectValueToFrameSlotInline(state, function, frameBase, stackSlot, destination)) {
+        ZrCore_Value_ResetAsNull(destination);
+    }
 }
 
 static ZR_FORCE_INLINE void execution_store_or_copy_result_to_frame_slot(
@@ -3189,6 +3213,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                       memberNativeName__ != ZR_NULL ? memberNativeName__ : "<unknown>");             \
             }                                                                                                          \
         }                                                                                                              \
+        execution_store_member_result_to_inline_struct_destination_if_needed(                                          \
+                state, currentFunction, base, E(instruction), destination);                                             \
     } while (0)
 #define EXECUTE_GET_MEMBER_SLOT_BODY_FAST()                                                                            \
     do {                                                                                                               \
@@ -3210,6 +3236,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                            execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(            \
                                    state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers))))) { \
             EXECUTE_GET_MEMBER_SLOT_BODY();                                                                            \
+        } else {                                                                                                       \
+            execution_store_member_result_to_inline_struct_destination_if_needed(                                          \
+                    state, currentFunction, base, E(instruction), destination);                                             \
         }                                                                                                              \
     } while (0)
 #define EXECUTE_SET_MEMBER_SLOT_BODY()                                                                                 \
@@ -8838,6 +8867,9 @@ LZrFastInstruction_GET_MEMBER:
                     ZrCore_Debug_RunError(state,
                                           "GET_MEMBER: missing member '%s'",
                                           memberNativeName != ZR_NULL ? memberNativeName : "<unknown>");
+                } else {
+                    execution_store_member_result_to_inline_struct_destination_if_needed(
+                            state, currentFunction, base, E(instruction), destination);
                 }
             }
             DONE(1);
@@ -9847,23 +9879,42 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(PROPERTY_REF_LOAD) {
+                PROTECT_E(state, callInfo, {
+                    if (!ZrCore_PropertyReference_Load(state,
+                                                      FRAME_VALUE_SLOT(A2(instruction)),
+                                                      FRAME_VALUE_SLOT(E(instruction)))) {
+                        ZrCore_Debug_RunError(
+                                state, "PROPERTY_REF_LOAD: invalid managed property reference");
+                    }
+                });
                 destination = FRAME_VALUE_SLOT(E(instruction));
-                opA = FRAME_VALUE_SLOT(A2(instruction));
-                if (!ZrCore_PropertyReference_Load(state, opA, destination)) {
-                    ZrCore_Debug_RunError(
-                            state, "PROPERTY_REF_LOAD: invalid managed property reference");
-                }
+                execution_store_member_result_to_inline_struct_destination_if_needed(
+                        state, currentFunction, base, E(instruction), destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(PROPERTY_REF_STORE) {
-                opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
-                              ? &ret
-                              : FRAME_VALUE_SLOT(E(instruction));
-                if (!ZrCore_PropertyReference_Store(state, opA, opB)) {
-                    ZrCore_Debug_RunError(
-                            state, "PROPERTY_REF_STORE: invalid managed property reference");
-                }
+                PROTECT_E(state, callInfo, {
+                    SZrTypeValue materializedValue;
+                    const SZrTypeValue *source = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                                        ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                    TZrSize rootDepth = state->temporaryRootLength;
+                    if (E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG) {
+                        source = execution_effective_member_store_value(
+                                state, currentFunction, base, E(instruction), source, &materializedValue);
+                    }
+                    if (source == &materializedValue &&
+                        !ZrCore_Gc_TemporaryRootPush(state, materializedValue.value.object)) {
+                        ZrCore_Debug_RunError(state, "PROPERTY_REF_STORE: failed to root inline value");
+                    }
+                    UPDATE_BASE(callInfo);
+                    TZrBool stored = ZrCore_PropertyReference_Store(
+                            state, FRAME_VALUE_SLOT(A1(instruction)), source);
+                    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+                    if (!stored) {
+                        ZrCore_Debug_RunError(
+                                state, "PROPERTY_REF_STORE: invalid managed property reference");
+                    }
+                });
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_WAKE) {

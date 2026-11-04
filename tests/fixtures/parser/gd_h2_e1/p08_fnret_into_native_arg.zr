@@ -1,0 +1,8 @@
+let {Array} = import("zr.container");
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+fn make(v: int): Point { return init Point(v); }
+var arr = new Array<Point>();
+arr.add(make(42));
+var q = arr[0];
+if (q.x != 42) { throw q.x; }
+return 0;

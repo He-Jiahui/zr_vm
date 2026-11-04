@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 0; }
+fn f(a: Actor): void { a.n = 5; }
+var a = new Actor();
+f(a);
+if (a.n != 5) { throw a.n; }
+return 0;

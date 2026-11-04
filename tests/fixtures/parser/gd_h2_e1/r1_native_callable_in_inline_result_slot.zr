@@ -1,0 +1,5 @@
+let system = import("zr.system");
+var before = system.gc.get_stats();
+var after = system.gc.get_stats();
+if (after.minorCollectionCount < before.minorCollectionCount) { throw "native callable lost before struct result"; }
+return 0;

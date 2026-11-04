@@ -1254,6 +1254,43 @@ static TZrBool member_call_requires_bound_receiver(const SZrTypeMemberInfo *memb
     return memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD;
 }
 
+static SZrString *primary_member_chain_recover_index_element_type(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        const SZrAstNodeArray *members,
+        TZrSize memberIndex) {
+    SZrAstNode prefixNode;
+    SZrAstNodeArray prefixMembers;
+    SZrInferredType prefixType;
+    SZrString *typeName = ZR_NULL;
+
+    if (primaryNode == ZR_NULL || primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
+        members == ZR_NULL || memberIndex >= members->count) {
+        return ZR_NULL;
+    }
+
+    /* Reuse the inference for `var element = array[index]`, without compiling
+     * or evaluating the prefix again. Inline values retain their own path. */
+    prefixNode = *primaryNode;
+    prefixMembers = *members;
+    prefixMembers.count = memberIndex + 1u;
+    prefixNode.data.primaryExpression.members = &prefixMembers;
+    ZrParser_InferredType_Init(cs->state, &prefixType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_PrimaryExpressionType_Infer(cs, &prefixNode, &prefixType) &&
+        !compiler_find_inline_type_layout_for_inferred(
+                cs, &prefixType, ZR_NULL, ZR_NULL, ZR_NULL)) {
+        SZrString *inferredName = get_type_name_from_inferred_type(cs, &prefixType);
+        /* Registered prototypes exclude modules; do not recover R7 values. */
+        if (inferredName != ZR_NULL &&
+            type_name_is_registered_prototype(cs, inferredName) &&
+            !type_name_is_inline_struct_or_union_prototype(cs, inferredName)) {
+            typeName = inferredName;
+        }
+    }
+    ZrParser_InferredType_Free(cs->state, &prefixType);
+    return typeName;
+}
+
 static TZrUInt32 primary_member_chain_direct_local_slot(SZrCompilerState *cs, SZrAstNode *propertyNode) {
     if (cs == ZR_NULL || propertyNode == ZR_NULL || propertyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
         propertyNode->data.identifier.name == ZR_NULL) {
@@ -2671,6 +2708,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                      members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
             TZrBool memberUsesSuperLookup = superLookupActive && i == memberStartIndex;
             TZrBool computedInlineArrayElement = ZR_FALSE;
+            SZrString *recoveredIndexElementTypeName = ZR_NULL;
 
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
@@ -2786,9 +2824,34 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                             goto cleanup;
                         }
                     } else {
+                        TZrUInt32 getterReceiverSlot = currentSlot;
+                        if (!getterAccessor->isStatic &&
+                            type_name_is_inline_struct_or_union_prototype(cs, rootTypeName)) {
+                            TZrUInt32 localSlot = i == memberStartIndex && !currentSegmentGuarded
+                                                          ? primary_member_chain_direct_local_slot(cs, propertyNode)
+                                                          : ZR_PARSER_SLOT_NONE;
+                            if (localSlot != ZR_PARSER_SLOT_NONE &&
+                                !compiler_stack_slot_is_reference_parameter(cs, localSlot)) {
+                                getterReceiverSlot = localSlot;
+                            } else {
+                                /* The result may be scalar. Its function-wide
+                                 * layout cannot also hold a borrowed receiver. */
+                                getterReceiverSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                                if (getterReceiverSlot == ZR_PARSER_SLOT_NONE ||
+                                    !note_inline_struct_result_slot(cs, getterReceiverSlot, rootTypeName) ||
+                                    !stage_pending_receiver_binding(cs,
+                                                                    currentSlot,
+                                                                    getterReceiverSlot,
+                                                                    rootOwnershipQualifier,
+                                                                    member->location,
+                                                                    &getterReceiverSlot)) {
+                                    goto cleanup;
+                                }
+                            }
+                        }
                         if (!emit_property_getter_call(cs,
                                                        currentSlot,
-                                                       currentSlot,
+                                                       getterReceiverSlot,
                                                        i == memberStartIndex &&
                                                                        primary_member_chain_direct_local_slot(
                                                                                cs, propertyNode) !=
@@ -2886,11 +2949,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                             ZR_AST_STRUCT_METHOD &&
                                     typeMember->receiverEffect ==
                                             ZR_CANONICAL_RECEIVER_MUTABLE) {
-                                    pendingReceiverSourceSlot = directLocalSlot;
+                                    pendingReceiverSourceSlot =
+                                            compiler_stack_slot_is_reference_parameter(cs, directLocalSlot)
+                                                    ? currentSlot : directLocalSlot;
                                     pendingReceiverWritebackSlot = directLocalSlot;
                                 } else if (typeMember->memberType ==
                                            ZR_AST_STRUCT_METHOD) {
-                                    pendingReceiverSourceSlot = directLocalSlot;
+                                    pendingReceiverSourceSlot =
+                                            compiler_stack_slot_is_reference_parameter(cs, directLocalSlot)
+                                                    ? currentSlot : directLocalSlot;
                                 }
                             }
                         }
@@ -3357,6 +3424,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)keySlot));
+                                if (i + 1u < members->count && !currentSegmentGuarded &&
+                                    memberExpr->accessMode != ZR_POSTFIX_ACCESS_OPTIONAL) {
+                                    recoveredIndexElementTypeName =
+                                            primary_member_chain_recover_index_element_type(
+                                                    cs, primaryNode, members, i);
+                                    if (cs->hasError) {
+                                        goto cleanup;
+                                    }
+                                }
                             } else {
                                 currentSlot = resultSlot;
                                 if (currentSemanticPlace != ZR_PLACE_ID_INVALID) {
@@ -3376,6 +3452,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
 
                     if (computedInlineArrayElement) {
                         /* Root type was updated from the canonical array element contract. */
+                    } else if (recoveredIndexElementTypeName != ZR_NULL) {
+                        rootTypeName = recoveredIndexElementTypeName;
+                        rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                        rootIsTypeReference = ZR_FALSE;
                     } else if (declaredFieldMatch) {
                         rootTypeName = typeMember != ZR_NULL ? typeMember->fieldTypeName : declaredFieldTypeName;
                         rootOwnershipQualifier = typeMember != ZR_NULL ? typeMember->ownershipQualifier
@@ -4417,10 +4497,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
             }
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 pendingReceiverWritebackSlot != ZR_PARSER_SLOT_NONE) {
-                emit_instruction(cs,
-                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
-                                                      (TZrUInt16)pendingReceiverWritebackSlot,
-                                                      (TZrInt32)pendingReceiverSlot));
+                if (compiler_stack_slot_is_reference_parameter(cs, pendingReceiverWritebackSlot)) {
+                    if (!compiler_property_reference_store(cs,
+                                                           pendingReceiverWritebackSlot,
+                                                           pendingReceiverSlot,
+                                                           member->location)) {
+                        goto cleanup;
+                    }
+                } else {
+                    emit_instruction(cs,
+                                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                          (TZrUInt16)pendingReceiverWritebackSlot,
+                                                          (TZrInt32)pendingReceiverSlot));
+                }
             }
             if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
                 currentSlot = pendingDirectMemberCallResultSlot;

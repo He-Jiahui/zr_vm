@@ -1,0 +1,6 @@
+fn twice(v: int): int { return v * 2; }
+var o = { f: twice };
+fn callIt(x) { return x.f(5); }
+var r = callIt(o);
+if (r != 10) { throw r; }
+return 0;

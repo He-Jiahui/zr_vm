@@ -1,5 +1,18 @@
 # Verification evidence
 
+## GD-H2 blocked attempt (2026-10-24)
+
+**Not accepted.** A fresh Release build reproduces
+`Failed to build class member frame layout metadata` for the single-module
+`Actor`/`Vec2` constructor in interpreter mode and bytecode compilation (both
+exit 1). Existing P02 and P03 controls each pass interpreter, compile and
+source-removed binary execution. OOP parity and detector gates cannot be
+claimed. Work stopped for Claude review; see the
+[blocker note](gd-h2-blocker-20261024.md) for the exact repro, scope and evidence.
+Incomplete implementation changes were removed after archiving them under
+`/workspace/zr_vm-review/gd-h2-20261024/wip/`. Only documentation is committed.
+Historical GD-H1 and GD-C5 results below are retained, not newly rerun.
+
 ## GD-H1 C reference lane and DOD==C (2026-10-22)
 
 Implementation: **61f7d717**. The independent host C lane mirrors

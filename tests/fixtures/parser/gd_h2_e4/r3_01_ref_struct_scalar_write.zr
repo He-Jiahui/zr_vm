@@ -1,0 +1,6 @@
+struct Box { pub var x: int; }
+fn replace(box: ref Box): void { box.x = 42; }
+var box = init Box();
+replace(ref box);
+if (box.x != 42) { throw box.x; }
+return 0;

@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 0; }
+var actors = [new Actor()];
+actors[0].n = 7;
+actors[0].n += 3;
+if (actors[0].n != 10) { throw "class element field write"; }
+return 0;

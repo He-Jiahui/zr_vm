@@ -1,0 +1,6 @@
+struct Box { pub var x: int; }
+fn put(box: ref Box): void { var n = init Box(); n.x = 9; box = n; }
+var box = init Box();
+put(ref box);
+if (box.x != 9) { throw box.x; }
+return 0;

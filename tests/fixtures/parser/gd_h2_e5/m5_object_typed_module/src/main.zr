@@ -1,0 +1,5 @@
+let lin = import("lin");
+var m: object = lin;
+var r = m.zero();
+if (r != 7) { throw r; }
+return 0;

@@ -1,0 +1,14 @@
+let system = import("zr.system");
+struct Label {
+    pub var text: string;
+    pub var n: int;
+    pub @constructor(text: string, n: int) { this.text = text; this.n = n; }
+    pub fn update(): void { this.text = this.text + "!"; this.n += 1; }
+}
+fn update(label: ref Label): void { label.update(); system.gc.collect("full"); label.n += 1; }
+var label = init Label("kept", 40);
+var copy = label;
+update(ref label);
+system.gc.collect("full");
+if (label.text != "kept!" || label.n != 42 || copy.text != "kept" || copy.n != 40) { throw "ref copy or GC"; }
+return 0;

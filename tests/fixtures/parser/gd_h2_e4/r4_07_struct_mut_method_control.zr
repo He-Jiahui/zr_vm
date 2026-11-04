@@ -1,0 +1,6 @@
+struct Box { pub var stored: int; pub fn setv(v: int): void { this.stored = v; } pub fn getv(): int { return this.stored; } }
+var box = init Box();
+box.setv(42);
+if (box.getv() != 42) { throw box.getv(); }
+if (box.stored != 42) { throw box.stored; }
+return 0;

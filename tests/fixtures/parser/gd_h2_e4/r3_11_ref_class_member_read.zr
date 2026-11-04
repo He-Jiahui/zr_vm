@@ -1,0 +1,6 @@
+class Actor { pub var n: int = 3; }
+fn rd(a: ref Actor): int { return a.n; }
+var a = new Actor();
+var r = rd(ref a);
+if (r != 3) { throw r; }
+return 0;

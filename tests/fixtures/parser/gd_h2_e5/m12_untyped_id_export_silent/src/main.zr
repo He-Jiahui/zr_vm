@@ -1,0 +1,5 @@
+let lin = import("lin");
+fn use(m) { return m.id(41); }
+var r = use(lin);
+if (r != 41) { throw "silent receiver shift"; }
+return 0;

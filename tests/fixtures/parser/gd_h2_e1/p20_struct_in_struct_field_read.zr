@@ -1,0 +1,7 @@
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+struct Holder { pub var point: Point; }
+var h: Holder = init Holder();
+var c = init Point(42);
+h.point = c;
+if (h.point.x != 42) { throw h.point.x; }
+return 0;

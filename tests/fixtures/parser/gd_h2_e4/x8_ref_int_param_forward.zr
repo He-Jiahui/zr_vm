@@ -1,0 +1,6 @@
+fn inner(x: ref int): void { x = x + 1; }
+fn outer(x: ref int): void { inner(ref x); }
+var v = 41;
+outer(ref v);
+if (v != 42) { throw v; }
+return 0;

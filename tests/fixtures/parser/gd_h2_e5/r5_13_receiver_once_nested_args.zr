@@ -1,0 +1,16 @@
+class Actor {
+    pub var n: int = 1;
+    pub fn value(): int { return this.n; }
+    pub fn add(left: int, right: int): Actor {
+        this.n = this.n + left * 10 + right;
+        return this;
+    }
+    pub fn noop(): void { }
+}
+var actors = [new Actor()];
+var evaluations: int = 0;
+fn index(value: int): int { evaluations += 1; return value; }
+var left: int = actors[0].value();
+actors[index(0)].add(left, index(2)).noop();
+if (evaluations != 2 || actors[0].n != 13) { throw "receiver/argument evaluation"; }
+return 0;

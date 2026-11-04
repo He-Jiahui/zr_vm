@@ -501,8 +501,12 @@ static TZrUInt32 assignment_target_direct_local_slot(SZrCompilerState *cs, SZrAs
         return ZR_PARSER_SLOT_NONE;
     }
 
-    return find_local_var_with_context(
+    TZrUInt32 slot = find_local_var_with_context(
             cs, node->data.identifier.name, node->data.identifier.syntaxContext);
+    /* A ref/out parameter contains a managed reference, not its referent. */
+    return slot != ZR_PARSER_SLOT_NONE && compiler_stack_slot_is_reference_parameter(cs, slot)
+                   ? ZR_PARSER_SLOT_NONE
+                   : slot;
 }
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
@@ -732,6 +736,30 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
         rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
         if (cs->hasError) {
             return ZR_FALSE;
+        }
+        if (primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+            writebacks != ZR_NULL && outWritebackCount != ZR_NULL &&
+            assignment_field_type_is_inline_struct(cs, rootTypeName)) {
+            TZrUInt32 referenceSlot = find_local_var_with_context(
+                    cs,
+                    primary->property->data.identifier.name,
+                    primary->property->data.identifier.syntaxContext);
+            if (referenceSlot != ZR_PARSER_SLOT_NONE &&
+                compiler_stack_slot_is_reference_parameter(cs, referenceSlot)) {
+                if (*outWritebackCount >= writebackCapacity) {
+                    ZrParser_Compiler_Error(cs, "Too many inline struct parent writebacks", primary->property->location);
+                    return ZR_FALSE;
+                }
+                /* Record the root first so nested parents are stored before
+                 * the final write through the parameter reference. */
+                SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[(*outWritebackCount)++];
+                writeback->parentSlot = referenceSlot;
+                writeback->childSlot = currentSlot;
+                writeback->memberId = ZR_PARSER_MEMBER_ID_NONE;
+                writeback->indexSlot = ZR_PARSER_SLOT_NONE;
+                writeback->propertyReference = ZR_TRUE;
+                writeback->location = primary->property->location;
+            }
         }
     }
 
@@ -1000,7 +1028,10 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     }
                     inlineElement = compiler_find_inline_type_layout_for_inferred(
                             cs, &elementType, ZR_NULL, ZR_NULL, ZR_NULL);
-                    rootTypeName = inlineElement ? get_type_name_from_inferred_type(cs, &elementType) : ZR_NULL;
+                    rootTypeName = get_type_name_from_inferred_type(cs, &elementType);
+                    if (!inlineElement && find_compiler_type_prototype(cs, rootTypeName) == ZR_NULL) {
+                        rootTypeName = ZR_NULL;
+                    }
                     if (inlineElement && !compiler_register_stack_slot_type_hint(cs, destinationSlot, &elementType)) {
                         ZrParser_InferredType_Free(cs->state, &elementType);
                         return ZR_FALSE;
@@ -1228,17 +1259,6 @@ static EZrDirectFieldConstructResult compile_assignment_try_direct_field_constru
     }
     parentSlot = assignment_target_direct_local_slot(cs, primary->property);
     memberNode = primary->members->nodes[0U];
-    if (memberNode != ZR_NULL &&
-        memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
-        memberNode->data.memberExpression.computed) {
-        return compile_assignment_try_direct_array_element_construct(
-                cs,
-                primary,
-                memberNode,
-                right,
-                rightType,
-                location);
-    }
     if (parentSlot == ZR_PARSER_SLOT_NONE || memberNode == ZR_NULL ||
         memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
         memberNode->data.memberExpression.computed) {
@@ -1262,8 +1282,8 @@ static EZrDirectFieldConstructResult compile_assignment_try_direct_field_constru
                                    cs, parentTypeName, memberSymbol)
                          : ZR_NULL;
     if (memberInfo == ZR_NULL ||
-        (memberInfo->memberType != ZR_AST_STRUCT_FIELD &&
-         memberInfo->memberType != ZR_AST_CLASS_FIELD) ||
+        memberInfo->memberType != ZR_AST_STRUCT_FIELD ||
+        !compiler_stack_slot_has_direct_inline_frame_storage(cs, parentSlot) ||
         find_type_member_is_const(cs, parentTypeName, memberSymbol)) {
         goto cleanup;
     }
@@ -1639,9 +1659,23 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     if (hasCompatibleSimpleAssignment &&
         assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX) &&
         right->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
-        EZrDirectFieldConstructResult directResult =
-                compile_assignment_try_direct_field_construct(
-                        cs, left, right, &rightType, node->location);
+        EZrDirectFieldConstructResult directResult = ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE;
+        /* Array elements have their own indirect-place construction contract. */
+        if (left->type == ZR_AST_PRIMARY_EXPRESSION) {
+            SZrPrimaryExpression *primary = &left->data.primaryExpression;
+            if (primary->property != ZR_NULL && primary->members != ZR_NULL && primary->members->count == 1u) {
+                SZrAstNode *member = primary->members->nodes[0u];
+                if (member != ZR_NULL && member->type == ZR_AST_MEMBER_EXPRESSION &&
+                    member->data.memberExpression.computed) {
+                    directResult = compile_assignment_try_direct_array_element_construct(
+                            cs, primary, member, right, &rightType, node->location);
+                }
+            }
+        }
+        if (directResult == ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE) {
+            directResult = compile_assignment_try_direct_field_construct(
+                    cs, left, right, &rightType, node->location);
+        }
         if (directResult != ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE) {
             ZrParser_InferredType_Free(cs->state, &leftType);
             ZrParser_InferredType_Free(cs->state, &rightType);
@@ -1730,7 +1764,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                             cs, "Failed to lower store through pre-execution Semantic IR", left->location);
                     return;
                 }
-                update_identifier_assignment_type_environment(cs, name, right);
+                /* Assigning through a parameter reference changes its
+                 * referent, not the declared parameter binding or role. */
+                if (!compiler_stack_slot_is_reference_parameter(cs, localVarIndex)) {
+                    update_identifier_assignment_type_environment(cs, name, right);
+                }
                 compile_assignment_record_identifier_write_fact(cs,
                                                                 left,
                                                                 hasIdentifierWriteBinding,
@@ -2046,6 +2084,21 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                          setterAccessor,
                                                                          rightSlot,
                                                                          node->location) == ZR_PARSER_SLOT_NONE) {
+                                        return;
+                                    }
+                                    if (primary->members != ZR_NULL && primary->members->count == 1u &&
+                                        assignment_field_type_is_inline_struct(cs, rootTypeName)) {
+                                        TZrUInt32 localSlot = rootUsesSuperLookup
+                                                                      ? superReceiverSlot
+                                                                      : assignment_target_direct_local_slot(cs, primary->property);
+                                        TZrUInt32 receiverSlot = rootUsesSuperLookup ? superReceiverSlot : objSlot;
+                                        if (localSlot != ZR_PARSER_SLOT_NONE && localSlot != receiverSlot &&
+                                            !compiler_semantic_ir_lower_store(cs, localSlot, receiverSlot, node->location)) {
+                                            ZrParser_Compiler_Error(cs, "Failed to lower property receiver writeback", node->location);
+                                            return;
+                                        }
+                                    }
+                                    if (!emit_assignment_inline_struct_writebacks(cs, inlineWritebacks, inlineWritebackCount)) {
                                         return;
                                     }
                                     return;

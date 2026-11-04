@@ -1,0 +1,10 @@
+class Holder {
+    pub var cb: fn(int) -> int;
+    pub @constructor(cb: fn(int) -> int) { this.cb = cb; }
+}
+fn twice(v: int): int { return v * 2; }
+fn callIt(h) { return h.cb(4); }
+var h = new Holder(twice);
+var r = callIt(h);
+if (r != 8) { throw r; }
+return 0;

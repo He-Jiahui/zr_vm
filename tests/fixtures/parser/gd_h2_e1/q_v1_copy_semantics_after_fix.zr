@@ -1,0 +1,11 @@
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+class Box { pub var point: Point = init Point(1); }
+var box = new Box();
+var p = box.point;
+p.x = 9;
+if (box.point.x != 1) { throw "class field aliased by local copy"; }
+if (p.x != 9) { throw "local copy lost write"; }
+box.point.x = 5;
+if (p.x != 9) { throw "local copy aliased by field write"; }
+if (box.point.x != 5) { throw "field write-through lost"; }
+return 0;

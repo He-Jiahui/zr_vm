@@ -1,0 +1,6 @@
+struct Box { pub var x: int; }
+fn mk(r: out Box): void { var n = init Box(); n.x = 3; r = n; }
+var b = init Box();
+mk(out b);
+if (b.x != 3) { throw b.x; }
+return 0;

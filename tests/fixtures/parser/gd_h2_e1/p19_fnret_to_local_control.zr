@@ -1,0 +1,5 @@
+struct Point { pub var x: int; pub @constructor(x: int) { this.x = x; } }
+fn make(v: int): Point { return init Point(v); }
+var p = make(42);
+if (p.x != 42) { throw p.x; }
+return 0;
