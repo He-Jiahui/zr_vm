@@ -11,7 +11,8 @@
  * on-disk artifact.
  */
 #define ZR_EXECUTION_CONTRACT_SCHEMA_VERSION ((TZrUInt32)6u)
-#define ZR_EXECUTION_CONTRACT_ABI_VERSION ((TZrUInt32)17u)
+/* Optional receiver callsite kinds require a matching host/JIT consumer. */
+#define ZR_EXECUTION_CONTRACT_ABI_VERSION ((TZrUInt32)18u)
 #define ZR_EXECUTION_CONTRACT_LOGICAL_VERSION ((TZrUInt32)1u)
 
 #define ZR_EXECUTION_CAPABILITY_ARITHMETIC ((TZrUInt32)1u << 0u)

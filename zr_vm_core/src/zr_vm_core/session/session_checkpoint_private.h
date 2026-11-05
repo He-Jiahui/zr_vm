@@ -290,7 +290,9 @@ static ZR_FORCE_INLINE TZrBool checkpoint_native_closure_is_immortal_stateless(c
                closure->nativeBindingTypeDescriptor == ZR_NULL &&
                closure->nativeBindingOwnerPrototype == ZR_NULL &&
                closure->nativeBindingKind == 0u &&
-               closure->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_NONE;
+               /* Built-in prototype methods use the frame receiver without
+                * capturing any VM state. CAPTURED remains ineligible. */
+               closure->nativeBindingUsesReceiver <= ZR_NATIVE_BINDING_RECEIVER_FRAME;
     }
     if (closure->nativeBindingModuleDescriptor == ZR_NULL) return ZR_FALSE;
     if (closure->nativeBindingKind == 0u) {

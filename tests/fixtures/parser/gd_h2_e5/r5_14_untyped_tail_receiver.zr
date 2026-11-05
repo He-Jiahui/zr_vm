@@ -1,7 +1,8 @@
-// R5-U: an untyped method receiver remains an E4b loud runtime failure.
+// R5-U-B: the runtime retains a method receiver in the tail-call window.
 class Actor {
     pub var n: int = 1;
     pub fn value(): int { return this.n; }
 }
 fn invoke(receiver) { return receiver.value(); }
-return invoke(new Actor());
+if (invoke(new Actor()) != 1) { throw "tail receiver"; }
+return 0;

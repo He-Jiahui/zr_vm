@@ -1316,6 +1316,7 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_spread_singl
             functionSlot + (TZrUInt32)prefixArgumentCount + 1u;
     SZrTypeValue *spreadValue;
     TZrSize spreadArgumentCount;
+    TZrSize stagedPrefixArgumentCount = prefixArgumentCount;
     TZrSize extraSlotCount;
     TZrStackValuePointer callWindow;
     TZrStackValuePointer effectiveReturnDestination;
@@ -1359,8 +1360,20 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_spread_singl
             resultSlot != ZR_INSTRUCTION_USE_RET_FLAG
                     ? *ioFrameBase + resultSlot
                     : ZR_NULL;
-    ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
     ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
+    {
+        const SZrFunctionCallSiteCacheEntry *optionalEntry =
+                ZrCore_Function_FindOptionalReceiverCallSite(function,
+                        (TZrUInt32)(callInfo->context.context.programCounter - function->instructionsList - 1));
+        if (optionalEntry != ZR_NULL) {
+            TZrStackValuePointer effectiveWindow = ZrCore_Function_PrepareOptionalReceiverCall(
+                    state, function, optionalEntry, callWindow);
+            if (effectiveWindow == ZR_NULL) ZrCore_Debug_RunError(state, "spread member call: invalid optional receiver metadata");
+            prefixArgumentCount -= (TZrSize)(effectiveWindow - callWindow);
+            callWindow = effectiveWindow;
+        }
+    }
+    ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
     nextCallInfo = ZrCore_Function_CallSpread_PreCallPrepared(
             state,
             callWindow,
@@ -1375,7 +1388,7 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_spread_singl
             function,
             *ioFrameBase,
             functionSlot + 1u,
-            prefixArgumentCount + 1u);
+            stagedPrefixArgumentCount + 1u);
     if (outCallWindow != ZR_NULL) {
         *outCallWindow = invocationStarted ? callWindow : ZR_NULL;
     }
@@ -4146,15 +4159,20 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_CACHED: failed to prepare call frame");                      \
         }                                                                                                              \
         state->stackTop.valuePointer = callWindow__ + cacheEntry__->argumentCount + 1;                                \
+        functionPointer__ = ZrCore_Function_PrepareOptionalReceiverCall(                                               \
+                state, currentFunction, cacheEntry__, callWindow__);                                                  \
+        if (functionPointer__ == ZR_NULL) {                                                                           \
+            ZrCore_Debug_RunError(state, "dynamic member call: invalid optional receiver metadata");                \
+        }                                                                                                            \
         preparedDynCallTarget__ = execution_try_prepare_dyn_call_target_cached(                                        \
                 state,                                                                                                \
                 currentFunction,                                                                                      \
                 B1(instruction),                                                                                      \
-                callWindow__,                                                                                         \
+                functionPointer__,                                                                                    \
                 ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                                                            \
-        functionPointer__ = callWindow__;                                                                              \
         argumentSourceStartSlot__ =                                                                                   \
-                (TZrUInt32)(functionSlot__ + (preparedDynCallTarget__ ? 0u : 1u));                                     \
+                (TZrUInt32)(functionSlot__ + (functionPointer__ - callWindow__) +                                      \
+                            (preparedDynCallTarget__ ? 0u : 1u));                                                     \
         callableValue__ = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                          \
         REQUIRE_DYNAMIC_CALLABLE(callableValue__);                                                                    \
                                                                                                                         \
@@ -4170,7 +4188,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                            callableValue__,                                                            \
                                            expectedReturnCount__,                                                      \
                                            BASE(E(instruction)),                                                       \
-                                           base,                                                                       \
+                                           preparedDynCallTarget__ &&                                                 \
+                                                   ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(cacheEntry__->kind) \
+                                                   ? ZR_NULL : base,                                                   \
                                            argumentSourceStartSlot__)                                                  \
                                  : ZrCore_Function_PreCall(                                                           \
                                            state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));     \
@@ -4631,15 +4651,19 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         execution_stage_frame_layout_call_values(                                                                      \
                 state, currentFunction, base, (TZrUInt32)functionSlot__, cacheEntry__->argumentCount);                 \
         state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
+        functionPointer__ = ZrCore_Function_PrepareOptionalReceiverCall(                                               \
+                state, currentFunction, cacheEntry__, BASE(functionSlot__));                                          \
+        if (functionPointer__ == ZR_NULL) {                                                                           \
+            ZrCore_Debug_RunError(state, "dynamic member tail call: invalid optional receiver metadata");           \
+        }                                                                                                            \
         execution_try_prepare_dyn_call_target_cached(state,                                                            \
                                                      currentFunction,                                                  \
                                                      B1(instruction),                                                  \
-                                                     BASE(functionSlot__),                                             \
+                                                     functionPointer__,                                                \
                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);                  \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
-        functionPointer__ = BASE(functionSlot__);                                                                      \
         if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \

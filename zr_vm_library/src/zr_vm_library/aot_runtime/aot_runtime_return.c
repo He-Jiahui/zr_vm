@@ -1085,3 +1085,31 @@ TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(SZrState *state,
     *outSkipDropSlot = sourceSlot;
     return ZR_TRUE;
 }
+
+/* Script member-call ABI. Both generated backends call this same bridge. */
+TZrBool ZrLibrary_AotRuntime_CallOptionalReceiver(
+        SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot, TZrUInt32 cacheIndex, const TZrChar *errorLabel) {
+    const SZrFunctionCallSiteCacheEntry *entry;
+    TZrStackValuePointer callBase, effectiveBase;
+    TZrUInt32 dropped;
+    if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL ||
+        frame->slotBase == ZR_NULL || frame->function->callSiteCaches == ZR_NULL ||
+        cacheIndex >= frame->function->callSiteCacheLength ||
+        functionSlot >= frame->generatedFrameSlotCount) return ZR_FALSE;
+    entry = &frame->function->callSiteCaches[cacheIndex];
+    if (!ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(entry->kind) ||
+        entry->argumentCount == 0u ||
+        entry->argumentCount >= frame->generatedFrameSlotCount - functionSlot ||
+        (entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD &&
+         entry->argumentCount + 1u >= frame->generatedFrameSlotCount - functionSlot)) return ZR_FALSE;
+    callBase = frame->slotBase + functionSlot;
+    effectiveBase = ZrCore_Function_PrepareOptionalReceiverCall(state, frame->function, entry, callBase);
+    if (effectiveBase == ZR_NULL) return ZR_FALSE;
+    dropped = (TZrUInt32)(effectiveBase - callBase);
+    if (entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD)
+        return ZrLibrary_AotRuntime_CallSpread(state, frame, destinationSlot,
+                functionSlot + dropped, entry->argumentCount - dropped, errorLabel);
+    return ZrLibrary_AotRuntime_CallStackValue(state, frame, destinationSlot,
+            functionSlot + dropped, entry->argumentCount - dropped, errorLabel);
+}

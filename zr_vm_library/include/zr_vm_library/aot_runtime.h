@@ -2056,6 +2056,10 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *stat
 /** @brief 展开尾部 spread 数组并调用前缀实参与展开值。
  * @note spread 源必须是实现支持的数组；展开与扩栈后重定位调用窗口，再委托 CallStackValue；失败可能已展开或准备调用。
  */
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallOptionalReceiver(
+        struct SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot, TZrUInt32 cacheIndex, const TZrChar *errorLabel);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallSpread(
         struct SZrState *state,
         ZrAotGeneratedFrame *frame,

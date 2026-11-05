@@ -713,7 +713,11 @@ TZrUInt32 backend_aot_get_callsite_cache_argument_count(const SZrFunction *funct
     }
 
     cacheEntry = &function->callSiteCaches[cacheIndex];
-    if ((EZrFunctionCallSiteCacheKind)cacheEntry->kind != expectedKind) {
+    if ((EZrFunctionCallSiteCacheKind)cacheEntry->kind != expectedKind &&
+        !(expectedKind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL &&
+          cacheEntry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL) &&
+        !(expectedKind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL &&
+          cacheEntry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL)) {
         return 0;
     }
 

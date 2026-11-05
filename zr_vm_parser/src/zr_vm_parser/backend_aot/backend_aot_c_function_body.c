@@ -1904,7 +1904,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 }
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
-                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
+                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_call");
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -1920,7 +1920,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                     entry->function,
                                                                     operandB1,
                                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL),
-                                                            ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
+                                                            ZR_RUNTIME_SEMIR_DEOPT_ID_NONE,
+                                                            operandB1 < entry->function->callSiteCacheLength &&
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(
+                                                                            entry->function->callSiteCaches[operandB1].kind)
+                                                                    ? operandB1 : ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_call");
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -1928,7 +1932,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
-                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
+                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_call");
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -1944,7 +1948,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                     entry->function,
                                                                     operandB1,
                                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL),
-                                                            ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
+                                                            ZR_RUNTIME_SEMIR_DEOPT_ID_NONE,
+                                                            operandB1 < entry->function->callSiteCacheLength &&
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(
+                                                                            entry->function->callSiteCaches[operandB1].kind)
+                                                                    ? operandB1 : ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_call");
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -2590,12 +2598,22 @@ void backend_aot_write_c_function_body(FILE *file,
                 }
                 break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
-                backend_aot_write_c_spread_function_call(
-                        file,
-                        functionIr,
-                        destinationSlot,
-                        operandA1,
-                        operandB1);
+                {
+                    const SZrFunctionCallSiteCacheEntry *optional =
+                            ZrCore_Function_FindOptionalReceiverCallSite(entry->function, instructionIndex);
+                    if (optional != ZR_NULL) {
+                        backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot,
+                                operandA1, optional->argumentCount, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE,
+                                (TZrUInt32)(optional - entry->function->callSiteCaches));
+                    } else {
+                        backend_aot_write_c_spread_function_call(
+                                file,
+                                functionIr,
+                                destinationSlot,
+                                operandA1,
+                                operandB1);
+                    }
+                }
                 backend_aot_write_c_gc_safepoint(
                         file, "    ", "zr_aot_gc_safepoint_spread_call");
                 backend_aot_set_callable_slot_function_index(
@@ -2661,7 +2679,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 } else if (semirDynamicCall ||
                            instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
                            instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)) {
-                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1, deoptId);
+                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1, deoptId, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 } else {
                     backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, operandB1);
                 }
@@ -2785,7 +2803,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                         calleeFunctionIndex);
                     }
                 } else if (semirDynamicCall) {
-                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, deoptId);
+                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, deoptId, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);
                 } else {
                     backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, 0);
                 }

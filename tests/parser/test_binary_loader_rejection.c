@@ -136,10 +136,14 @@ static void test_header_and_length_bombs_are_rejected(void) {
 
 static void test_old_raw_frame_offset_format_requires_recompilation(void) {
     TZrUInt32 savedPatch, oldPatch = ZR_IO_SOURCE_PATCH_MIN_SUPPORTED - 1u;
+    TZrUInt32 previousPatch = ZR_IO_SOURCE_PATCH_HAS_OPTIONAL_RECEIVER - 1u;
     memcpy(&savedPatch, encoded + 12u, sizeof(savedPatch));
     TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, savedPatch);
     memcpy(encoded + 12u, &oldPatch, sizeof(oldPatch));
     TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+    /* Patch 46 remains readable when no optional receiver cache is present. */
+    memcpy(encoded + 12u, &previousPatch, sizeof(previousPatch));
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
     memcpy(encoded + 12u, &savedPatch, sizeof(savedPatch));
     TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
 }
@@ -308,8 +312,52 @@ static void test_empty_and_unterminated_bodies_are_rejected(void) {
     TEST_ASSERT_FALSE(accepted);
 }
 
+
+static void test_optional_receiver_format_round_trip_and_metadata_rejection(void) {
+    const char *source = "fn id(x) { return x; } var receiver: object = { id: id }; return receiver.id(41);";
+    char path[ZR_TESTS_PATH_MAX];
+    SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
+            ZrCore_String_CreateFromNative(state, "optional_receiver.zr"));
+    const SZrFunctionCallSiteCacheEntry *entry = ZR_NULL;
+    TZrUInt32 row[5], savedPatch, oldPatch = ZR_IO_SOURCE_PATCH_HAS_OPTIONAL_RECEIVER - 1u;
+    TZrSize rowOffset = 0u;
+    TEST_ASSERT_NOT_NULL(function);
+    for (TZrUInt32 i = 0; i < function->callSiteCacheLength; ++i)
+        if (ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(function->callSiteCaches[i].kind))
+            entry = &function->callSiteCaches[i];
+    TEST_ASSERT_NOT_NULL(entry);
+    row[0] = entry->kind; row[1] = entry->instructionIndex; row[2] = entry->memberEntryIndex;
+    row[3] = entry->deoptId; row[4] = entry->argumentCount;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("binary_loader_rejection", "", "optional_receiver", ".zro", path, sizeof(path)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, path));
+    free(encoded); encoded = ZR_NULL;
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(path, &encoded, &encodedLength));
+    ZrCore_Function_Free(state, function);
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
+    memcpy(&savedPatch, encoded + 12u, sizeof(savedPatch));
+    memcpy(encoded + 12u, &oldPatch, sizeof(oldPatch));
+    TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+    memcpy(encoded + 12u, &savedPatch, sizeof(savedPatch));
+    for (TZrSize i = 32u; i + sizeof(row) <= encodedLength; ++i) {
+        if (memcmp(encoded + i, row, sizeof(row)) == 0) {
+            TEST_ASSERT_EQUAL_size_t(0u, rowOffset);
+            rowOffset = i;
+        }
+    }
+    TEST_ASSERT_NOT_EQUAL(0u, rowOffset);
+    for (TZrUInt32 field = 0u; field < 5u; ++field) {
+        if (field == 3u) continue;
+        TZrUInt32 invalid = field == 4u ? 0u : UINT32_MAX;
+        memcpy(encoded + rowOffset + field * 4u, &invalid, sizeof(invalid));
+        TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+        memcpy(encoded + rowOffset + field * 4u, &row[field], sizeof(row[field]));
+    }
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_optional_receiver_format_round_trip_and_metadata_rejection);
     RUN_TEST(test_empty_and_unterminated_bodies_are_rejected);
     RUN_TEST(test_chunked_round_trip_and_all_truncations);
     RUN_TEST(test_old_raw_frame_offset_format_requires_recompilation);

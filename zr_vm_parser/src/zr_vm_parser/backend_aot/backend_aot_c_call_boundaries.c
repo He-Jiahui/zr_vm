@@ -390,7 +390,8 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                TZrUInt32 destinationSlot,
                                                TZrUInt32 functionSlot,
                                                TZrUInt32 argumentCount,
-                                               TZrUInt32 deoptId) {
+                                               TZrUInt32 deoptId,
+                                               TZrUInt32 optionalCacheIndex) {
     TZrBool syncI64Local;
     TZrBool syncBoolLocal;
     TZrBool syncU64Local;
@@ -404,7 +405,14 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
     syncBoolLocal = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
     syncU64Local = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
     syncF64Local = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
-    fprintf(file,
+    if (optionalCacheIndex != ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE) {
+        fprintf(file,
+                "    {\n        /* zr_aot_optional_receiver_call */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallOptionalReceiver("
+                "state, &frame, %u, %u, %u, \"optional receiver call\")",
+                (unsigned)destinationSlot, (unsigned)functionSlot, (unsigned)optionalCacheIndex);
+    } else {
+        fprintf(file,
             "    {\n"
             "        /* zr_aot_direct_dynamic_function_call */\n"
             "        /* zr_aot_dynamic_deopt_bridge deopt=%u */\n"
@@ -423,7 +431,8 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)functionSlot,
             (unsigned)argumentCount,
-            (unsigned)deoptId);
+                (unsigned)deoptId);
+    }
     if (syncI64Local) {
         fprintf(file,
                 " &&\n"

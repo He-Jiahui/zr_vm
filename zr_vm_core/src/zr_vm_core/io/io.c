@@ -1256,6 +1256,13 @@ static void io_read_function_callsite_cache_table(SZrIo *io,
         ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].memberEntryIndex, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].deoptId, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].argumentCount, TZrUInt32);
+        if (cacheTable[index].kind > ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD ||
+            (ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(cacheTable[index].kind) &&
+             (io->sourceVersionPatch < ZR_IO_SOURCE_PATCH_HAS_OPTIONAL_RECEIVER ||
+              cacheTable[index].argumentCount == 0u))) {
+            io->hasReadError = ZR_TRUE;
+            return;
+        }
     }
 }
 
@@ -2017,6 +2024,28 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALLSITE_CACHE) {
             io_read_function_callsite_cache_metadata(io, function);
+            for (TZrSize cacheIndex = 0u; !io->hasReadError && cacheIndex < function->callSiteCacheLength; ++cacheIndex) {
+                const SZrIoFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[cacheIndex];
+                if (!ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(entry->kind)) continue;
+                if (entry->memberEntryIndex >= function->memberEntriesLength ||
+                    function->memberEntries[entry->memberEntryIndex].symbol == ZR_NULL ||
+                    entry->instructionIndex >= function->instructionsLength) {
+                    io->hasReadError = ZR_TRUE;
+                    return;
+                }
+                const TZrInstruction *call = &function->instructions[entry->instructionIndex];
+                TZrUInt16 expectedOpcode = entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL
+                        ? ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED)
+                        : entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL
+                        ? ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED) : ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD);
+                if (call->instruction.operationCode != expectedOpcode ||
+                    call->instruction.operand.operand1[1] !=
+                        (entry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_CALL_SPREAD
+                                ? entry->argumentCount : cacheIndex)) {
+                    io->hasReadError = ZR_TRUE;
+                    return;
+                }
+            }
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALL_BINDING &&
             !ZrCore_Io_ReadCallBindings(io, function)) {

@@ -28,16 +28,16 @@
 #define TEST_EIS2_ENCODED_SIZE 564u
 #define TEST_EIS2_SUCCESSOR_ID_OFFSET 556u
 
-/* Full 412-byte EIS1 payload from the committed v1 scalar writer. */
+/* Full 412-byte EIS1 v1 payload at execution ABI 18. */
 static const char eis1GoldenPayload[] =
     "\x45\x49\x53\x31\x01\x00\x9c\x01\x01\x00\x00\x00\x01\x00\x00\x01"
-    "\x99\x99\x88\x88\x77\x77\x66\x66\x06\x00\x00\x00\x11\x00\x00\x00"
+    "\x99\x99\x88\x88\x77\x77\x66\x66\x06\x00\x00\x00\x12\x00\x00\x00"
     "\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
     "\x01\x00\x00\x01\x00\x00\x00\x00\x66\x66\x55\x55\x44\x44\x33\x33"
     "\x77\x77\x66\x66\x55\x55\x44\x44\x99\x99\x88\x88\x77\x77\x66\x66"
     "\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x03\x00\x00\x03"
     "\x66\x66\x55\x55\x44\x44\x33\x33\x01\x00\x00\x00\x00\x00\x00\x00"
-    "\x06\x00\x00\x00\x11\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
+    "\x06\x00\x00\x00\x12\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
     "\x01\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x03\x00\x00\x00\x00"
     "\x66\x66\x55\x55\x44\x44\x33\x33\x77\x77\x66\x66\x55\x55\x44\x44"
     "\x99\x99\x88\x88\x77\x77\x66\x66\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -362,7 +362,7 @@ static void test_scalar_codec(SZrExecIrModule *module) {
                  encoded[2] == 'S' && encoded[3] == '1', "EIS1 payload magic");
     require_true(sizeof(eis1GoldenPayload) == sizeof(encoded) + 1u &&
                  memcmp(encoded, eis1GoldenPayload, sizeof(encoded)) == 0,
-                 "EIS1 v1 payload remains byte-for-byte stable");
+                 "EIS1 v1 ABI 18 payload is byte-for-byte stable");
     ZrCore_ExecIr_ModuleInit(&decoded);
     require_true(ZrCore_ArtifactExecIrScalar_Read(encoded, sizeof(encoded),
                  &decoded, &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK,
@@ -716,18 +716,18 @@ static void read_phase(const char *path) {
     require_true(ZrCore_ArtifactExecIr_Read(bundle.data, bundle.byteLength,
                                            &nested, NULL) == ZR_ARTIFACT_EXEC_IR_OK,
                  "nested document validates");
-    require_true(nested.abiVersion == 17u && nested.sectionCount == 1u,
+    require_true(nested.abiVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION && nested.sectionCount == 1u,
                  "nested ABI and section count");
     require_true(ZrCore_ArtifactExecIr_FindSection(&nested,
                  ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR, &payload, NULL) ==
                  ZR_ARTIFACT_EXEC_IR_OK, "find canonical graph payload");
 
     memcpy(mutated, bytes, length);
-    put16(mutated + bundleOffset + 8u, 16u);
+    put16(mutated + bundleOffset + 8u, 17u);
     diagnostic = require_rejected(mutated, length,
                                   ZR_ARTIFACT_STATUS_UNSUPPORTED_VERSION);
-    require_true(diagnostic.expectedVersion == 17u &&
-                 diagnostic.actualVersion == 16u,
+    require_true(diagnostic.expectedVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION &&
+                 diagnostic.actualVersion == 17u,
                  "old nested ABI diagnostic");
     memcpy(mutated, bytes, length);
     put16(mutated + bundleOffset + 10u, 1u);

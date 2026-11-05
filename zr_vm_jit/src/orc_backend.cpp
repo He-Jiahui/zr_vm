@@ -315,7 +315,7 @@ EZrJitHostStatus fail_jit(SZrJitHostDiagnostic *diagnostic,
  * 状态当前回落到 INVALID_STATE，并仍保留 coreStatus。
  *
  * ## Constraints and lifecycle
- * 不调用 core、不修改 manager。TODO: ABI_MISMATCH/LAYOUT_MISMATCH 当前落到
+ * 不调用 core、不修改 manager。TODO: LAYOUT_MISMATCH 当前落到
  * INVALID_STATE；需核对 Register / ValidateCompileRequest 的可达输入及稳定诊断分类，
  * 再决定是否增加 facade 状态映射。
  *
@@ -349,6 +349,7 @@ EZrJitHostStatus map_core_status(EZrHostJitStatus status,
             mapped = ZR_JIT_HOST_STATUS_INVALID_ARGUMENT;
             break;
         case ZR_HOST_JIT_STATUS_SCHEMA_MISMATCH:
+        case ZR_HOST_JIT_STATUS_ABI_MISMATCH:
             mapped = ZR_JIT_HOST_STATUS_SCHEMA_MISMATCH;
             break;
         case ZR_HOST_JIT_STATUS_TARGET_UNSUPPORTED:

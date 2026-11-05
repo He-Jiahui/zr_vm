@@ -285,6 +285,10 @@ static void global_state_register_prototype_method(SZrState *state,
         return;
     }
 
+    /* Built-in prototype methods participate in the optional receiver ABI. */
+    ZR_CAST_NATIVE_CLOSURE(state, ZR_CAST_RAW_OBJECT_AS_SUPER(callable))->nativeBindingUsesReceiver =
+            ZR_NATIVE_BINDING_RECEIVER_FRAME;
+
     ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
     descriptor.name = memberNameString;
     descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;

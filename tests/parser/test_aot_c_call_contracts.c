@@ -142,7 +142,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "ZR_SEMIR_OPCODE_DYN_TAIL_CALL",
             "execIrInstruction != ZR_NULL ? execIrInstruction->deoptId : ZR_RUNTIME_SEMIR_DEOPT_ID_NONE",
             "case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):",
-            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);",
+            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);",
             "case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):",
             "ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL",
             "case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):",
@@ -150,7 +150,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "case ZR_INSTRUCTION_ENUM(DYN_CALL):",
             "semirDynamicCall ||",
             "instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||",
-            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1, deoptId);",
+            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1, deoptId, ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE);",
     };
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(struct SZrState *state,",

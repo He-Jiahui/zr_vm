@@ -45,6 +45,31 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
         return ZR_FALSE;
     }
 
+    {
+        const SZrFunctionCallSiteCacheEntry *optional =
+                ZrCore_Function_FindOptionalReceiverCallSite(context->entry->function, instruction->instructionIndex);
+        if (optional != ZR_NULL) {
+            backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                    context->entry->function, instruction->destinationSlot, ZR_AOT_INVALID_FUNCTION_INDEX);
+            backend_aot_llvm_make_instruction_label(finishOkLabel, sizeof(finishOkLabel),
+                    context->entry->flatIndex, instruction->instructionIndex, "optional_receiver_ok");
+            snprintf(argsBuffer, sizeof(argsBuffer),
+                    "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, ptr null",
+                    (unsigned)instruction->destinationSlot, (unsigned)instruction->operandA1,
+                    (unsigned)(optional - context->entry->function->callSiteCaches));
+            backend_aot_llvm_write_guarded_call_text(context->file, context->tempCounter,
+                    "ZrLibrary_AotRuntime_CallOptionalReceiver", argsBuffer, finishOkLabel, context->failLabel);
+            fprintf(context->file, "%s:\n", finishOkLabel);
+            if (optional->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_MEMBER_TAIL_CALL) {
+                backend_aot_llvm_write_return_call(context->file, context->tempCounter,
+                        instruction->destinationSlot, context->publishExports);
+            } else {
+                fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
+            }
+            return ZR_TRUE;
+        }
+    }
+
     if (instruction->opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)) {
         TZrChar spreadOkLabel[96];
 

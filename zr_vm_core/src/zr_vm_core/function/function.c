@@ -5638,3 +5638,33 @@ TZrBool ZrCore_Function_VerifyInstructions(const SZrFunction *f) {
 TZrBool function_verify_guarded_instructions(const SZrFunction *f) {
     return function_verify_instructions(f, ZR_TRUE);
 }
+
+const SZrFunctionCallSiteCacheEntry *ZrCore_Function_FindOptionalReceiverCallSite(
+        const SZrFunction *function, TZrUInt32 instructionIndex) {
+    if (function == ZR_NULL || function->callSiteCaches == ZR_NULL) return ZR_NULL;
+    for (TZrUInt32 i = 0; i < function->callSiteCacheLength; ++i) {
+        const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[i];
+        if (entry->instructionIndex == instructionIndex &&
+            ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(entry->kind)) return entry;
+    }
+    return ZR_NULL;
+}
+
+TZrStackValuePointer ZrCore_Function_PrepareOptionalReceiverCall(
+        SZrState *state, const SZrFunction *function,
+        const SZrFunctionCallSiteCacheEntry *entry, TZrStackValuePointer callWindow) {
+    SZrString *memberName;
+    if (state == ZR_NULL || function == ZR_NULL || entry == ZR_NULL || callWindow == ZR_NULL)
+        return ZR_NULL;
+    if (!ZR_FUNCTION_CALLSITE_CACHE_HAS_OPTIONAL_RECEIVER(entry->kind)) return callWindow;
+    if (entry->argumentCount == 0u || function->memberEntries == ZR_NULL ||
+        entry->memberEntryIndex >= function->memberEntryLength) return ZR_NULL;
+    memberName = function->memberEntries[entry->memberEntryIndex].symbol;
+    if (memberName == ZR_NULL) return ZR_NULL;
+    if (ZrCore_Object_MemberCallUsesReceiver(state,
+            ZrCore_Stack_GetValueNoProfile(callWindow + 1), memberName,
+            ZrCore_Stack_GetValueNoProfile(callWindow))) return callWindow;
+    /* Advance the callable, rather than moving/duplicating owned arguments. */
+    ZrCore_Stack_CopyValue(state, callWindow + 1, ZrCore_Stack_GetValueNoProfile(callWindow));
+    return callWindow + 1;
+}

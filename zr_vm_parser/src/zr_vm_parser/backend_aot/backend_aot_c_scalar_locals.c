@@ -360,6 +360,8 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_call_with_stack_argume
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
             return ZR_TRUE;
@@ -395,6 +397,11 @@ static TZrBool backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(
     } else if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS) ||
                instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)) {
         return ZR_FALSE;
+    } else if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED) ||
+               instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)) {
+        /* Operand B is a cache index, and dynamic calls have arbitrary arity.
+         * Conservatively materialize later slots, as for KNOWN_VM_MEMBER_CALL. */
+        return slot > instruction->instruction.operand.operand1[0];
     } else if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED) ||
                instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)) {
         functionSlot = instruction->instruction.operand.operand1[0];
@@ -3013,6 +3020,14 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
 
     if (backend_aot_c_scalar_locals_instruction_is_call_result_write(opcode)) {
         TZrUInt32 destinationSlot = instruction->instruction.operandExtra;
+        /* An optional member call can resolve to unrelated callable return
+         * types. A primitive previously stored in this temporary is no proof
+         * of the new result's type. Keep the boxed result authoritative. */
+        if (ZrCore_Function_FindOptionalReceiverCallSite(function, execInstructionIndex) != ZR_NULL) {
+            backend_aot_c_scalar_locals_set_slot(
+                    slotKinds, slotCount, destinationSlot, ZR_AOT_SCALAR_LOCAL_KIND_NONE);
+            return;
+        }
         if (backend_aot_c_scalar_call_result_has_nonprimitive_type(
                     function,
                     backend_aot_c_scalar_locals_resolve_callable_slot_function_before_instruction(
@@ -3194,7 +3209,8 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_bool_value_write
     if (backend_aot_c_scalar_locals_instruction_is_call_result_write(opcode)) {
         EZrAotScalarLocalKind resultKind = ZR_AOT_SCALAR_LOCAL_KIND_NONE;
 
-        if (backend_aot_c_scalar_locals_instruction_can_write_typed_direct_call_result(opcode)) {
+        if (ZrCore_Function_FindOptionalReceiverCallSite(function, execInstructionIndex) == ZR_NULL &&
+            backend_aot_c_scalar_locals_instruction_can_write_typed_direct_call_result(opcode)) {
             resultKind = backend_aot_c_scalar_locals_kind_from_call_result_callee(
                     function, execInstructionIndex);
         }
