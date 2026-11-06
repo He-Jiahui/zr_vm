@@ -107,6 +107,80 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
+/* hasLexError also carries allocation/ownership failures. Only the existing text
+ * scanner's explicit user-error messages are evidence of invalid source text.
+ * Unknown messages fail closed; keep this list aligned with lexer.c SyntaxError sites. */
+static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
+    static const TZrChar *const messages[] = {
+        "Hexadecimal literal requires a digit",
+        "Numeric exponent requires a digit",
+        "Floating-point literal is out of range",
+        "Invalid floating-point literal",
+        "Invalid digit in integer literal",
+        "Integer literal is out of range",
+        "invalid unicode escape sequence",
+        "invalid hex escape sequence",
+        "unfinished string",
+        "unfinished template string",
+        "unfinished character literal"
+    };
+
+    if (!token->hasLexError || token->lexErrorMessage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < sizeof(messages) / sizeof(messages[0]); index++) {
+        if (strcmp(token->lexErrorMessage, messages[index]) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/** @brief 首 token 的明确用户文本错误发生在回调安装前；以该 token 范围记录为语法诊断。 */
+static TZrBool collect_initial_lex_diagnostic(SZrState *state,
+                                              SZrFileVersion *fileVersion,
+                                              const SZrParserState *parserState,
+                                              SZrString *uri) {
+    const SZrLexState *lexer;
+    SZrFilePosition start;
+    SZrFilePosition end;
+    SZrDiagnostic *diagnostic;
+
+    if (state == ZR_NULL || fileVersion == ZR_NULL || parserState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    lexer = parserState->lexer;
+    /* 分配、所有权与源证据失败不是用户文本错误，保持拒绝提交。 */
+    if (lexer == ZR_NULL || lexer->buffer == ZR_NULL || lexer->hasSourceEvidenceError ||
+        !initial_lex_error_is_user_text(&lexer->t) || parserState->errorMessage == ZR_NULL ||
+        !fileVersion->parserDiagnostics.isValid || fileVersion->parserDiagnostics.head == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrParser_TokenSpan_IsValid(lexer->t.span)) {
+        start = ZrParser_FilePosition_Create(lexer->t.span.startOffset, lexer->t.span.startLine,
+                                             lexer->t.span.startColumn);
+        end = ZrParser_FilePosition_Create(lexer->t.span.endOffset, lexer->t.span.endLine,
+                                           lexer->t.span.endColumn);
+    } else {
+        start = ZrParser_FilePosition_Create(0, 1, 1);
+        end = start;
+    }
+    diagnostic = ZrLanguageServer_Diagnostic_New(state,
+                                                 ZR_DIAGNOSTIC_ERROR,
+                                                 ZrParser_FileRange_Create(start, end, uri),
+                                                 parserState->errorMessage,
+                                                 "parser_syntax_error");
+    if (diagnostic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (diagnostic->code == ZR_NULL ||
+        !ZrCore_Array_TryPush(state, &fileVersion->parserDiagnostics, &diagnostic)) {
+        ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 /** @brief 为文档版本创建自有文本块；快照和历史版本依赖它独立于更新存活。 */
 static SZrFileVersionContentBlock *content_block_new(SZrState *state,
                                                      const TZrChar *content,
@@ -677,8 +751,8 @@ static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
 /**
  * @brief 为指定 URI 更新解析结果：优先 token 复用，再尝试单声明替换，最后完整解析。
  * @note 语法错误可保留上一棵有效 AST，并以 usesFallbackAst 告知编辑器查询不能当成当前结果。
- * BUG: 完整解析在 State_Init 预读后才设置 suppressErrorOutput；未终止字符串可直接写 stdout，
- *      stdio 文档更新因此可能破坏 JSON-RPC 帧流。
+ * @note State_Init 在回调安装前预读首 token；其扫描期词法错误由本层补入当前诊断并提交，
+ *       资源、所有权与源证据失败仍返回 FALSE。
  */
 TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
                                  SZrIncrementalParser *parser,
@@ -806,19 +880,22 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         clear_parser_diagnostics(state, fileVersion);
         ZrParser_State_Init(&parserState, state, snapshot.content, snapshot.contentLength, sourceName);
         if (parserState.hasError) {
-            ZrParser_State_Free(&parserState);
-            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-            return ZR_FALSE;
+            if (!collect_initial_lex_diagnostic(state, fileVersion, &parserState, sourceName)) {
+                ZrParser_State_Free(&parserState);
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+                return ZR_FALSE;
+            }
+            parsedAst = ZR_NULL;
+        } else {
+            collector.state = state;
+            collector.fileVersion = fileVersion;
+            collector.suppressNextLegacyDiagnostic = ZR_FALSE;
+            parserState.errorCallback = collect_parser_diagnostic;
+            parserState.structuredErrorCallback = collect_structured_parser_diagnostic;
+            parserState.errorUserData = &collector;
+            parserState.suppressErrorOutput = ZR_TRUE;
+            parsedAst = ZrParser_ParseWithState(&parserState);
         }
-
-        collector.state = state;
-        collector.fileVersion = fileVersion;
-        collector.suppressNextLegacyDiagnostic = ZR_FALSE;
-        parserState.errorCallback = collect_parser_diagnostic;
-        parserState.structuredErrorCallback = collect_structured_parser_diagnostic;
-        parserState.errorUserData = &collector;
-        parserState.suppressErrorOutput = ZR_TRUE;
-        parsedAst = ZrParser_ParseWithState(&parserState);
         ZrParser_State_Free(&parserState);
 
         /* 交出旧 AST 仅用于调用方的语义快照迁移，否则由本层释放。 */
