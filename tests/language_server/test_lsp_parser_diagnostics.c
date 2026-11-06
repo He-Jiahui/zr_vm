@@ -160,6 +160,128 @@ static TZrBool run_parser_diagnostic_case(SZrState *state,
     return ZR_TRUE;
 }
 
+/* Match all fields on the same diagnostic, and release each query's owned results. */
+static TZrBool first_token_diagnostics_match(SZrState *state,
+                                             SZrLspContext *context,
+                                             SZrString *uri,
+                                             TZrBool expectError) {
+    SZrArray diagnostics = {0};
+    TZrBool matches = ZR_FALSE;
+
+    if (ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        if (!expectError) {
+            matches = diagnostics.length == 0;
+        } else if (diagnostics.length == 1) {
+            SZrLspDiagnostic **entry = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, 0);
+            if (entry != ZR_NULL && *entry != ZR_NULL) {
+                SZrLspDiagnostic *diagnostic = *entry;
+                const TZrChar *code = test_string_text(diagnostic->code);
+                const TZrChar *message = test_string_text(diagnostic->message);
+                matches = diagnostic->severity == 1 &&
+                          code != ZR_NULL && strcmp(code, "parser_syntax_error") == 0 &&
+                          message != ZR_NULL && strcmp(message, "unfinished string") == 0 &&
+                          diagnostic->range.start.line == 0 && diagnostic->range.start.character == 0 &&
+                          diagnostic->range.end.line == 0 && diagnostic->range.end.character == 13;
+            }
+        }
+    }
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    return matches;
+}
+
+static void test_lsp_first_token_lex_diagnostic_and_repair(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token Lex Diagnostic and Repair";
+    const TZrChar *broken = "\"unterminated";
+    const TZrChar *valid = "var value: int = 1;";
+    const TZrChar *semanticError = "var value: int = missing;";
+    const TZrChar *failure = ZR_NULL;
+    SZrLspContext *context;
+    SZrString *freshUri;
+    SZrString *editUri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *previousAst;
+    SZrArray diagnostics = {0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    freshUri = ZrCore_String_Create(state, "file:///first_token_fresh.zr", strlen("file:///first_token_fresh.zr"));
+    editUri = ZrCore_String_Create(state, "file:///first_token_edit.zr", strlen("file:///first_token_edit.zr"));
+    if (context == ZR_NULL || freshUri == ZR_NULL || editUri == ZR_NULL) {
+        failure = "failed to create first-token diagnostic context or URIs";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, freshUri, broken, strlen(broken), 1) ||
+        !first_token_diagnostics_match(state, context, freshUri, ZR_TRUE)) {
+        failure = "fresh unfinished string must be acknowledged with its error code, message, and full token range";
+        goto cleanup;
+    }
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, freshUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast != ZR_NULL || fileVersion->usesFallbackAst) {
+        failure = "fresh lex error must not invent a fallback AST";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, freshUri, valid, strlen(valid), 2) ||
+        !first_token_diagnostics_match(state, context, freshUri, ZR_FALSE)) {
+        failure = "repairing a fresh unfinished string must clear its diagnostic";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 1) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE)) {
+        failure = "valid starting document must parse without diagnostics";
+        goto cleanup;
+    }
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, editUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || fileVersion->usesFallbackAst) {
+        failure = "valid starting document must own a current AST";
+        goto cleanup;
+    }
+    previousAst = fileVersion->ast;
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, broken, strlen(broken), 2) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_TRUE) ||
+        !fileVersion->usesFallbackAst || fileVersion->ast != previousAst) {
+        failure = "valid-to-broken edit must publish the current lex error and retain the previous AST as fallback";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 3) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE) ||
+        fileVersion->usesFallbackAst || fileVersion->ast == ZR_NULL) {
+        failure = "repaired edit must clear the lex diagnostic and replace the fallback with a current AST";
+        goto cleanup;
+    }
+
+    /* A retained analyzer must not publish diagnostics from the previous text. */
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, semanticError, strlen(semanticError), 4) ||
+        !ZrLanguageServer_Lsp_GetDiagnostics(state, context, editUri, &diagnostics) ||
+        diagnostics.length == 0 || fileVersion->usesFallbackAst || fileVersion->parserDiagnostics.length != 0) {
+        failure = "semantic-error control must have diagnostics and a current syntactically valid AST";
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, broken, strlen(broken), 5) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_TRUE) || !fileVersion->usesFallbackAst) {
+        failure = "fallback must publish only the current lex error, without stale semantic diagnostics";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 6) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE) || fileVersion->usesFallbackAst) {
+        failure = "final repair must clear both syntax and stale semantic diagnostics";
+    }
+
+cleanup:
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
 static void test_lsp_missing_index_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Index Close Parser Diagnostic";
@@ -888,6 +1010,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    test_lsp_first_token_lex_diagnostic_and_repair(state);
+    TEST_DIVIDER();
     test_lsp_missing_index_close_parser_diagnostic(state);
     TEST_DIVIDER();
     test_lsp_missing_member_name_parser_diagnostic(state);
