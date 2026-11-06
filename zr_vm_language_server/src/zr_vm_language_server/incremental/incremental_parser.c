@@ -107,7 +107,36 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
-/** @brief 首 token 的扫描期词法错误发生在回调安装前；以该 token 范围记录为语法诊断。 */
+/* hasLexError also carries allocation/ownership failures. Only the existing text
+ * scanner's explicit user-error messages are evidence of invalid source text.
+ * Unknown messages fail closed; keep this list aligned with lexer.c SyntaxError sites. */
+static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
+    static const TZrChar *const messages[] = {
+        "Hexadecimal literal requires a digit",
+        "Numeric exponent requires a digit",
+        "Floating-point literal is out of range",
+        "Invalid floating-point literal",
+        "Invalid digit in integer literal",
+        "Integer literal is out of range",
+        "invalid unicode escape sequence",
+        "invalid hex escape sequence",
+        "unfinished string",
+        "unfinished template string",
+        "unfinished character literal"
+    };
+
+    if (!token->hasLexError || token->lexErrorMessage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < sizeof(messages) / sizeof(messages[0]); index++) {
+        if (strcmp(token->lexErrorMessage, messages[index]) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/** @brief 首 token 的明确用户文本错误发生在回调安装前；以该 token 范围记录为语法诊断。 */
 static TZrBool collect_initial_lex_diagnostic(SZrState *state,
                                               SZrFileVersion *fileVersion,
                                               const SZrParserState *parserState,
@@ -123,7 +152,7 @@ static TZrBool collect_initial_lex_diagnostic(SZrState *state,
     lexer = parserState->lexer;
     /* 分配、所有权与源证据失败不是用户文本错误，保持拒绝提交。 */
     if (lexer == ZR_NULL || lexer->buffer == ZR_NULL || lexer->hasSourceEvidenceError ||
-        !lexer->t.hasLexError || parserState->errorMessage == ZR_NULL ||
+        !initial_lex_error_is_user_text(&lexer->t) || parserState->errorMessage == ZR_NULL ||
         !fileVersion->parserDiagnostics.isValid || fileVersion->parserDiagnostics.head == ZR_NULL) {
         return ZR_FALSE;
     }
