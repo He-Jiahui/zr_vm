@@ -824,10 +824,10 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     }
 
     /* 只有声明级重解析证明未触及节点位置稳定，才能原位替换并保留其余 AST。
-     * BUG: 此门槛未排除 usesFallbackAst；V1 有效、V2 等长语法错保留 V1 AST、V3
-     *      等长改另一声明时，局部成功可把 V1 当成 V3 并清除 V2 的错误诊断。 */
+     * 回退 AST 属于上一份合法文本，不能作为当前文本的局部替换基准。 */
     if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
         fileVersion->ast != ZR_NULL &&
+        !fileVersion->usesFallbackAst &&
         fileVersion->hasIncrementalInfo) {
         SZrFileVersionContentSnapshot previousSnapshot = {0};
 

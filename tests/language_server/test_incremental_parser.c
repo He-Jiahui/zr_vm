@@ -578,6 +578,86 @@ static void test_incremental_parser_honors_declaration_retention_boundary(
     TEST_PASS(timer, summary);
 }
 
+/* 回退 AST 仍是上一份合法文本。等长语法错误后再改另一个声明，不能把旧树局部改写成新文本。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_fallback_ast(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Fallback AST";
+    const TZrChar *valid =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *broken =
+            "fn first(): int { return 1  }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 1  }\n"
+            "fn second(): int { return 9; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *initialRoot;
+    SZrAstNode *initialSecond;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-fallback-ast.zr",
+            strlen("file:///declaration-reparse-fallback-ast.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        strlen(valid) != strlen(broken) || strlen(broken) != strlen(edited) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, valid, strlen(valid), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the valid two-declaration baseline");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    initialRoot = fileVersion != ZR_NULL ? fileVersion->ast : ZR_NULL;
+    if (fileVersion == ZR_NULL || fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length != 0U ||
+        initialRoot == ZR_NULL || initialRoot->type != ZR_AST_SCRIPT ||
+        initialRoot->data.script.statements == ZR_NULL ||
+        initialRoot->data.script.statements->count != 2U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Valid baseline must own a current two-declaration AST");
+        return;
+    }
+    initialSecond = initialRoot->data.script.statements->nodes[1];
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, broken, strlen(broken), 2U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->ast != initialRoot || !fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Same-length syntax error must keep the previous AST as fallback and publish a diagnostic");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 3U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE ||
+        !fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length == 0U ||
+        fileVersion->ast != initialRoot ||
+        initialRoot->data.script.statements->nodes[1] != initialSecond) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "Editing another declaration must full-reparse and keep the syntax error on the fallback AST");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
 /* 编辑改变声明范围时应完整重建，避免复用节点携带过期源码偏移。 */
 static void test_incremental_parser_falls_back_for_unstable_declaration_range(
         SZrState *state) {
@@ -911,6 +991,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_incremental_parser_honors_declaration_retention_boundary(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reparse_declaration_over_fallback_ast(state);
     TEST_DIVIDER();
 
     test_incremental_parser_falls_back_for_unstable_declaration_range(state);
