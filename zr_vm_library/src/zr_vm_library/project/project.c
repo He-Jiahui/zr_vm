@@ -2617,8 +2617,7 @@ static EZrThreadStatus library_project_execute_function(SZrState *state, SZrFunc
     return ZR_THREAD_STATUS_FINE;
 }
 
-/* CLI 与回归测试从此入口编译项目 entry、准备模块元数据并执行，返回线程状态和结果。
- * BUG: Module_Create 失败时仍进入 execute_function，后者先把失败线程状态重置为 FINE；分配故障可能被吞掉且函数缺少项目模块上下文。 */
+/* CLI 与回归测试从此入口编译项目 entry、准备模块元数据并执行，返回线程状态和结果。 */
 EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     if (state == ZR_NULL || state->global == ZR_NULL || result == ZR_NULL) {
         return ZR_THREAD_STATUS_RUNTIME_ERROR;
@@ -2677,7 +2676,17 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
     SZrObjectModule *projectModule = ZrCore_Module_Create(state);
     zr_library_project_trace("project module=%p", (void *)projectModule);
-    if (projectModule != ZR_NULL) {
+    if (projectModule == ZR_NULL) {
+        if (ignoredFunction) {
+            ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+        }
+        ZrCore_Function_ReleaseHostRoot(state, function);
+        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+            state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
+        }
+        return library_project_normalize_failure(state, state->threadStatus);
+    }
+    {
         TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, sourceName);
         ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
         ZrCore_Reflection_AttachModuleRuntimeMetadata(state, projectModule, function);
