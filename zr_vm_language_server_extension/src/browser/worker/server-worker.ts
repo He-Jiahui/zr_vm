@@ -254,24 +254,50 @@ connection.onRenameRequest(async ({ textDocument, position, newName }) => {
     return buildWorkspaceEdit(locations, newName);
 });
 
-connection.onRequest('textDocument/formatting', async ({ textDocument }: { textDocument: { uri: string } }) => {
-    const response = await queryDocument(textDocument.uri, () => bridge.getFormatting(textDocument.uri));
+function formattingOptionArguments(options?: { tabSize?: number; insertSpaces?: boolean }): [number, number] {
+    const tabSize = typeof options?.tabSize === 'number' &&
+        Number.isInteger(options.tabSize) &&
+        options.tabSize >= 1 &&
+        options.tabSize <= 32
+        ? options.tabSize
+        : 4;
+    return [tabSize, options?.insertSpaces === false ? 0 : 1];
+}
+
+connection.onRequest('textDocument/formatting', async ({
+    textDocument,
+    options,
+}: {
+    textDocument: { uri: string };
+    options?: { tabSize?: number; insertSpaces?: boolean };
+}) => {
+    const [tabSize, insertSpaces] = formattingOptionArguments(options);
+    const response = await queryDocument(textDocument.uri, () => bridge.getFormatting(
+        textDocument.uri,
+        tabSize,
+        insertSpaces !== 0,
+    ));
     return responseData<unknown[]>(response, []);
 });
 
 connection.onRequest('textDocument/rangeFormatting', async ({
     textDocument,
     range,
+    options,
 }: {
     textDocument: { uri: string };
     range: Range;
+    options?: { tabSize?: number; insertSpaces?: boolean };
 }) => {
+    const [tabSize, insertSpaces] = formattingOptionArguments(options);
     const response = await queryDocument(textDocument.uri, () => bridge.getRangeFormatting(
         textDocument.uri,
         range.start.line,
         range.start.character,
         range.end.line,
         range.end.character,
+        tabSize,
+        insertSpaces !== 0,
     ));
     return responseData<unknown[]>(response, []);
 });

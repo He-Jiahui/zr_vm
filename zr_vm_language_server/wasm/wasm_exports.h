@@ -130,8 +130,9 @@ const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriL
 const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
                                int line, int character);
 
-/** @brief 为完整文档生成文本编辑；结果在序列化后由 native 释放。 */
-const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen);
+/** @brief 为完整文档生成文本编辑；tabSize 与 insertSpaces 对应 FormattingOptions。 */
+const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen,
+                               int tabSize, int insertSpaces);
 
 /** @brief 为 LSP 范围生成文本编辑；行列边界遵循 UTF-16 位置约定。 */
 const char* wasm_ZrLspGetRangeFormatting(void* context,
@@ -140,7 +141,9 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
                                     int startLine,
                                     int startCharacter,
                                     int endLine,
-                                    int endCharacter);
+                                    int endCharacter,
+                                    int tabSize,
+                                    int insertSpaces);
 
 /** @brief 将指定范围的 native 操作及其编辑集投影成 LSP CodeAction。 */
 const char* wasm_ZrLspGetCodeActions(void* context,

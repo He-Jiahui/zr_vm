@@ -414,15 +414,26 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
         return ZR_TRUE;
     }
 
-    /* 排序仅改变顶部导入块，保留首个同名别名的语义选择。 */
+    /* 排序仅改变顶部导入块，保留首个同名别名的语义选择，并沿用块内已有的 CRLF。 */
     qsort(imports, importCount, sizeof(SZrLspImportLine), import_action_compare_import_lines);
-    for (TZrSize index = 0; index < importCount; index++) {
-        if (!lsp_text_builder_append_range(&builder, imports[index].text, imports[index].length) ||
-            !lsp_text_builder_append_char(&builder, '\n')) {
-            import_action_free_import_lines(imports, importCount);
-            free(builder.data);
-            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-            return ZR_FALSE;
+    {
+        TZrBool useCrlf = ZR_FALSE;
+        for (TZrSize index = importBlockStart; index + 1 < importBlockEnd; index++) {
+            if (content[index] == '\r' && content[index + 1] == '\n') {
+                useCrlf = ZR_TRUE;
+                break;
+            }
+        }
+        for (TZrSize index = 0; index < importCount; index++) {
+            if (!lsp_text_builder_append_range(&builder, imports[index].text, imports[index].length) ||
+                (useCrlf
+                     ? !lsp_text_builder_append_range(&builder, "\r\n", 2)
+                     : !lsp_text_builder_append_char(&builder, '\n'))) {
+                import_action_free_import_lines(imports, importCount);
+                free(builder.data);
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+                return ZR_FALSE;
+            }
         }
     }
 
@@ -434,7 +445,6 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
         return ZR_TRUE;
     }
 
-    /* BUG: 无终止换行的非 ASCII 导入行使共享 helper 按字节数生成末列，替换范围可能越界。 */
     editRange = lsp_editor_range_from_offsets(content, contentLength, importBlockStart, importBlockEnd);
     if (!lsp_editor_append_text_edit(state, edits, editRange, builder.data, builder.length)) {
         import_action_free_import_lines(imports, importCount);
@@ -508,7 +518,6 @@ TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
                                                             aliasLength,
                                                             importBlockStart,
                                                             importBlockEnd)) {
-            /* BUG: 无终止换行的非 ASCII 导入行同样产生按字节计数的删除末列。 */
             SZrLspRange deleteRange = lsp_editor_range_from_offsets(content, contentLength, lineStart, deleteEnd);
             if (!lsp_editor_append_text_edit(state, edits, deleteRange, "", 0)) {
                 ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);

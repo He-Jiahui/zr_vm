@@ -25,6 +25,15 @@ typedef struct SZrStructuralFoldingScanData {
     TZrSize stackLength;
 } SZrStructuralFoldingScanData;
 
+/* 折叠列与其它编辑器范围一样按 UTF-16 计，trim 的字节差不能直接当 character。 */
+static TZrInt32 lsp_folding_utf16_column(const TZrChar *content,
+                                        TZrSize contentLength,
+                                        TZrSize offset) {
+    return ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                       contentLength,
+                                                                       offset).character;
+}
+
 /* 只有跨行段才交给 stdio/WASM 发布；结果数组的 range 元素由 FreeFoldingRanges 归还。 */
 static TZrBool lsp_editor_append_folding_range(SZrState *state,
                                                SZrArray *result,
@@ -178,7 +187,6 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
             lineEnd++;
         }
 
-        /* BUG: trim 的字节偏移直接成为 LSP character；非 ASCII 前缀或内容使默认 UTF-16 客户端得到错误列。 */
         matches = hasLine && matcher != ZR_NULL &&
                   lsp_editor_trim_line(content, lineStart, lineEnd, &trim) &&
                   matcher(content, &trim);
@@ -186,10 +194,10 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
             if (!inBlock) {
                 inBlock = ZR_TRUE;
                 blockStartLine = line;
-                blockStartCharacter = (TZrInt32)(trim.start - lineStart);
+                blockStartCharacter = lsp_folding_utf16_column(content, contentLength, trim.start);
             }
             lastLine = line;
-            lastEndCharacter = (TZrInt32)(trim.end - lineStart);
+            lastEndCharacter = lsp_folding_utf16_column(content, contentLength, trim.end);
         } else if (inBlock) {
             if (!lsp_editor_append_folding_range(state,
                                                  result,
@@ -264,7 +272,7 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
             if (lsp_editor_is_region_start_marker(content, &trim) &&
                 stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
                 stack[stackLength].line = line;
-                stack[stackLength].character = (TZrInt32)(trim.start - lineStart);
+                stack[stackLength].character = lsp_folding_utf16_column(content, contentLength, trim.start);
                 stackLength++;
             } else if (lsp_editor_is_region_end_marker(content, &trim) && stackLength > 0) {
                 SZrBraceStart start = stack[--stackLength];
@@ -273,7 +281,7 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
                                                      start.line,
                                                      start.character,
                                                      line,
-                                                     (TZrInt32)(trim.end - lineStart),
+                                                     lsp_folding_utf16_column(content, contentLength, trim.end),
                                                      ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
                     return ZR_FALSE;
                 }
@@ -301,7 +309,6 @@ static TZrBool lsp_editor_append_structural_folding_ranges_callback(TZrChar valu
         return ZR_FALSE;
     }
 
-    /* BUG: position_from_offset 按 UTF-8 字节递增列号，WASM 与默认 UTF-16 的 stdio 会发布错误列。 */
     position = lsp_editor_position_from_offset(data->content, data->contentLength, offset);
     if (value == '{') {
         /* BUG: 超出第 32 层的 { 被忽略，其 } 却会弹出先前起点，破坏深嵌套折叠配对。 */

@@ -162,6 +162,31 @@ static const TZrChar *first_text_edit_text(SZrArray *edits) {
     return editPtr != ZR_NULL && *editPtr != ZR_NULL ? test_string_text((*editPtr)->newText) : ZR_NULL;
 }
 
+static SZrLspTextEdit *first_text_edit(SZrArray *edits) {
+    SZrLspTextEdit **editPtr;
+
+    if (edits == ZR_NULL || !edits->isValid || edits->length == 0) {
+        return ZR_NULL;
+    }
+    editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(edits, 0);
+    return editPtr != ZR_NULL ? *editPtr : ZR_NULL;
+}
+
+/* CRLF 文档里的 \\n 必须带着前面的 \\r；单独的 LF 说明换行被重写了。 */
+static TZrBool text_contains_bare_lf(const TZrChar *text) {
+    const TZrChar *cursor;
+
+    if (text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (cursor = text; *cursor != '\0'; cursor++) {
+        if (*cursor == '\n' && (cursor == text || cursor[-1] != '\r')) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static void test_lsp_document_formatting_returns_single_document_edit(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document formatting returns a full-document edit";
@@ -179,7 +204,7 @@ static void test_lsp_document_formatting_returns_single_document_edit(SZrState *
     TEST_START(summary);
     context = test_open_document(state, "file:///tmp/zr_lsp_format.zr", content, &uri);
     if (context == ZR_NULL ||
-        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits) ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &edits) ||
         edits.length != 1 ||
         !text_edit_contains(&edits, "    pub fn run") ||
         !text_edit_contains(&edits, "        return local;")) {
@@ -213,8 +238,8 @@ static void test_lsp_formatting_skips_noop_edits(SZrState *state, int *failures)
     TEST_START(summary);
     context = test_open_document(state, "file:///tmp/zr_lsp_format_noop.zr", content, &uri);
     if (context == ZR_NULL ||
-        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &documentEdits) ||
-        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, &rangeEdits)) {
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &documentEdits) ||
+        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, ZR_NULL, &rangeEdits)) {
         (*failures)++;
         TEST_FAIL(timer, summary, "formatting failed for already formatted content");
     } else if (documentEdits.length != 0 || rangeEdits.length != 0) {
@@ -382,7 +407,7 @@ static void test_lsp_formatting_ignores_non_code_braces(SZrState *state, int *fa
     TEST_START(summary);
     context = test_open_document(state, "file:///tmp/zr_lsp_format_non_code_braces.zr", content, &uri);
     formatted = context != ZR_NULL &&
-                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits)
+                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &edits)
                     ? first_text_edit_text(&edits)
                     : ZR_NULL;
     if (formatted == ZR_NULL || strcmp(formatted, expected) != 0) {
@@ -2100,8 +2125,8 @@ static void test_lsp_advanced_editor_features_return_empty_for_empty_document(SZ
     TEST_START(summary);
     context = test_open_document(state, "file:///tmp/zr_lsp_empty_advanced_features.zr", content, &uri);
     if (context == ZR_NULL ||
-        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &formatting) ||
-        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, emptyRange, &rangeFormatting) ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &formatting) ||
+        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, emptyRange, ZR_NULL, &rangeFormatting) ||
         !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, emptyRange, &codeActions) ||
         !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &foldingRanges) ||
         !ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, positions, 0, &selectionRanges) ||
@@ -2167,8 +2192,8 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
         (*failures)++;
         TEST_FAIL(timer, summary, "failed to allocate test context");
     } else {
-        (void)ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &formatting);
-        (void)ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, &rangeFormatting);
+        (void)ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &formatting);
+        (void)ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, ZR_NULL, &rangeFormatting);
         (void)ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &codeActions);
         (void)ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &foldingRanges);
         (void)ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selectionRanges);
@@ -2207,6 +2232,408 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
     }
 }
 
+/* 无尾换行的单行才会把结束列留在同一行；尾随 \\n 会把结束位置重置到下一行 0 列。 */
+static void test_lsp_formatting_reports_utf16_columns(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP formatting reports UTF-16 columns";
+    const TZrChar *cases[][2] = {
+        {"  return 中 ; ", "return 中 ;"},
+        {"  return 😀;", "return 😀;"},
+    };
+    const TZrInt32 expectedEndCharacters[] = {13, 12};
+    TZrSize caseIndex;
+
+    TEST_START(summary);
+    for (caseIndex = 0; caseIndex < sizeof(cases) / sizeof(cases[0]); caseIndex++) {
+        SZrString *uri = ZR_NULL;
+        SZrLspContext *context;
+        SZrArray edits = {0};
+        SZrLspTextEdit *edit;
+        const TZrChar *text;
+        char uriText[64];
+
+        snprintf(uriText, sizeof(uriText), "file:///tmp/zr_lsp_utf16_format_%u.zr", (unsigned)caseIndex);
+        context = test_open_document(state, uriText, cases[caseIndex][0], &uri);
+        if (context == ZR_NULL ||
+            !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &edits)) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "formatting failed for a non-ASCII line");
+            ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+            if (context != ZR_NULL) {
+                ZrLanguageServer_LspContext_Free(state, context);
+            }
+            return;
+        }
+        edit = first_text_edit(&edits);
+        text = edit != ZR_NULL ? test_string_text(edit->newText) : ZR_NULL;
+        if (edits.length != 1 ||
+            edit == ZR_NULL ||
+            edit->range.start.line != 0 ||
+            edit->range.start.character != 0 ||
+            edit->range.end.line != 0 ||
+            edit->range.end.character != expectedEndCharacters[caseIndex] ||
+            text == ZR_NULL ||
+            strcmp(text, cases[caseIndex][1]) != 0) {
+            char detail[192];
+            snprintf(detail,
+                     sizeof(detail),
+                     "UTF-16 format range mismatch: end=%d:%d text=%s",
+                     edit != ZR_NULL ? edit->range.end.line : -1,
+                     edit != ZR_NULL ? edit->range.end.character : -1,
+                     text != ZR_NULL ? text : "<null>");
+            (*failures)++;
+            TEST_FAIL(timer, summary, detail);
+            ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+            ZrLanguageServer_LspContext_Free(state, context);
+            return;
+        }
+        ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_formatting_honors_options_and_crlf(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP formatting honors options and keeps CRLF";
+    const TZrChar *lfSource = "fn main(): int {\nreturn 1;\n}\n";
+    const TZrChar *crlfSource = "fn main(): int {\r\nreturn 1;\r\n}\r\n";
+    const TZrChar *crlfFormatted = "fn main(): int {\r\n    return 1;\r\n}\r\n";
+    const TZrChar *crlfRangeSource = "fn main(): int {\r\nreturn 1;\r\nreturn 2;\r\n}\r\n";
+    SZrLspFormattingOptions twoSpaces = {2, ZR_TRUE};
+    SZrLspFormattingOptions tabs = {4, ZR_FALSE};
+    SZrLspFormattingOptions invalidTab = {0, ZR_TRUE};
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray edits = {0};
+    SZrLspTextEdit *edit;
+    const TZrChar *text;
+    SZrLspRange range = {{1, 0}, {2, 4}};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_options.zr", lfSource, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &twoSpaces, &edits)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "tabSize 2 formatting failed");
+        goto cleanup;
+    }
+    if (!text_edit_contains(&edits, "\n  return 1;\n") ||
+        text_edit_contains(&edits, "\n    return 1;\n")) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "tabSize 2 did not indent with two spaces");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    memset(&edits, 0, sizeof(edits));
+    if (!ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &tabs, &edits) ||
+        !text_edit_contains(&edits, "\n\treturn 1;\n")) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "insertSpaces false did not indent with a tab");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    memset(&edits, 0, sizeof(edits));
+    if (!ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &invalidTab, &edits) ||
+        !text_edit_contains(&edits, "\n    return 1;\n")) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "invalid tabSize did not fall back to four spaces");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    memset(&edits, 0, sizeof(edits));
+    ZrLanguageServer_LspContext_Free(state, context);
+    context = ZR_NULL;
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_crlf_noop.zr", crlfFormatted, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &edits) ||
+        edits.length != 0) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "already indented CRLF document was rewritten");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    memset(&edits, 0, sizeof(edits));
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_crlf.zr", crlfSource, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &edits)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "CRLF formatting failed");
+        goto cleanup;
+    }
+    edit = first_text_edit(&edits);
+    text = edit != ZR_NULL ? test_string_text(edit->newText) : ZR_NULL;
+    if (edits.length != 1 || text == ZR_NULL || strcmp(text, crlfFormatted) != 0 || text_contains_bare_lf(text)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "CRLF formatting rewrote line endings");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    memset(&edits, 0, sizeof(edits));
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_crlf_range.zr", crlfRangeSource, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, ZR_NULL, &edits)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "CRLF range formatting failed");
+        goto cleanup;
+    }
+    edit = first_text_edit(&edits);
+    text = edit != ZR_NULL ? test_string_text(edit->newText) : ZR_NULL;
+    if (edits.length != 1 ||
+        edit == ZR_NULL ||
+        edit->range.start.line != 1 ||
+        edit->range.start.character != 0 ||
+        edit->range.end.line != 3 ||
+        edit->range.end.character != 0 ||
+        text == ZR_NULL ||
+        strcmp(text, "    return 1;\r\n    return 2;\r\n") != 0 ||
+        text_contains_bare_lf(text)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "CRLF range formatting dropped the carriage return");
+        goto cleanup;
+    }
+
+    TEST_PASS(timer, summary);
+cleanup:
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_selection_word_uses_utf16_columns(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP selection word range uses UTF-16 columns";
+    const TZrChar *content = "  中foo\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray selections = {0};
+    SZrLspPosition position = {0, 3};
+    SZrLspSelectionRange **selectionPtr;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_selection.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selections) ||
+        selections.length != 1) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "selection range provider failed on a non-ASCII line");
+    } else {
+        selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
+        if (selectionPtr == ZR_NULL ||
+            *selectionPtr == ZR_NULL ||
+            (*selectionPtr)->range.start.line != 0 ||
+            (*selectionPtr)->range.start.character != 3 ||
+            (*selectionPtr)->range.end.line != 0 ||
+            (*selectionPtr)->range.end.character != 6) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "word range counted UTF-8 bytes instead of UTF-16 columns");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_folding_columns_are_utf16(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP folding columns are UTF-16";
+    const TZrChar *braceContent = "fn 中(): int {\n    return 0;\n}\n";
+    const TZrChar *commentContent = "// 中甲\n// 中乙\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray folds = {0};
+    TZrBool foundBrace = ZR_FALSE;
+    TZrBool foundComment = ZR_FALSE;
+    TZrSize index;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_fold_brace.zr", braceContent, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "folding failed for a non-ASCII brace");
+        goto cleanup;
+    }
+    for (index = 0; index < folds.length; index++) {
+        SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(&folds, index);
+        const TZrChar *kind = rangePtr != ZR_NULL && *rangePtr != ZR_NULL
+                                  ? test_string_text((*rangePtr)->kind)
+                                  : ZR_NULL;
+        if (rangePtr != ZR_NULL &&
+            *rangePtr != ZR_NULL &&
+            kind != ZR_NULL &&
+            strcmp(kind, "region") == 0 &&
+            (*rangePtr)->startLine == 0 &&
+            (*rangePtr)->startCharacter == 12 &&
+            (*rangePtr)->endLine == 2) {
+            foundBrace = ZR_TRUE;
+        }
+    }
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    memset(&folds, 0, sizeof(folds));
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_fold_comment.zr", commentContent, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "comment folding failed");
+        goto cleanup;
+    }
+    for (index = 0; index < folds.length; index++) {
+        SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(&folds, index);
+        const TZrChar *kind = rangePtr != ZR_NULL && *rangePtr != ZR_NULL
+                                  ? test_string_text((*rangePtr)->kind)
+                                  : ZR_NULL;
+        if (rangePtr != ZR_NULL &&
+            *rangePtr != ZR_NULL &&
+            kind != ZR_NULL &&
+            strcmp(kind, "comment") == 0 &&
+            (*rangePtr)->startLine == 0 &&
+            (*rangePtr)->startCharacter == 0 &&
+            (*rangePtr)->endLine == 1 &&
+            (*rangePtr)->endCharacter == 5) {
+            foundComment = ZR_TRUE;
+        }
+    }
+    if (!foundBrace || !foundComment) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "folding columns still follow UTF-8 byte offsets");
+        goto cleanup;
+    }
+    TEST_PASS(timer, summary);
+cleanup:
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_missing_import_range_uses_utf16_columns(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP missing import range uses UTF-16 columns";
+    const TZrChar *content = "let 名称 = math.sin;\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange mathRange = {{0, 9}, {0, 13}};
+    SZrLspRange nameRange = {{0, 4}, {0, 6}};
+    TZrBool foundMath = ZR_FALSE;
+    TZrSize index;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_missing_import.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, nameRange, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for the non-alias range");
+        goto cleanup;
+    }
+    for (index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                   ? test_string_text((*actionPtr)->title)
+                                   : ZR_NULL;
+        if (title != ZR_NULL && strcmp(title, "Import zr.math as math") == 0) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "a range on the CJK binding produced a math import");
+            goto cleanup;
+        }
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    memset(&actions, 0, sizeof(actions));
+    if (!ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, mathRange, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for the math alias range");
+        goto cleanup;
+    }
+    for (index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                   ? test_string_text((*actionPtr)->title)
+                                   : ZR_NULL;
+        if (title != ZR_NULL && strcmp(title, "Import zr.math as math") == 0) {
+            foundMath = ZR_TRUE;
+        }
+    }
+    if (!foundMath) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "UTF-16 columns on math.sin did not select the missing import");
+        goto cleanup;
+    }
+    TEST_PASS(timer, summary);
+cleanup:
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_organize_imports_preserves_crlf(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP organize imports preserves CRLF";
+    const TZrChar *content =
+        "let system = import(\"zr.system\");\r\n"
+        "let math = import(\"zr.math\");\r\n"
+        "\r\n"
+        "fn main(): int { return 0; }\r\n";
+    const TZrChar *expected =
+        "let math = import(\"zr.math\");\r\n"
+        "let system = import(\"zr.system\");\r\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {4, 0}};
+    TZrBool found = ZR_FALSE;
+    TZrSize index;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_organize_crlf.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "organize imports failed for a CRLF document");
+        goto cleanup;
+    }
+    for (index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                   ? test_string_text((*actionPtr)->title)
+                                   : ZR_NULL;
+        const TZrChar *text = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                  ? first_text_edit_text(&(*actionPtr)->edits)
+                                  : ZR_NULL;
+        if (title != ZR_NULL &&
+            strstr(title, "Organize") != ZR_NULL &&
+            text != ZR_NULL &&
+            strcmp(text, expected) == 0 &&
+            !text_contains_bare_lf(text)) {
+            found = ZR_TRUE;
+        }
+    }
+    if (!found) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "organized imports rewrote CRLF as LF");
+        goto cleanup;
+    }
+    TEST_PASS(timer, summary);
+cleanup:
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
@@ -2234,6 +2661,12 @@ int main(void) {
 
     test_lsp_document_formatting_returns_single_document_edit(state, &failures);
     test_lsp_formatting_skips_noop_edits(state, &failures);
+    test_lsp_formatting_reports_utf16_columns(state, &failures);
+    test_lsp_formatting_honors_options_and_crlf(state, &failures);
+    test_lsp_selection_word_uses_utf16_columns(state, &failures);
+    test_lsp_folding_columns_are_utf16(state, &failures);
+    test_lsp_missing_import_range_uses_utf16_columns(state, &failures);
+    test_lsp_organize_imports_preserves_crlf(state, &failures);
     test_lsp_formatting_does_not_emit_removed_syntax(state, &failures);
     test_lsp_formatting_preserves_current_compile_tool_syntax(state, &failures);
     test_lsp_folding_and_selection_ranges(state, &failures);

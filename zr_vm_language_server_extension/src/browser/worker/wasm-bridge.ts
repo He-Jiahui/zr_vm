@@ -290,27 +290,30 @@ export class ZrWasmBridge {
         );
     }
 
-    /** 整文档格式化返回文本编辑；应用与版本协调由 LSP 客户端完成。 */
-    async getFormatting(uri: string): Promise<WasmResponse<TextEdit[]>> {
+    /** 整文档格式化返回文本编辑；tabSize 与 insertSpaces 传给 C 侧 FormattingOptions。 */
+    async getFormatting(uri: string, tabSize = 4, insertSpaces = true): Promise<WasmResponse<TextEdit[]>> {
         return this.invoke<TextEdit[]>(
             'wasm_ZrLspGetFormatting',
-            ['number', 'string', 'number'],
-            [await this.context(), uri, byteLength(uri)],
+            ['number', 'string', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), tabSize, insertSpaces ? 1 : 0],
         );
     }
 
-    /** 区间格式化将 LSP 区间交给 C 导出，调用前须有可读快照。 */
+    /** 区间格式化将 LSP 区间和 FormattingOptions 交给 C 导出，调用前须有可读快照。 */
     async getRangeFormatting(
         uri: string,
         startLine: number,
         startCharacter: number,
         endLine: number,
         endCharacter: number,
+        tabSize = 4,
+        insertSpaces = true,
     ): Promise<WasmResponse<TextEdit[]>> {
         return this.invoke<TextEdit[]>(
             'wasm_ZrLspGetRangeFormatting',
-            ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
-            [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
+            ['number', 'string', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter,
+                tabSize, insertSpaces ? 1 : 0],
         );
     }
 

@@ -550,6 +550,140 @@ async function testInvalidRangesFormattingParams(serverPath) {
     });
 }
 
+/** 打开文档并等到诊断发布，避免格式化请求打在尚未入库的文本上。 */
+async function openDocument(client, uri, text) {
+    client.notify('textDocument/didOpen', {
+        textDocument: { uri, languageId: 'zr', version: 1, text },
+    });
+    await client.waitForNotification('textDocument/publishDiagnostics');
+}
+
+/** 相交的整行请求必须合成一段编辑；仅在排他边界相接的相邻行仍各自成段。 */
+async function testRangesFormattingMergesOverlappingLines(serverPath) {
+    const uri = 'file:///ranges-formatting-overlap.zr';
+    const text = 'fn main(): int {\nreturn 1;\nreturn 2;\n}\n';
+    await withClient(serverPath, async (client) => {
+        const payload = initializePayload('ranges-overlap-initialize');
+        payload.params.capabilities = {
+            textDocument: { rangeFormatting: { rangesSupport: true } },
+        };
+        const initializeResponse = await client.requestEnvelope(payload, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(initializeResponse, 'ranges-overlap-initialize', 'ranges overlap initialize');
+        await openDocument(client, uri, text);
+
+        const overlap = await client.request('textDocument/rangesFormatting', {
+            textDocument: { uri },
+            ranges: [
+                { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } },
+                { start: { line: 1, character: 2 }, end: { line: 2, character: 4 } },
+            ],
+            options: { tabSize: 4, insertSpaces: true },
+        }, 'ranges-overlap', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(overlap, 'ranges-overlap', 'overlapping ranges formatting');
+        assert(JSON.stringify(overlap.result) === JSON.stringify([{
+            range: { start: { line: 1, character: 0 }, end: { line: 3, character: 0 } },
+            newText: '    return 1;\n    return 2;\n',
+        }]), `overlapping ranges must collapse to one edit, actual=${JSON.stringify(overlap.result)}`);
+
+        const duplicate = await client.request('textDocument/rangesFormatting', {
+            textDocument: { uri },
+            ranges: [
+                { start: { line: 1, character: 0 }, end: { line: 1, character: 1 } },
+                { start: { line: 1, character: 2 }, end: { line: 1, character: 3 } },
+            ],
+            options: { tabSize: 4, insertSpaces: true },
+        }, 'ranges-duplicate', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(duplicate, 'ranges-duplicate', 'duplicate line ranges formatting');
+        assert(JSON.stringify(duplicate.result) === JSON.stringify([{
+            range: { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } },
+            newText: '    return 1;\n',
+        }]), `duplicate line ranges must stay one edit, actual=${JSON.stringify(duplicate.result)}`);
+
+        const adjacent = await client.request('textDocument/rangesFormatting', {
+            textDocument: { uri },
+            ranges: [
+                { start: { line: 1, character: 0 }, end: { line: 1, character: 1 } },
+                { start: { line: 2, character: 0 }, end: { line: 2, character: 1 } },
+            ],
+            options: { tabSize: 4, insertSpaces: true },
+        }, 'ranges-adjacent', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(adjacent, 'ranges-adjacent', 'adjacent ranges formatting');
+        assert(JSON.stringify(adjacent.result) === JSON.stringify([
+            {
+                range: { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } },
+                newText: '    return 1;\n',
+            },
+            {
+                range: { start: { line: 2, character: 0 }, end: { line: 3, character: 0 } },
+                newText: '    return 2;\n',
+            },
+        ]), `adjacent lines must stay separate edits, actual=${JSON.stringify(adjacent.result)}`);
+    });
+}
+
+/** stdio 必须把 FormattingOptions 交给格式化，并在 CRLF 文档里原样交回换行。 */
+async function testFormattingOptionsAndCrlf(serverPath) {
+    const uri = 'file:///formatting-options.zr';
+    const text = 'fn main(): int {\nreturn 1;\n}\n';
+    const crlfUri = 'file:///formatting-crlf.zr';
+    const crlfText = 'fn main(): int {\r\nreturn 1;\r\n}\r\n';
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'formatting-options-initialize');
+        await openDocument(client, uri, text);
+        const spaces = await client.request('textDocument/formatting', {
+            textDocument: { uri },
+            options: { tabSize: 2, insertSpaces: true },
+        }, 'formatting-two-spaces', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(spaces, 'formatting-two-spaces', 'tabSize 2 formatting');
+        assert(spaces.result.length === 1 && spaces.result[0].newText.includes('\n  return 1;\n') &&
+               !spaces.result[0].newText.includes('\n    return 1;\n'),
+               `tabSize 2 was ignored, actual=${JSON.stringify(spaces.result)}`);
+
+        const tabs = await client.request('textDocument/formatting', {
+            textDocument: { uri },
+            options: { tabSize: 4, insertSpaces: false },
+        }, 'formatting-tabs', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(tabs, 'formatting-tabs', 'insertSpaces false formatting');
+        assert(tabs.result.length === 1 && tabs.result[0].newText.includes('\n\treturn 1;\n'),
+               `insertSpaces false was ignored, actual=${JSON.stringify(tabs.result)}`);
+
+        await openDocument(client, crlfUri, crlfText);
+        const crlf = await client.request('textDocument/formatting', {
+            textDocument: { uri: crlfUri },
+            options: { tabSize: 4, insertSpaces: true },
+        }, 'formatting-crlf', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(crlf, 'formatting-crlf', 'CRLF formatting');
+        assert(crlf.result.length === 1 &&
+               crlf.result[0].newText === 'fn main(): int {\r\n    return 1;\r\n}\r\n',
+               `CRLF formatting rewrote newlines, actual=${JSON.stringify(crlf.result)}`);
+    });
+}
+
+/** 未绑定的 ASCII 标识符走文本兜底时，列必须是 UTF-16 而不是 UTF-8 字节。 */
+async function testLinkedEditingFallbackUsesUtf16(serverPath) {
+    const uri = 'file:///linked-editing-utf16.zr';
+    const text = 'var 标记 = alpha;\nalpha;\n';
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'linked-editing-utf16-initialize');
+        await openDocument(client, uri, text);
+        const response = await client.request('textDocument/linkedEditingRange', {
+            textDocument: { uri },
+            position: { line: 0, character: 9 },
+        }, 'linked-editing-utf16', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(response, 'linked-editing-utf16', 'linked editing utf16');
+        const ranges = response.result && response.result.ranges;
+        assert(Array.isArray(ranges), `linked editing must return ranges, actual=${JSON.stringify(response.result)}`);
+        const matches = (range, line, character, endCharacter) => range &&
+            range.start && range.end &&
+            range.start.line === line && range.start.character === character &&
+            range.end.line === line && range.end.character === endCharacter;
+        assert(ranges.some((range) => matches(range, 0, 9, 14)) &&
+               ranges.some((range) => matches(range, 1, 0, 5)) &&
+               !ranges.some((range) => range.start && range.start.character === 13),
+               `linked editing fallback used byte columns, actual=${JSON.stringify(ranges)}`);
+    });
+}
+
 /** 验证 codeAction/resolve 不接受缺少可解析身份的数据。 */
 async function testInvalidCodeActionResolveParams(serverPath) {
     const cases = [
@@ -1444,6 +1578,9 @@ function protocolCases() {
         ['invalid code action range', testInvalidCodeActionRange],
         ['invalid code action context', testInvalidCodeActionContext],
         ['invalid ranges formatting params', testInvalidRangesFormattingParams],
+        ['ranges formatting merges overlapping lines', testRangesFormattingMergesOverlappingLines],
+        ['formatting options and CRLF', testFormattingOptionsAndCrlf],
+        ['linked editing fallback uses UTF-16', testLinkedEditingFallbackUsesUtf16],
         ['invalid code action resolve params', testInvalidCodeActionResolveParams],
         ['invalid completion resolve params', testInvalidCompletionResolveParams],
         ['invalid additional editor params', testInvalidAdditionalEditorParams],

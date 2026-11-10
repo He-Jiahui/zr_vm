@@ -306,44 +306,53 @@ static TZrBool lsp_editor_resolve_missing_import_candidate(SZrState *state,
     return ZR_FALSE;
 }
 
-/* 把请求范围限制到当前行的 alias.member；stdio 与 WASM 均传入内部 UTF-16 列。
- * BUG: 下方将 UTF-16 列直接加在 UTF-8 字节行首，与别名的字节偏移比较；
- * 同行非 ASCII 文本位于别名前时，两条入口都可能漏掉缺失导入动作。
- */
-static TZrBool lsp_editor_requested_range_intersects_line_span(SZrLspRange range,
+/* 把内部 UTF-16 列换成当前行的字节偏移后再与 alias.member 相交。 */
+static TZrSize lsp_editor_clamp_offset_to_line(TZrSize offset, TZrSize lineStart, TZrSize lineEnd) {
+    if (offset < lineStart) {
+        return lineStart;
+    }
+    if (offset > lineEnd) {
+        return lineEnd;
+    }
+    return offset;
+}
+
+/* 请求范围来自 stdio 与 WASM 的内部 UTF-16 列；比较前先投影到同一份快照的字节。 */
+static TZrBool lsp_editor_requested_range_intersects_line_span(const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              SZrLspRange range,
                                                               TZrSize lineStart,
                                                               TZrSize lineEnd,
                                                               TZrSize spanStart,
                                                               TZrSize spanEnd) {
-    TZrSize lineLength;
-    TZrSize requestStart;
-    TZrSize requestEnd;
+    TZrInt32 startCharacter;
     TZrSize absoluteStart;
     TZrSize absoluteEnd;
 
-    if (spanStart >= spanEnd || spanEnd > lineEnd || lineEnd < lineStart) {
+    if (content == ZR_NULL || spanStart >= spanEnd || spanEnd > lineEnd || lineEnd < lineStart) {
         return ZR_FALSE;
     }
 
-    lineLength = lineEnd - lineStart;
-    requestStart = range.start.character > 0 ? (TZrSize)range.start.character : 0;
-    if (requestStart > lineLength) {
-        requestStart = lineLength;
-    }
+    startCharacter = range.start.character > 0 ? range.start.character : 0;
+    absoluteStart = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                       contentLength,
+                                                                       range.start.line,
+                                                                       startCharacter);
+    absoluteStart = lsp_editor_clamp_offset_to_line(absoluteStart, lineStart, lineEnd);
     if (range.end.line > range.start.line) {
-        requestEnd = lineLength;
+        absoluteEnd = lineEnd;
     } else {
-        requestEnd = range.end.character > 0 ? (TZrSize)range.end.character : requestStart;
-        if (requestEnd > lineLength) {
-            requestEnd = lineLength;
-        }
+        TZrInt32 endCharacter = range.end.character > 0 ? range.end.character : startCharacter;
+        absoluteEnd = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                         contentLength,
+                                                                         range.start.line,
+                                                                         endCharacter);
+        absoluteEnd = lsp_editor_clamp_offset_to_line(absoluteEnd, lineStart, lineEnd);
     }
-    if (requestEnd < requestStart) {
-        requestEnd = requestStart;
+    if (absoluteEnd < absoluteStart) {
+        absoluteEnd = absoluteStart;
     }
 
-    absoluteStart = lineStart + requestStart;
-    absoluteEnd = lineStart + requestEnd;
     if (absoluteStart == absoluteEnd) {
         return absoluteStart >= spanStart && absoluteStart <= spanEnd;
     }
@@ -401,7 +410,9 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
         while (memberEnd < lineEnd && lsp_editor_is_identifier_part(content[memberEnd])) {
             memberEnd++;
         }
-        if (!lsp_editor_requested_range_intersects_line_span(range,
+        if (!lsp_editor_requested_range_intersects_line_span(content,
+                                                            contentLength,
+                                                            range,
                                                             lineStart,
                                                             lineEnd,
                                                             aliasStart,
