@@ -255,6 +255,13 @@ static TZrBool legacy_property_entry_is_setter(
 }
 
 /* class 使用已保存名称位置；interface 缺该字段，需在声明源码范围找原拼写。 */
+static TZrBool legacy_property_is_identifier_byte(TZrChar value) {
+    return (value >= 'a' && value <= 'z') ||
+           (value >= 'A' && value <= 'Z') ||
+           (value >= '0' && value <= '9') ||
+           value == '_';
+}
+
 static TZrBool legacy_property_find_name_slice(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *entry,
@@ -297,12 +304,16 @@ static TZrBool legacy_property_find_name_slice(
         node->location.end.offset > ps->lexer->sourceLength) {
         return ZR_FALSE;
     }
-    /* BUG: interface 名称按声明全文首次匹配；如 `pub get b: int;` 的 `b`
-     * 先命中 `pub`，相关诊断指错位置，替换构建器也会找不到 get/set 而放弃自动修复。 */
     for (TZrSize offset = node->location.start.offset;
          offset + nameLength <= node->location.end.offset;
          offset++) {
-        if (memcmp(ps->lexer->source + offset, nameText, nameLength) == 0) {
+        TZrSize end = offset + nameLength;
+        TZrBool leftBoundary = offset == 0U ||
+                               !legacy_property_is_identifier_byte(ps->lexer->source[offset - 1U]);
+        TZrBool rightBoundary = end >= ps->lexer->sourceLength ||
+                                !legacy_property_is_identifier_byte(ps->lexer->source[end]);
+        if (leftBoundary && rightBoundary &&
+            memcmp(ps->lexer->source + offset, nameText, nameLength) == 0) {
             outSlice->start = offset;
             outSlice->length = nameLength;
             return ZR_TRUE;
