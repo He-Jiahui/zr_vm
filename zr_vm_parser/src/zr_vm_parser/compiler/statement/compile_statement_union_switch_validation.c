@@ -4,6 +4,7 @@
 #include "type_inference/type_inference_internal.h"
 
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/ast.h"
 
 /* 仅裸标识符或 primary/member-path 形态可以在显式解析失败后借 switch subject 类型补足 union 上下文。 */
 static TZrBool switch_case_can_use_subject_union_type(SZrAstNode *caseValue) {
@@ -31,6 +32,7 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                         &caseVariantName,
                                                         &bindings,
                                                         ZR_NULL)) {
+            ZrParser_AstNodeArray_Free(cs->state, bindings);
             return ZR_FALSE;
         }
     } else if (!try_resolve_union_variant_pattern_expression(cs,
@@ -38,6 +40,7 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                               &caseVariantName,
                                                               &bindings,
                                                               ZR_NULL)) {
+        ZrParser_AstNodeArray_Free(cs->state, bindings);
         return ZR_FALSE;
     }
 
@@ -47,19 +50,13 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
      * 交给 payload 类型注册。下一步：明确跨 union 限定模式的契约，为同名但 payload 类型不同的 union 加回归例，
      * 并统一 resolver、覆盖校验、lowering 与 CFG 使用的 variant identity。
      */
-    /*
-     * BUG: struct payload pattern 的解析器会创建并返回独立 AstNodeArray；本校验只比较名称却丢弃 bindings，
-     * 没有调用 ZrParser_AstNodeArray_Free。duplicate 与 exhaustiveness 两轮都会按声明 variant 重解析每个
-     * case，重复编译 struct-pattern switch 会累积未释放的 native arrays。触发样例为
-     * test_union_switch_binds_unqualified_struct_variant_pattern_from_subject_type；分配和显式释放路径见
-     * compile_expression_union.c:600-629 与 ast.c:50-60。
-     */
     /* resolver 的 true 既可能表示 pattern 已识别，也可能表示已报告诊断；须同时检查 error 状态和输出名。 */
-    if (cs->hasError || caseVariantName == ZR_NULL) {
-        return ZR_FALSE;
+    {
+        TZrBool covers = (TZrBool)(!cs->hasError && caseVariantName != ZR_NULL &&
+                                   ZrCore_String_Equal(caseVariantName, variantName));
+        ZrParser_AstNodeArray_Free(cs->state, bindings);
+        return covers;
     }
-
-    return ZrCore_String_Equal(caseVariantName, variantName);
 }
 
 void compile_switch_validate_union_duplicate_cases(SZrCompilerState *cs,
