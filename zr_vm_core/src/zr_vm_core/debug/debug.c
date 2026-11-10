@@ -632,12 +632,10 @@ TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
         if (callableValue == ZR_NULL) {
             return ZR_FALSE;
         }
-        /* BUG: 栈不足时 CheckStackAndGc 可重分配并迁移栈；下面仍从扩栈前的
-         * callableValue 读取，脚本 getinfo("f") 会得到悬空地址并可能崩溃。
-         * 库侧 getinfo 同时保存了原始 stackTop 指针，调用后也会访问失效指针。 */
         ZrCore_Function_CheckStackAndGc(state, 1, state->stackTop.valuePointer);
+        callableValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
         stackValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
-        if (stackValue == ZR_NULL) {
+        if (callableValue == ZR_NULL || stackValue == ZR_NULL) {
             return ZR_FALSE;
         }
         ZrCore_Value_Copy(state, stackValue, callableValue);
