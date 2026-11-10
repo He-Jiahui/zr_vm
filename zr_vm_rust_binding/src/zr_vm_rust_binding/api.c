@@ -257,13 +257,13 @@ static ZrRustBindingStatus zr_rust_binding_manifest_copy_entry_string(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
-/* BUG: scaffold 依赖此返回值判断路径可用；snprintf 截断时仍返回非负，后续可能写到意外路径。 */
 static TZrBool zr_rust_binding_join_path(const TZrChar *left,
                                          const TZrChar *right,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
     TZrSize leftLength;
     TZrBool needsSeparator;
+    int written;
 
     if (left == ZR_NULL || right == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -271,11 +271,12 @@ static TZrBool zr_rust_binding_join_path(const TZrChar *left,
 
     leftLength = strlen(left);
     needsSeparator = leftLength > 0 && left[leftLength - 1] != '/' && left[leftLength - 1] != '\\';
-    return snprintf(buffer,
-                    bufferSize,
-                    needsSeparator ? "%s/%s" : "%s%s",
-                    left,
-                    right) >= 0;
+    written = snprintf(buffer,
+                       bufferSize,
+                       needsSeparator ? "%s/%s" : "%s%s",
+                       left,
+                       right);
+    return written >= 0 && (TZrSize)written < bufferSize;
 }
 
 static TZrBool zr_rust_binding_ensure_directory(const TZrChar *path) {
