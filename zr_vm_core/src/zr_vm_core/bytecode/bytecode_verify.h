@@ -280,7 +280,9 @@ static TZrBool bytecode_verify_instruction(const SZrBytecodeVerificationView *f,
             return (TZrBool)(D(e) && S(x) && S(y));
 
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
-            return (TZrBool)(D(e) && S(x) && S(y) && S(z) && K(b));
+            /* z 与 b 共用操作数字节。不能把它们当成互不相关的槽号和常量下标。 */
+            return (TZrBool)(D(e) && S(x) && S(y) && S(z) && K(b) &&
+                             ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(z, b));
 
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
             return (TZrBool)(W(a, 4u) && S(b));

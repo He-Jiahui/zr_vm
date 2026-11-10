@@ -908,3 +908,4 @@ endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/function-instruction-verification.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-value-layout.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/fused-add-loop-tests.cmake")
