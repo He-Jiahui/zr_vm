@@ -431,7 +431,8 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     /* isDirty、变更信息和解析模式共同决定 AST 是否重算及下游缓存失效范围。 */
-    fileVersion->isDirty = !changeInfo->isTokenEquivalent;
+    /* 仅空白变化不会清掉尚未重解析的脏标记，否则后续 Parse 会复用旧 AST。 */
+    fileVersion->isDirty = (TZrBool)(fileVersion->isDirty || !changeInfo->isTokenEquivalent);
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
     fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
