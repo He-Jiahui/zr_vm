@@ -42,6 +42,30 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
+static void compile_shared_library_or_fail(const char *generatedCPath, const char *sharedLibraryPath) {
+    char command[4096];
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+}
+
 static TZrInstruction create_iterator_instruction(EZrInstructionCode opcode,
                                                   TZrUInt16 destinationSlot,
                                                   TZrUInt16 operandA,
@@ -73,6 +97,50 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+static TZrInstruction create_nop_instruction(void) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(NOP);
+    return instruction;
+}
+
+/* JUMP / JUMP_IF 的相对偏移在 operand2，融合指令才把偏移放进 operand1。 */
+static TZrInstruction create_operand2_jump(EZrInstructionCode opcode, TZrUInt16 extra, TZrInt32 offset) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)opcode;
+    instruction.instruction.operandExtra = extra;
+    instruction.instruction.operand.operand2[0] = offset;
+    return instruction;
+}
+
+static SZrFunction *create_function_from_instructions(SZrState *state,
+                                                     const TZrInstruction *instructions,
+                                                     TZrUInt32 count,
+                                                     TZrUInt32 stackSize) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(instructions);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, count);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * count,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    memcpy(function->instructionsList, instructions, sizeof(TZrInstruction) * count);
+    function->instructionsLength = count;
+    function->stackSize = stackSize;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
+}
+
 static SZrFunction *create_iterator_function(SZrState *state) {
     SZrFunction *function;
 
@@ -82,7 +150,7 @@ static SZrFunction *create_iterator_function(SZrState *state) {
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 6u,
+            sizeof(TZrInstruction) * 7u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     function->instructionsList[0] =
@@ -95,8 +163,10 @@ static SZrFunction *create_iterator_function(SZrState *state) {
             create_iterator_instruction(ZR_INSTRUCTION_ENUM(DYN_ITER_INIT), 2u, 0u, 0u);
     function->instructionsList[4] =
             create_jump_instruction(ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3u, 2u, 0u);
-    function->instructionsList[5] = create_return_instruction(1u, 4u);
-    function->instructionsLength = 6u;
+    /* 偏移 0 仍要跳过下一条：pc + 0 + 2 落到 return。 */
+    function->instructionsList[5] = create_nop_instruction();
+    function->instructionsList[6] = create_return_instruction(1u, 4u);
+    function->instructionsLength = 7u;
     function->stackSize = 5u;
     function->parameterCount = 0u;
     function->hasVariableArguments = ZR_FALSE;
@@ -138,7 +208,6 @@ static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helpe
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
     TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
     char *generatedCText;
-    char command[4096];
 
     TEST_ASSERT_NOT_NULL(state);
     function = create_iterator_function(state);
@@ -177,7 +246,12 @@ static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helpe
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterCurrent(state, &frame, 4, 2)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 3, 2, &zr_aot_branch_taken)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_ins_5;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "        if (zr_aot_branch_taken) {\n"
+                                "            goto zr_aot_fn_0_ins_6;\n"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "        if (zr_aot_branch_taken) {\n"
+                            "            goto zr_aot_fn_0_ins_5;\n"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_IterInit(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_TryIterMoveNextCachedArrayFast(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_IterMoveNext(state,"));
@@ -188,25 +262,7 @@ static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helpe
     TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT iterator branch result"));
     free(generatedCText);
 
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+    compile_shared_library_or_fail(generatedCPath, sharedLibraryPath);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
@@ -256,9 +312,190 @@ static void test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge(void) {
 #endif
 }
 
+/* 融合 foreach 的假分支必须落到 pc + offset + 2。步长 1 会在非空循环体退出时重跑最后一条指令。 */
+static void test_aot_fused_iterator_false_branch_uses_verifier_step(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TZrInstruction typedInstructions[4];
+    TZrInstruction dynamicInstructions[6];
+    TZrInstruction negativeInstructions[6];
+    SZrFunction *typedFunction;
+    SZrFunction *dynamicFunction;
+    SZrFunction *negativeFunction;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedLlvmPath[ZR_TESTS_PATH_MAX];
+    char *generatedText;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    /* SUPER_ITER 偏移 1，后面留着 JUMP_IF 和一条循环体。解释器与校验器目标是 0 + 1 + 2 = 3。步长 1 会落到循环体 2。 */
+    typedInstructions[0] =
+            create_iterator_instruction(ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE), 1u, 0u, 1u);
+    typedInstructions[1] = create_operand2_jump(ZR_INSTRUCTION_ENUM(JUMP_IF), 1u, 1);
+    typedInstructions[2] = create_iterator_instruction(ZR_INSTRUCTION_ENUM(ITER_CURRENT), 2u, 0u, 0u);
+    typedInstructions[3] = create_return_instruction(1u, 2u);
+    typedFunction = create_function_from_instructions(state, typedInstructions, 4u, 3u);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_fused_typed_iterator_step";
+    options.sourceHash = "fused-typed-iterator-step";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "fused-typed-iterator-step";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "aot_fused_typed_iterator_step",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "lib",
+                                                       "libaot_fused_typed_iterator_step",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "aot_fused_typed_iterator_step",
+                                                       ".ll",
+                                                       generatedLlvmPath,
+                                                       sizeof(generatedLlvmPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, typedFunction, generatedCPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 1, 0, &zr_aot_branch_taken)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "        if (zr_aot_branch_taken) {\n"
+                                "            goto zr_aot_fn_0_ins_3;\n"));
+    TEST_ASSERT_NULL(strstr(generatedText,
+                            "        if (zr_aot_branch_taken) {\n"
+                            "            goto zr_aot_fn_0_ins_2;\n"));
+    TEST_ASSERT_NULL(strstr(generatedText, "unsupported AOT iterator"));
+    free(generatedText);
+    compile_shared_library_or_fail(generatedCPath, sharedLibraryPath);
+
+    options.requireFullAot = ZR_FALSE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFileWithOptions(state, typedFunction, generatedLlvmPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedLlvmPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "declare i1 @ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(ptr, ptr, i32, i32, ptr)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "call i1 @ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(ptr %state, ptr %frame, i32 1, i32 0, ptr %truthy_value)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, "label %zr_aot_fn_0_ins_3, label %zr_aot_fn_0_ins_1"));
+    TEST_ASSERT_NULL(strstr(generatedText, "label %zr_aot_fn_0_ins_2, label %zr_aot_fn_0_ins_1"));
+    free(generatedText);
+    ZrCore_Function_Free(state, typedFunction);
+
+    /* SUPER_DYN 偏移 2，后面留着 JUMP_IF、循环体和回边。目标是 1 + 2 + 2 = 5。步长 1 会落到回边 4。 */
+    dynamicInstructions[0] =
+            create_iterator_instruction(ZR_INSTRUCTION_ENUM(DYN_ITER_INIT), 2u, 0u, 0u);
+    dynamicInstructions[1] =
+            create_iterator_instruction(ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3u, 2u, 2u);
+    dynamicInstructions[2] = create_operand2_jump(ZR_INSTRUCTION_ENUM(JUMP_IF), 3u, 2);
+    dynamicInstructions[3] =
+            create_iterator_instruction(ZR_INSTRUCTION_ENUM(ITER_CURRENT), 4u, 2u, 0u);
+    dynamicInstructions[4] = create_operand2_jump(ZR_INSTRUCTION_ENUM(JUMP), 0u, -4);
+    dynamicInstructions[5] = create_return_instruction(1u, 4u);
+    dynamicFunction = create_function_from_instructions(state, dynamicInstructions, 6u, 5u);
+
+    options.moduleName = "aot_fused_dynamic_iterator_step";
+    options.sourceHash = "fused-dynamic-iterator-step";
+    options.inputHash = "fused-dynamic-iterator-step";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_FALSE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "aot_fused_dynamic_iterator_step",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "lib",
+                                                       "libaot_fused_dynamic_iterator_step",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "aot_fused_dynamic_iterator_step",
+                                                       ".ll",
+                                                       generatedLlvmPath,
+                                                       sizeof(generatedLlvmPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, dynamicFunction, generatedCPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 3, 2, &zr_aot_branch_taken)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, "ZrLibrary_AotRuntime_IterCurrent(state, &frame, 4, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "        if (zr_aot_branch_taken) {\n"
+                                "            goto zr_aot_fn_0_ins_5;\n"));
+    TEST_ASSERT_NULL(strstr(generatedText,
+                            "        if (zr_aot_branch_taken) {\n"
+                            "            goto zr_aot_fn_0_ins_4;\n"));
+    free(generatedText);
+    compile_shared_library_or_fail(generatedCPath, sharedLibraryPath);
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFileWithOptions(state, dynamicFunction, generatedLlvmPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedLlvmPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "call i1 @ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(ptr %state, ptr %frame, i32 3, i32 2, ptr %truthy_value)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, "label %zr_aot_fn_0_ins_5, label %zr_aot_fn_0_ins_2"));
+    TEST_ASSERT_NULL(strstr(generatedText, "label %zr_aot_fn_0_ins_4, label %zr_aot_fn_0_ins_2"));
+    free(generatedText);
+    ZrCore_Function_Free(state, dynamicFunction);
+
+    /* 负的 int16 偏移必须符号扩展。3 + (-4) + 2 = 1。 */
+    negativeInstructions[0] = create_nop_instruction();
+    negativeInstructions[1] = create_nop_instruction();
+    negativeInstructions[2] = create_nop_instruction();
+    negativeInstructions[3] = create_iterator_instruction(
+            ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE),
+            1u,
+            0u,
+            (TZrUInt16)(TZrInt16)-4);
+    negativeInstructions[4] = create_nop_instruction();
+    negativeInstructions[5] = create_return_instruction(1u, 1u);
+    negativeFunction = create_function_from_instructions(state, negativeInstructions, 6u, 2u);
+    options.moduleName = "aot_fused_iterator_negative_step";
+    options.sourceHash = "fused-iterator-negative-step";
+    options.inputHash = "fused-iterator-negative-step";
+    options.requireFullAot = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "aot_fused_iterator_negative_step",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "lib",
+                                                       "libaot_fused_iterator_negative_step",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, negativeFunction, generatedCPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 1, 0, &zr_aot_branch_taken)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, "            goto zr_aot_fn_0_ins_1;\n"));
+    TEST_ASSERT_NULL(strstr(generatedText, "            goto zr_aot_fn_0_ins_0;\n"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, "zr_aot_gc_safepoint_back_edge"));
+    free(generatedText);
+    compile_shared_library_or_fail(generatedCPath, sharedLibraryPath);
+    ZrCore_Function_Free(state, negativeFunction);
+
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering);
     RUN_TEST(test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge);
+    RUN_TEST(test_aot_fused_iterator_false_branch_uses_verifier_step);
     return UNITY_END();
 }
