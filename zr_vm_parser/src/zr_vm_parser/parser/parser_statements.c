@@ -603,7 +603,7 @@ SZrAstNode *parse_throw_statement(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_THROW_STATEMENT, startLoc);
     if (node == ZR_NULL) {
-        // BUG: 异常表达式已构造，节点分配失败后没有释放。
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
