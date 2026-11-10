@@ -433,7 +433,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext 
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(
         SZrSemanticContext *context);
 /** @brief 为后续定义导航提供控制流路径上的引用定义证据。
- * @note 借用稳定 context/reference facts 与 root AST；当前根覆盖限定于 script/function declaration 和 block 路径，不承诺覆盖所有可调用体。已写入结果不因后续失败回滚。
+ * @note 借用稳定 context/reference facts 与 root AST；根覆盖 script、function declaration、block，以及 class/struct 方法体。其它可调用体仍不在此承诺内。已写入结果不因后续失败回滚。
  * @return TRUE 表示本次解析流程成功；FALSE 表示输入或显式分析失败，不保证捕获全部分配失败。
  */
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(
@@ -446,7 +446,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitio
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearDefiniteAssignments(
         SZrSemanticContext *context);
 /** @brief 为后续未初始化读取诊断提供控制流路径上的赋值状态证据。
- * @note 借用同一快照的 context/reference facts 与 root AST；当前根覆盖限定于 script/function declaration 和 block 路径，不承诺覆盖所有可调用体。已写入状态不因后续失败回滚。
+ * @note 借用同一快照的 context/reference facts 与 root AST；根覆盖 script、function declaration、block，以及 class/struct 方法体。其它可调用体仍不在此承诺内。已写入状态不因后续失败回滚。
  * @return TRUE 表示分析流程成功，可仍含语义违规；FALSE 表示输入或显式分析失败。
  */
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(

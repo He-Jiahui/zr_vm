@@ -1165,6 +1165,7 @@ static void test_cfg_reaching_definitions_clears_finally_read_from_normal_and_re
 
 #include "test_semantic_receiver_guard_fact_cases.h"
 #include "test_semantic_da_ast_fact_cases.h"
+#include "test_semantic_method_cfg_fact_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1189,5 +1190,6 @@ int main(void) {
     RUN_TEST(test_semantic_receiver_guard_republish_replaces_same_node);
     RUN_TEST(test_semantic_receiver_guards_preserve_distinct_nodes);
     RUN_TEST(test_cfg_definite_assignment_accepts_standalone_body_root);
+    RUN_TEST(test_cfg_method_bodies_keep_independent_assignment_and_definitions);
     return UNITY_END();
 }

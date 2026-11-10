@@ -613,8 +613,50 @@ static void semantic_rd_apply_read_slots(SZrSemanticRdAnalysis *analysis) {
     }
 }
 
+/** @brief class/struct 方法的可执行体；抽象方法没有 body。 */
+static SZrAstNode *semantic_rd_method_body(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (node->type) {
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.body;
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.body;
+        default:
+            return ZR_NULL;
+    }
+}
+
+/** @brief 事实落在成员方法体内时，类型声明的整段范围不能再线性接收它。 */
+static TZrBool semantic_rd_fact_in_member_method(SZrAstNode *typeNode,
+                                                 const SZrSemanticReferenceFact *fact) {
+    SZrAstNodeArray *members = ZR_NULL;
+    TZrSize index;
+
+    if (typeNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (typeNode->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeNode->data.classDeclaration.members;
+    } else if (typeNode->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeNode->data.structDeclaration.members;
+    }
+    if (members == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < members->count; index++) {
+        SZrAstNode *body = semantic_rd_method_body(members->nodes[index]);
+        if (semantic_rd_node_contains_fact(body, fact)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* 各语句只认自己负责的直接表达式；块和控制流容器不抢走子体 facts。
- * 未特判的 AST 才用整节点范围归属，调用者必须传入合适的 CFG statement。 */
+ * class/struct 声明排除方法体。未特判的 AST 才用整节点范围归属。 */
 static TZrBool semantic_rd_fact_in_statement(SZrAstNode *statement,
                                              const SZrSemanticReferenceFact *fact) {
     if (statement == ZR_NULL || fact == ZR_NULL) {
@@ -651,6 +693,10 @@ static TZrBool semantic_rd_fact_in_statement(SZrAstNode *statement,
         case ZR_AST_SWITCH_DEFAULT:
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
             return ZR_FALSE;
+        case ZR_AST_CLASS_DECLARATION:
+        case ZR_AST_STRUCT_DECLARATION:
+            return semantic_rd_node_contains_fact(statement, fact) &&
+                   !semantic_rd_fact_in_member_method(statement, fact);
         case ZR_AST_FUNCTION_DECLARATION:
             return semantic_rd_range_contains_range(&statement->data.functionDeclaration.nameLocation,
                                                     &fact->range);
@@ -863,8 +909,22 @@ static TZrBool semantic_rd_resolve_function_like_body(SZrSemanticContext *contex
     return ZR_TRUE;
 }
 
-/* BUG: 这里只为 SCRIPT 与 FUNCTION_DECLARATION 建独立 CFG。class method body 的 facts
- * 会留在 class 声明的整体 range 内，由 script 的普通 class block 线性处理，绕过方法内分支/循环 join。 */
+/* 方法体用 body block 做 CFG 根：Cfg 只从 script、block 和 function declaration 抽取语句列表。 */
+static TZrBool semantic_rd_resolve_method(SZrSemanticContext *context,
+                                          const SZrSemanticRdSymbolMap *symbols,
+                                          SZrAstNode *method) {
+    SZrAstNode *body = semantic_rd_method_body(method);
+
+    if (body == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!semantic_rd_run_cfg_for_root(context, symbols, body)) {
+        return ZR_FALSE;
+    }
+    return semantic_rd_resolve_function_like_body(context, symbols, body);
+}
+
+/* script、function 与 class/struct 方法体各自建 CFG。类型声明只负责进入成员，不把方法体并进一条直线。 */
 static TZrBool semantic_rd_resolve_node(SZrSemanticContext *context,
                                         const SZrSemanticRdSymbolMap *symbols,
                                         SZrAstNode *node) {
@@ -897,6 +957,33 @@ static TZrBool semantic_rd_resolve_node(SZrSemanticContext *context,
             return semantic_rd_resolve_function_like_body(context,
                                                          symbols,
                                                          node->data.functionDeclaration.body);
+        case ZR_AST_CLASS_DECLARATION:
+            if (node->data.classDeclaration.members == ZR_NULL) {
+                return ZR_TRUE;
+            }
+            for (index = 0; index < node->data.classDeclaration.members->count; index++) {
+                if (!semantic_rd_resolve_node(context,
+                                              symbols,
+                                              node->data.classDeclaration.members->nodes[index])) {
+                    return ZR_FALSE;
+                }
+            }
+            return ZR_TRUE;
+        case ZR_AST_STRUCT_DECLARATION:
+            if (node->data.structDeclaration.members == ZR_NULL) {
+                return ZR_TRUE;
+            }
+            for (index = 0; index < node->data.structDeclaration.members->count; index++) {
+                if (!semantic_rd_resolve_node(context,
+                                              symbols,
+                                              node->data.structDeclaration.members->nodes[index])) {
+                    return ZR_FALSE;
+                }
+            }
+            return ZR_TRUE;
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+            return semantic_rd_resolve_method(context, symbols, node);
         case ZR_AST_BLOCK:
             return semantic_rd_resolve_function_like_body(context, symbols, node);
         default:
