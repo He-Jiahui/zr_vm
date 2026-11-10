@@ -63,22 +63,27 @@ TZrBool ZrCore_BatchBuffer_Validate(const SZrBatchBuffer *buffer, TZrSize count,
         return ZR_FALSE;
     }
     if (count == 0u) return ZR_TRUE;
-    /* BUG: 单元素的 stride=INT64_MIN 不需移动却被拒；在 32 位 ptrdiff_t 平台，
-     * 使用 INT64 界限还会放过超出本机偏移范围的乘法（如 INT32_MAX * 2）。 */
-    if (buffer->stride == INT64_MIN ||
-        (buffer->stride > 0 && (TZrUInt64)(count - 1u) >
-             (TZrUInt64)INT64_MAX / (TZrUInt64)buffer->stride) ||
-        (buffer->stride < 0 && (TZrUInt64)(count - 1u) >
-             ((TZrUInt64)INT64_MAX + 1u) /
-                 (TZrUInt64)(-(buffer->stride + 1) + 1))) {
+    /* 单个元素不使用 stride。两个元素乘 INT64_MIN 仍可表示；更多元素才会溢出。
+     * 32 位 ptrdiff_t 仍按 64 位界限检查，可能放过本机放不下的乘法。 */
+    if (count > 1u &&
+        (buffer->stride == INT64_MIN
+             ? count > 2u
+             : ((buffer->stride > 0 && (TZrUInt64)(count - 1u) >
+                     (TZrUInt64)INT64_MAX / (TZrUInt64)buffer->stride) ||
+                (buffer->stride < 0 && (TZrUInt64)(count - 1u) >
+                     ((TZrUInt64)INT64_MAX + 1u) /
+                         (TZrUInt64)(-(buffer->stride + 1) + 1))))) {
         batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_OVERFLOW, 0u, SIZE_MAX,
                    (TZrUInt64)count);
         return ZR_FALSE;
     }
     last = (TZrMemoryOffset)(count - 1u) * buffer->stride;
-    /* BUG: stride=-2^62、count=3 可令 last=INT64_MIN；这里的 -last 有符号溢出，
-     * 且发生在长度拒绝之前，不能靠较短 byteLength 阻止。 */
-    magnitude = (TZrUInt64)(last < 0 ? -last : last);
+    /* 有符号最小值不能取负。先加一再取负，用无符号把少掉的 1 加回来。 */
+    if (last < 0) {
+        magnitude = (TZrUInt64)(-(last + 1)) + 1u;
+    } else {
+        magnitude = (TZrUInt64)last;
+    }
     if (magnitude > (TZrUInt64)buffer->byteLength ||
         buffer->elementSize > buffer->byteLength - (TZrSize)magnitude) {
         batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_BOUNDS, 0u,
@@ -102,6 +107,46 @@ TZrBool ZrCore_BatchBuffer_Offset(const SZrBatchBuffer *buffer, TZrSize count,
     return ZR_TRUE;
 }
 
+/* 逻辑元素占用 [最低地址, 最高地址 + elementSize)。负 stride 的末端在 data 之前。 */
+static TZrBool batch_element_address_range(const SZrBatchBuffer *buffer, TZrSize count,
+                                           TZrUInt64 *rangeStart, TZrUInt64 *rangeEnd,
+                                           SZrBatchDiagnostic *diagnostic) {
+    uintptr_t base = (uintptr_t)buffer->data;
+    TZrMemoryOffset lastOffset = 0;
+    uintptr_t lastAddress;
+    uintptr_t low;
+    uintptr_t high;
+
+    if (count > 1u) {
+        lastOffset = (TZrMemoryOffset)(count - 1u) * buffer->stride;
+    }
+    if (lastOffset >= 0) {
+        if ((uintptr_t)lastOffset > UINTPTR_MAX - base) {
+            batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_OVERFLOW, 0u, UINTPTR_MAX, 0u);
+            return ZR_FALSE;
+        }
+        lastAddress = base + (uintptr_t)lastOffset;
+    } else {
+        TZrUInt64 back = (TZrUInt64)(-(lastOffset + 1)) + 1u;
+        if (back > (TZrUInt64)base) {
+            batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_OVERFLOW, 0u, UINTPTR_MAX, back);
+            return ZR_FALSE;
+        }
+        lastAddress = base - (uintptr_t)back;
+    }
+
+    low = base < lastAddress ? base : lastAddress;
+    high = base > lastAddress ? base : lastAddress;
+    if ((uintptr_t)buffer->elementSize > UINTPTR_MAX - high) {
+        batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_OVERFLOW, 0u, UINTPTR_MAX,
+                   (TZrUInt64)buffer->elementSize);
+        return ZR_FALSE;
+    }
+    *rangeStart = (TZrUInt64)low;
+    *rangeEnd = (TZrUInt64)high + (TZrUInt64)buffer->elementSize;
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_BatchBuffers_MayAlias(const SZrBatchBuffer *left,
                                      TZrSize leftCount,
                                      const SZrBatchBuffer *right,
@@ -115,16 +160,8 @@ TZrBool ZrCore_BatchBuffers_MayAlias(const SZrBatchBuffer *left,
         !ZrCore_BatchBuffer_Validate(right, rightCount, diagnostic)) return ZR_FALSE;
     *mayAlias = ZR_FALSE;
     if (leftCount == 0u || rightCount == 0u) return ZR_TRUE;
-    /* BUG: 负 stride 的实际元素位于 data 之前。同一 storage[8] 中，两视图
-     * byteLength=4、elementSize=1、count=4；左 data=storage+4/stride=-1，
-     * 右 data=storage/stride=1。实际重叠却被判为不别名，Map 的 add_one
-     * 可得到 5,4,3,5 而非 5,4,3,2，Zip 也会越过重叠保护。 */
-    leftStart = (TZrUInt64)(uintptr_t)left->data;
-    rightStart = (TZrUInt64)(uintptr_t)right->data;
-    leftEnd = leftStart + left->byteLength;
-    rightEnd = rightStart + right->byteLength;
-    if (leftEnd < leftStart || rightEnd < rightStart) {
-        batch_diag(diagnostic, ZR_BATCH_DIAGNOSTIC_OVERFLOW, 0u, UINTPTR_MAX, 0u);
+    if (!batch_element_address_range(left, leftCount, &leftStart, &leftEnd, diagnostic) ||
+        !batch_element_address_range(right, rightCount, &rightStart, &rightEnd, diagnostic)) {
         return ZR_FALSE;
     }
     *mayAlias = (TZrBool)(leftStart < rightEnd && rightStart < leftEnd);

@@ -60,7 +60,7 @@ ZR_CORE_API TZrBool ZrCore_BatchShape_ElementCount(
 /** @brief 校验缓冲区描述符、步长乘法及末元素相对距离。
  * @pre buffer 描述的底层分配与存活期由调用方保证，尤其是负 stride 的 data 之前区域。
  * @note count 为零时允许 data 为空，但 elementSize 与 stride 仍须非零；diagnostic 可为空。
- * BUG: 64 位平台上末端偏移为 INT64_MIN 时取负溢出；单元素 INT64_MIN 步长误报溢出。
+ * 末端偏移为该有符号类型最小值时用无符号回退计算幅度，避免对最小值取负。
  * BUG: ptrdiff_t 为 32 位时仍按 64 位界限校验，可在计算偏移前漏掉乘法溢出。 */
 ZR_CORE_API TZrBool ZrCore_BatchBuffer_Validate(
         const SZrBatchBuffer *buffer, TZrSize count,
@@ -72,7 +72,7 @@ ZR_CORE_API TZrBool ZrCore_BatchBuffer_Offset(
         TZrMemoryOffset *offset, SZrBatchDiagnostic *diagnostic);
 /** @brief 校验两个视图后估算它们是否可能共享字节，以保护 Map/Zip 的写入顺序。
  * @note 成功时写入 *mayAlias；无元素的视图使 *mayAlias 为假。验证失败时不保证写入该输出。
- * BUG: 负 stride 时当前区间仍从 data 向高地址推导，可漏报实际重叠。 */
+ * 重叠区间按逻辑元素的最低地址到最高地址加元素宽度计算，负 stride 会伸向 data 之前。 */
 ZR_CORE_API TZrBool ZrCore_BatchBuffers_MayAlias(
         const SZrBatchBuffer *left, TZrSize leftCount,
         const SZrBatchBuffer *right, TZrSize rightCount,
