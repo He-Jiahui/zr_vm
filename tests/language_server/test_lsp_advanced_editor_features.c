@@ -2207,6 +2207,532 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
     }
 }
 
+static TZrBool test_fold_has_kind_span(SZrArray *folds,
+                                       TZrInt32 startLine,
+                                       TZrInt32 endLine,
+                                       const TZrChar *kindText) {
+    if (folds == ZR_NULL || kindText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < folds->length; index++) {
+        SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(folds, index);
+        const TZrChar *kind = (rangePtr != ZR_NULL && *rangePtr != ZR_NULL)
+                                  ? test_string_text((*rangePtr)->kind)
+                                  : ZR_NULL;
+        if (rangePtr != ZR_NULL && *rangePtr != ZR_NULL && kind != ZR_NULL &&
+            (*rangePtr)->startLine == startLine &&
+            (*rangePtr)->endLine == endLine &&
+            strcmp(kind, kindText) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool test_remove_unused_deletes_line(SZrArray *actions, TZrInt32 startLine) {
+    if (actions == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < actions->length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(actions, index);
+        const TZrChar *kind = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                  ? test_string_text((*actionPtr)->kind)
+                                  : ZR_NULL;
+        if (kind == ZR_NULL || strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED) != 0 ||
+            actionPtr == ZR_NULL || *actionPtr == ZR_NULL) {
+            continue;
+        }
+        for (TZrSize editIndex = 0; editIndex < (*actionPtr)->edits.length; editIndex++) {
+            SZrLspTextEdit **editPtr =
+                (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, editIndex);
+            const TZrChar *newText = editPtr != ZR_NULL && *editPtr != ZR_NULL
+                                         ? test_string_text((*editPtr)->newText)
+                                         : ZR_NULL;
+            if (editPtr != ZR_NULL && *editPtr != ZR_NULL && newText != ZR_NULL &&
+                strcmp(newText, "") == 0 && (*editPtr)->range.start.line == startLine) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool test_actions_offer_import(SZrArray *actions, const TZrChar *title) {
+    if (actions == ZR_NULL || title == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < actions->length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(actions, index);
+        const TZrChar *actionTitle = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                         ? test_string_text((*actionPtr)->title)
+                                         : ZR_NULL;
+        if (actionTitle != ZR_NULL && strcmp(actionTitle, title) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static void test_lsp_template_interpolation_preserves_following_indent(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP formatting keeps statement indent after template interpolation";
+    const TZrChar *content =
+        "fn main(): int {\n"
+        "var text = `value ${\n"
+        "1\n"
+        "}`;\n"
+        "return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray edits = {0};
+    const TZrChar *formatted;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_interpolation_indent.zr", content, &uri);
+    formatted = context != ZR_NULL &&
+                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits)
+                    ? first_text_edit_text(&edits)
+                    : ZR_NULL;
+    if (formatted == ZR_NULL || strstr(formatted, "\n    return 0;\n") == ZR_NULL) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "interpolation closer changed the indent of the following statement");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_selection_ranges_keep_ancestor_containment(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP selection ranges keep ancestor containment";
+    const TZrChar *header = "fn main() {\n}\n";
+    const TZrChar *indented =
+        "fn main(): int {\n"
+        "    return 0;\n"
+        "}\n";
+    const TZrChar *stringBrace =
+        "fn main(): int {\n"
+        "    var text = \"{\";\n"
+        "    return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrArray selections = {0};
+    SZrLspPosition position;
+    SZrLspSelectionRange *selection = ZR_NULL;
+    TZrBool headerOk = ZR_FALSE;
+    TZrBool indentOk = ZR_FALSE;
+    TZrBool stringOk = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_selection_header.zr", header, &uri);
+    if (context != ZR_NULL &&
+        test_find_position(header, "main", 0, &position) &&
+        ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selections) &&
+        selections.length == 1) {
+        SZrLspSelectionRange **selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
+        selection = selectionPtr != ZR_NULL ? *selectionPtr : ZR_NULL;
+        headerOk = selection != ZR_NULL &&
+                   selection->hasParent &&
+                   !selection->hasGrandParent &&
+                   selection->parentRange.start.line == 0 &&
+                   selection->parentRange.start.character <= selection->range.start.character &&
+                   selection->parentRange.end.line >= selection->range.end.line;
+    }
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_selection_indent.zr", indented, &uri);
+    position.line = 1;
+    position.character = 0;
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selections) &&
+        selections.length == 1) {
+        SZrLspSelectionRange **selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
+        selection = selectionPtr != ZR_NULL ? *selectionPtr : ZR_NULL;
+        indentOk = selection != ZR_NULL &&
+                   selection->hasParent &&
+                   selection->parentRange.start.line == 1 &&
+                   selection->parentRange.start.character == 0 &&
+                   selection->parentRange.start.character <= selection->range.start.character &&
+                   (selection->parentRange.end.line > selection->range.end.line ||
+                    selection->parentRange.end.character >= selection->range.end.character);
+    }
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_selection_string_brace.zr", stringBrace, &uri);
+    if (context != ZR_NULL &&
+        test_find_position(stringBrace, "\"{", 1, &position) &&
+        ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selections) &&
+        selections.length == 1) {
+        SZrLspSelectionRange **selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
+        selection = selectionPtr != ZR_NULL ? *selectionPtr : ZR_NULL;
+        stringOk = selection != ZR_NULL &&
+                   selection->hasParent &&
+                   selection->hasGrandParent &&
+                   selection->grandParentRange.start.line == 0 &&
+                   selection->grandParentRange.end.line == 3;
+    }
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!headerOk || !indentOk || !stringOk) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "selection ancestor did not strictly contain its descendant");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_folding_ignores_non_code_regions_and_keeps_depth(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP folding ignores non-code regions and keeps depth-32 pairing";
+    const TZrChar *lexical =
+        "var text = `\n"
+        "//#region hidden\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
+        "// one\n"
+        "// two\n"
+        "//#endregion\n"
+        "`;\n"
+        "/*\n"
+        "//#region commented\n"
+        "// one\n"
+        "// two\n"
+        "//#endregion\n"
+        "*/\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
+        "// one\n"
+        "// two\n"
+        "//#region real\n"
+        "fn main(): int {\n"
+        "    return 1;\n"
+        "}\n"
+        "//#endregion\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray folds = {0};
+    TZrChar *regions = ZR_NULL;
+    TZrChar *braces = ZR_NULL;
+    TZrBool lexicalOk = ZR_FALSE;
+    TZrBool regionDepthOk = ZR_FALSE;
+    TZrBool braceDepthOk = ZR_FALSE;
+    const TZrInt32 depth = 33;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_fold_lexical_regions.zr", lexical, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        lexicalOk = test_fold_has_kind_span(&folds, 14, 15, ZR_LSP_FOLDING_RANGE_KIND_IMPORTS) &&
+                    test_fold_has_kind_span(&folds, 16, 18, ZR_LSP_FOLDING_RANGE_KIND_COMMENT) &&
+                    test_fold_has_kind_span(&folds, 18, 22, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+                    !test_fold_has_kind_span(&folds, 1, 6, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+                    !test_fold_has_kind_span(&folds, 2, 3, ZR_LSP_FOLDING_RANGE_KIND_IMPORTS) &&
+                    !test_fold_has_kind_span(&folds, 4, 5, ZR_LSP_FOLDING_RANGE_KIND_COMMENT) &&
+                    !test_fold_has_kind_span(&folds, 10, 11, ZR_LSP_FOLDING_RANGE_KIND_COMMENT) &&
+                    !test_fold_has_kind_span(&folds, 9, 12, ZR_LSP_FOLDING_RANGE_KIND_REGION);
+    }
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        context = ZR_NULL;
+    }
+
+    regions = (TZrChar *)malloc((size_t)depth * (strlen("//#region\n") + strlen("//#endregion\n")) + 1);
+    if (regions != ZR_NULL) {
+        TZrChar *cursor = regions;
+        for (TZrInt32 index = 0; index < depth; index++) {
+            memcpy(cursor, "//#region\n", strlen("//#region\n"));
+            cursor += strlen("//#region\n");
+        }
+        for (TZrInt32 index = 0; index < depth; index++) {
+            memcpy(cursor, "//#endregion\n", strlen("//#endregion\n"));
+            cursor += strlen("//#endregion\n");
+        }
+        *cursor = '\0';
+        context = test_open_document(state, "file:///tmp/zr_lsp_fold_region_depth.zr", regions, &uri);
+        if (context != ZR_NULL &&
+            ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+            regionDepthOk = test_fold_has_kind_span(&folds, 0, depth * 2 - 1, ZR_LSP_FOLDING_RANGE_KIND_REGION);
+        }
+        ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+            context = ZR_NULL;
+        }
+        free(regions);
+    }
+
+    braces = (TZrChar *)malloc((size_t)depth * 8 + 64);
+    if (braces != ZR_NULL) {
+        TZrChar *cursor = braces;
+        memcpy(cursor, "fn outer(): int {\n", strlen("fn outer(): int {\n"));
+        cursor += strlen("fn outer(): int {\n");
+        for (TZrInt32 index = 0; index < depth - 1; index++) {
+            memcpy(cursor, "{\n", 2);
+            cursor += 2;
+        }
+        for (TZrInt32 index = 0; index < depth; index++) {
+            memcpy(cursor, "}\n", 2);
+            cursor += 2;
+        }
+        *cursor = '\0';
+        context = test_open_document(state, "file:///tmp/zr_lsp_fold_brace_depth.zr", braces, &uri);
+        if (context != ZR_NULL &&
+            ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+            braceDepthOk = test_fold_has_kind_span(&folds, 0, depth * 2 - 1, ZR_LSP_FOLDING_RANGE_KIND_REGION);
+        }
+        ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        free(braces);
+    }
+
+    if (!lexicalOk || !regionDepthOk || !braceDepthOk) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "folding paired a non-code region or dropped an outer depth-32 range");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_document_links_bind_only_import_string_argument(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP document links bind only the import string argument";
+    const TZrChar *unrelated = "import(x); let name = \"zr.math\";\n";
+    const TZrChar *spaced = "import( \"zr.math\" );\n";
+    const TZrChar *wrapped = "import(\n    \"zr.math\"\n);\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrArray links = {0};
+    TZrBool unrelatedOk = ZR_FALSE;
+    TZrBool spacedOk = ZR_FALSE;
+    TZrBool wrappedOk = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_links_unrelated_string.zr", unrelated, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &links) &&
+        links.length == 0) {
+        unrelatedOk = ZR_TRUE;
+    }
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_links_spaced_import.zr", spaced, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &links) &&
+        links.length == 1) {
+        SZrLspDocumentLink **linkPtr = (SZrLspDocumentLink **)ZrCore_Array_Get(&links, 0);
+        const TZrChar *target = linkPtr != ZR_NULL && *linkPtr != ZR_NULL
+                                    ? test_string_text((*linkPtr)->target)
+                                    : ZR_NULL;
+        spacedOk = target != ZR_NULL && strstr(target, "zr.math") != ZR_NULL;
+    }
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_links_wrapped_import.zr", wrapped, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &links) &&
+        links.length == 1) {
+        SZrLspDocumentLink **linkPtr = (SZrLspDocumentLink **)ZrCore_Array_Get(&links, 0);
+        const TZrChar *target = linkPtr != ZR_NULL && *linkPtr != ZR_NULL
+                                    ? test_string_text((*linkPtr)->target)
+                                    : ZR_NULL;
+        wrappedOk = target != ZR_NULL && strstr(target, "zr.math") != ZR_NULL;
+    }
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!unrelatedOk || !spacedOk || !wrappedOk) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "documentLink did not stay on the first import string argument");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_remove_unused_counts_template_interpolation(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP remove-unused counts template interpolation uses";
+    const TZrChar *used =
+        "let math = import(\"zr.math\");\n"
+        "fn main(value: int): int {\n"
+        "    return `${math.abs(value)}`;\n"
+        "}\n";
+    const TZrChar *unused =
+        "let math = import(\"zr.math\");\n"
+        "fn main(): int {\n"
+        "    var text = `math.abs`;\n"
+        "    return `${/* math.abs */ 1}`;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {6, 0}};
+    TZrBool keptUse = ZR_FALSE;
+    TZrBool removedText = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_unused_template_use.zr", used, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        keptUse = !test_remove_unused_deletes_line(&actions, 0);
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_unused_template_text.zr", unused, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        removedText = test_remove_unused_deletes_line(&actions, 0);
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!keptUse || !removedText) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "template interpolation was not treated as a real alias use");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_missing_import_is_scoped_and_sees_interpolation(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP missing import is scoped and sees template interpolation";
+    const TZrChar *otherFunction =
+        "fn other(value: int): int {\n"
+        "    let math = import(\"zr.math\");\n"
+        "    return math.abs(value);\n"
+        "}\n"
+        "fn main(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n";
+    const TZrChar *interpolation =
+        "fn main(value: int): int {\n"
+        "    return `${math.abs(value)}`;\n"
+        "}\n";
+    const TZrChar *templateText =
+        "fn main(): int {\n"
+        "    var text = `math.abs`;\n"
+        "    return 0;\n"
+        "}\n";
+    const TZrChar *untyped =
+        "fn main(): int {\n"
+        "    var missing;\n"
+        "    return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrArray actions = {0};
+    SZrLspRange otherRange = {{5, 0}, {5, 40}};
+    SZrLspRange interpolationRange = {{1, 0}, {1, 40}};
+    SZrLspRange textRange = {{1, 0}, {1, 40}};
+    SZrLspRange missingRange = {{1, 0}, {1, 20}};
+    TZrBool otherOk = ZR_FALSE;
+    TZrBool interpolationOk = ZR_FALSE;
+    TZrBool textOk = ZR_FALSE;
+    TZrBool missingOk = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_missing_import_other_fn.zr", otherFunction, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, otherRange, &actions)) {
+        otherOk = test_actions_offer_import(&actions, "Import zr.math as math");
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_missing_import_interpolation.zr", interpolation, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, interpolationRange, &actions)) {
+        interpolationOk = test_actions_offer_import(&actions, "Import zr.math as math");
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_missing_import_template_text.zr", templateText, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, textRange, &actions)) {
+        textOk = !test_actions_offer_import(&actions, "Import zr.math as math");
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_no_inferred_type_action.zr", untyped, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, missingRange, &actions)) {
+        missingOk = !test_actions_offer_import(&actions, "Insert inferred type");
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL && strstr(title, "inferred type") != ZR_NULL) {
+                missingOk = ZR_FALSE;
+            }
+            if (actionPtr == ZR_NULL || *actionPtr == ZR_NULL) {
+                continue;
+            }
+            for (TZrSize editIndex = 0; editIndex < (*actionPtr)->edits.length; editIndex++) {
+                SZrLspTextEdit **editPtr =
+                    (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, editIndex);
+                const TZrChar *newText = editPtr != ZR_NULL && *editPtr != ZR_NULL
+                                             ? test_string_text((*editPtr)->newText)
+                                             : ZR_NULL;
+                if (newText != ZR_NULL && strstr(newText, ": ") != ZR_NULL &&
+                    strstr(newText, "missing") != ZR_NULL) {
+                    missingOk = ZR_FALSE;
+                }
+            }
+        }
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!otherOk || !interpolationOk || !textOk || !missingOk) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "missing import scope, interpolation, or untyped declaration action was wrong");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
@@ -2240,8 +2766,12 @@ int main(void) {
     test_lsp_folding_ranges_include_import_regions(state, &failures);
     test_lsp_formatting_ignores_non_code_braces(state, &failures);
     test_lsp_folding_ignores_non_code_braces(state, &failures);
+    test_lsp_template_interpolation_preserves_following_indent(state, &failures);
+    test_lsp_selection_ranges_keep_ancestor_containment(state, &failures);
+    test_lsp_folding_ignores_non_code_regions_and_keeps_depth(state, &failures);
     test_lsp_document_links_resolve_import_literals(state, &failures);
     test_lsp_document_links_ignore_non_code_import_text(state, &failures);
+    test_lsp_document_links_bind_only_import_string_argument(state, &failures);
     test_lsp_document_links_resolve_zrp_paths(state, &failures);
     test_lsp_document_links_resolve_virtual_module_links(state, &failures);
     test_lsp_code_action_organizes_imports(state, &failures);
@@ -2252,6 +2782,8 @@ int main(void) {
     test_lsp_code_action_skips_organized_imports(state, &failures);
     test_lsp_code_action_removes_unused_alias_imports(state, &failures);
     test_lsp_code_action_ignores_text_mentions_when_removing_unused_alias_imports(state, &failures);
+    test_lsp_remove_unused_counts_template_interpolation(state, &failures);
+    test_lsp_missing_import_is_scoped_and_sees_interpolation(state, &failures);
     test_lsp_code_action_inserts_missing_semicolon(state, &failures);
     test_lsp_code_action_inserts_semicolon_before_line_comment(state, &failures);
     test_lsp_code_action_skips_semicolon_inside_block_comment(state, &failures);

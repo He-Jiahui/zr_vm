@@ -56,6 +56,61 @@ static TZrBool lsp_document_links_import_call_at(const TZrChar *content,
     return scan < contentLength && content[scan] == '(';
 }
 
+/* 只接受 import( 后的第一个记号为双引号字符串；中间可以有空白，不能跨到后续语句。 */
+static TZrBool lsp_document_links_import_string_argument(const TZrChar *content,
+                                                         TZrSize contentLength,
+                                                         TZrSize importOffset,
+                                                         TZrSize *valueStart,
+                                                         TZrSize *valueEnd) {
+    TZrSize scan;
+    TZrBool escaped = ZR_FALSE;
+
+    if (content == ZR_NULL || valueStart == ZR_NULL || valueEnd == ZR_NULL ||
+        importOffset + strlen("import") > contentLength) {
+        return ZR_FALSE;
+    }
+
+    scan = importOffset + strlen("import");
+    while (scan < contentLength && isspace((unsigned char)content[scan])) {
+        scan++;
+    }
+    if (scan >= contentLength || content[scan] != '(') {
+        return ZR_FALSE;
+    }
+    scan++;
+    while (scan < contentLength && isspace((unsigned char)content[scan])) {
+        scan++;
+    }
+    if (scan >= contentLength || content[scan] != '"') {
+        return ZR_FALSE;
+    }
+
+    scan++;
+    *valueStart = scan;
+    while (scan < contentLength) {
+        TZrChar current = content[scan];
+        if (escaped) {
+            escaped = ZR_FALSE;
+            scan++;
+            continue;
+        }
+        if (current == '\\') {
+            escaped = ZR_TRUE;
+            scan++;
+            continue;
+        }
+        if (current == '"' || current == '\n' || current == '\r') {
+            break;
+        }
+        scan++;
+    }
+    if (scan >= contentLength || content[scan] != '"') {
+        return ZR_FALSE;
+    }
+    *valueEnd = scan;
+    return *valueEnd >= *valueStart;
+}
+
 /* 为 stdio/WASM 的初次 documentLink 响应构造完整目标；
  * 释放函数只回收 link 外壳和数组，target/tooltip 为请求期间的 GC 字符串。 */
 static TZrBool lsp_document_links_append(SZrState *state,
@@ -618,8 +673,8 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
 
     while (cursor + strlen("import") < contentLength) {
         TZrSize matchOffset;
-        TZrSize quoteOffset;
-        TZrSize closeOffset;
+        TZrSize valueStart;
+        TZrSize valueEnd;
         SZrArray definitions = {0};
         SZrLspRange linkRange;
         SZrLspPosition queryPosition;
@@ -637,27 +692,16 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             cursor = matchOffset + strlen("import");
             continue;
         }
-        /* BUG: 这里只找 import 后任意后续双引号，不限定为调用的首个字面参数。
-         * `import(x); let name="zr.math";` 可把 name 字符串误投影成原生导入链接；
-         * 应由解析后的调用参数范围而非跨语句文本搜索决定候选。 */
-        quoteOffset = matchOffset;
-        while (quoteOffset < contentLength && content[quoteOffset] != '"') {
-            quoteOffset++;
-        }
-        if (quoteOffset >= contentLength) {
+        if (!lsp_document_links_import_string_argument(content,
+                                                      contentLength,
+                                                      matchOffset,
+                                                      &valueStart,
+                                                      &valueEnd)) {
             cursor = matchOffset + strlen("import");
             continue;
         }
-        closeOffset = quoteOffset + 1;
-        while (closeOffset < contentLength && content[closeOffset] != '"') {
-            closeOffset++;
-        }
-        if (closeOffset >= contentLength) {
-            cursor = quoteOffset + 1;
-            continue;
-        }
 
-        linkRange = lsp_editor_range_from_offsets(content, contentLength, quoteOffset + 1, closeOffset);
+        linkRange = lsp_editor_range_from_offsets(content, contentLength, valueStart, valueEnd);
         queryPosition = linkRange.start;
         if (ZrLanguageServer_Lsp_GetDefinition(state, context, uri, queryPosition, &definitions) &&
             definitions.length > 0) {
@@ -677,12 +721,12 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
                                                      uri,
                                                      result,
                                                      content,
-                                                     quoteOffset + 1,
-                                                     closeOffset,
+                                                     valueStart,
+                                                     valueEnd,
                                                      linkRange)) {
             goto cleanup;
         }
-        cursor = closeOffset + 1;
+        cursor = valueEnd + 1;
     }
 
     success = ZR_TRUE;

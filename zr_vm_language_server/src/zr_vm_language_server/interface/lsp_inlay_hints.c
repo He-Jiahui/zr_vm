@@ -3,6 +3,8 @@
 #include "semantic/lsp_numeric_range_text.h"
 #include "semantic/analyzer/semantic_analyzer_internal.h"
 #include "zr_vm_parser/semantic_display.h"
+#include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/ast.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,11 +26,10 @@ static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right)
     return 0;
 }
 
-/* BUG: LSP Range 的 end 是排他的，这里把等于 end 的提示也纳入结果。
- * stdio 和 Wasm 均原样传入客户端范围，因此分页相邻范围可重复返回边界提示。 */
+/* LSP Range 的 end 排他；空范围不包含任何提示，相邻分页不会重复边界提示。 */
 static TZrBool lsp_inlay_position_in_range(SZrLspPosition position, SZrLspRange range) {
     return lsp_inlay_compare_position(position, range.start) >= 0 &&
-           lsp_inlay_compare_position(position, range.end) <= 0;
+           lsp_inlay_compare_position(position, range.end) < 0;
 }
 
 /* 标签和事实均使用有界缓冲区；失败向上传递，避免把截断类型展示为完整类型。 */
@@ -98,27 +99,90 @@ static TZrBool lsp_inlay_declaration_has_exact_canonical_type_text(
     return buffer[0] != '\0';
 }
 
-/* 成功加入结果的提示持有原生结构体和 VM 字符串；清理函数只释放原生部分。 */
+static const TZrChar *lsp_inlay_native_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool lsp_inlay_hint_exists(SZrArray *result,
+                                     SZrLspPosition position,
+                                     TZrInt32 kind,
+                                     const TZrChar *labelText) {
+    if (result == ZR_NULL || !result->isValid || labelText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < result->length; index++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(result, index);
+        const TZrChar *existing;
+        if (hintPtr == ZR_NULL || *hintPtr == ZR_NULL) {
+            continue;
+        }
+        existing = lsp_inlay_native_text((*hintPtr)->label);
+        if ((*hintPtr)->kind == kind &&
+            (*hintPtr)->position.line == position.line &&
+            (*hintPtr)->position.character == position.character &&
+            existing != ZR_NULL &&
+            strcmp(existing, labelText) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/* 插入文本只含精确类型或已解析形参名；事实后缀留在标签里。 */
+static TZrBool lsp_inlay_append_exact_edit(SZrState *state,
+                                           SZrLspInlayHint *hint,
+                                           SZrLspPosition position,
+                                           const TZrChar *editText) {
+    SZrLspTextEdit *edit;
+
+    if (state == ZR_NULL || hint == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (editText == ZR_NULL || editText[0] == '\0') {
+        return ZR_TRUE;
+    }
+    if (!hint->textEdits.isValid) {
+        ZrCore_Array_Init(state, &hint->textEdits, sizeof(SZrLspTextEdit *), 1);
+    }
+
+    edit = (SZrLspTextEdit *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspTextEdit));
+    if (edit == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    edit->range.start = position;
+    edit->range.end = position;
+    edit->newText = ZrCore_String_Create(state, editText, strlen(editText));
+    if (edit->newText == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, edit, sizeof(SZrLspTextEdit));
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(state, &hint->textEdits, &edit);
+    return ZR_TRUE;
+}
+
+/* 成功加入结果的提示持有原生结构体、VM 字符串和可选编辑；清理函数释放原生部分。 */
 static TZrBool lsp_inlay_append_hint(SZrState *state,
                                      SZrArray *result,
                                      SZrLspPosition position,
                                      TZrInt32 kind,
-                                     const TZrChar *labelText) {
-    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
-    int labelLength;
+                                     TZrBool paddingLeft,
+                                     TZrBool paddingRight,
+                                     const TZrChar *labelText,
+                                     const TZrChar *editText) {
     SZrLspInlayHint *hint;
 
-    if (state == ZR_NULL || result == ZR_NULL || labelText == ZR_NULL) {
+    if (state == ZR_NULL || result == ZR_NULL || labelText == ZR_NULL || labelText[0] == '\0') {
         return ZR_FALSE;
+    }
+    if (lsp_inlay_hint_exists(result, position, kind, labelText)) {
+        return ZR_TRUE;
     }
 
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspInlayHint *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    }
-
-    labelLength = snprintf(labelBuffer, sizeof(labelBuffer), ": %s", labelText);
-    if (labelLength <= 0 || (TZrSize)labelLength >= sizeof(labelBuffer)) {
-        return ZR_FALSE;
     }
 
     hint = (SZrLspInlayHint *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspInlayHint));
@@ -127,12 +191,15 @@ static TZrBool lsp_inlay_append_hint(SZrState *state,
     }
 
     memset(hint, 0, sizeof(*hint));
+    ZrCore_Array_Init(state, &hint->textEdits, sizeof(SZrLspTextEdit *), 1);
     hint->position = position;
     hint->kind = kind;
-    hint->paddingLeft = ZR_TRUE;
-    hint->paddingRight = ZR_FALSE;
-    hint->label = ZrCore_String_Create(state, labelBuffer, (TZrSize)labelLength);
-    if (hint->label == ZR_NULL) {
+    hint->paddingLeft = paddingLeft;
+    hint->paddingRight = paddingRight;
+    hint->label = ZrCore_String_Create(state, labelText, strlen(labelText));
+    if (hint->label == ZR_NULL ||
+        !lsp_inlay_append_exact_edit(state, hint, position, editText)) {
+        ZrLanguageServer_Lsp_FreeTextEdits(state, &hint->textEdits);
         ZrCore_Memory_RawFree(state->global, hint, sizeof(SZrLspInlayHint));
         return ZR_FALSE;
     }
@@ -360,7 +427,163 @@ static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
         return ZR_FALSE;
     }
 
-    return lsp_inlay_append_hint(state, result, position, ZR_LSP_INLAY_HINT_KIND_TYPE, labelBuffer);
+    {
+        TZrChar displayLabel[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+        TZrChar editText[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+        TZrBool insertsBeforeBody = astNode->type == ZR_AST_FUNCTION_DECLARATION ||
+                                    astNode->type == ZR_AST_CLASS_METHOD ||
+                                    astNode->type == ZR_AST_STRUCT_METHOD;
+        int displayLength = snprintf(displayLabel, sizeof(displayLabel), ": %s", labelBuffer);
+        int editLength = snprintf(editText,
+                                  sizeof(editText),
+                                  insertsBeforeBody ? ": %s " : ": %s",
+                                  typeText);
+        if (displayLength <= 0 || (TZrSize)displayLength >= sizeof(displayLabel) ||
+            editLength <= 0 || (TZrSize)editLength >= sizeof(editText)) {
+            return ZR_FALSE;
+        }
+        return lsp_inlay_append_hint(state,
+                                     result,
+                                     position,
+                                     ZR_LSP_INLAY_HINT_KIND_TYPE,
+                                     ZR_TRUE,
+                                     ZR_FALSE,
+                                     displayLabel,
+                                     editText);
+    }
+}
+
+static const SZrAstNodeArray *lsp_inlay_callable_parameters(const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.params;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declaration->data.externFunctionDeclaration.params;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return declaration->data.externDelegateDeclaration.params;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.params;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.params;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool lsp_inlay_source_is_document(SZrString *source, SZrString *uri) {
+    return source != ZR_NULL &&
+           (ZrLanguageServer_Lsp_StringsEqual(source, uri) ||
+            ZrLanguageServer_Lsp_UrisResolveToSameNativePath(source, uri));
+}
+
+/* 形参名只来自已解析目标的声明 AST；具名实参和外部未解析调用不发明名字。 */
+static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri,
+                                                SZrSemanticAnalyzer *analyzer,
+                                                SZrLspRange range,
+                                                SZrArray *result) {
+    SZrParserSemanticQueryScope scope;
+    SZrArray *facts;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    facts = &analyzer->semanticContext->expressionFacts;
+    if (!facts->isValid) {
+        return ZR_TRUE;
+    }
+
+    memset(&scope, 0, sizeof(scope));
+    scope.kind = ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE;
+    scope.root = analyzer->ast;
+
+    for (TZrSize index = 0; index < facts->length; index++) {
+        const SZrSemanticExpressionFact *fact =
+                (const SZrSemanticExpressionFact *)ZrCore_Array_Get(facts, index);
+        SZrParserSemanticCallQuery query;
+        const SZrSemanticSymbolRecord *symbol;
+        const SZrAstNodeArray *parameters;
+
+        if (fact == ZR_NULL || !fact->hasCallInfo ||
+            !lsp_inlay_source_is_document(fact->range.source, uri)) {
+            continue;
+        }
+        if (!ZrParser_SemanticQuery_CallAt(analyzer->semanticContext,
+                                           fact->range,
+                                           &scope,
+                                           &query) ||
+            !query.hasResolvedTarget ||
+            query.argumentMappings == ZR_NULL ||
+            !query.argumentMappings->isValid) {
+            continue;
+        }
+
+        symbol = ZrParser_Semantic_FindSymbolById(analyzer->semanticContext, query.targetSymbolId);
+        parameters = lsp_inlay_callable_parameters(symbol != ZR_NULL ? symbol->astNode : ZR_NULL);
+        if (parameters == ZR_NULL || parameters->nodes == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize mappingIndex = 0; mappingIndex < query.argumentMappings->length; mappingIndex++) {
+            const SZrSemanticCallArgumentFact *mapping =
+                    (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+                            (SZrArray *)query.argumentMappings, mappingIndex);
+            SZrAstNode *parameterNode;
+            SZrParameter *parameter;
+            const TZrChar *name;
+            SZrLspPosition position;
+            TZrChar label[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+            TZrChar editText[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+            int labelLength;
+            int editLength;
+
+            if (mapping == ZR_NULL || mapping->isNamed ||
+                mapping->parameterIndex >= parameters->count) {
+                continue;
+            }
+            parameterNode = parameters->nodes[mapping->parameterIndex];
+            if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+            parameter = &parameterNode->data.parameter;
+            name = parameter->name != ZR_NULL ? lsp_inlay_native_text(parameter->name->name) : ZR_NULL;
+            if (name == ZR_NULL || name[0] == '\0') {
+                continue;
+            }
+
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                    context, uri, mapping->argumentRange.start);
+            if (!lsp_inlay_position_in_range(position, range)) {
+                continue;
+            }
+
+            labelLength = snprintf(label, sizeof(label), "%s:", name);
+            editLength = snprintf(editText, sizeof(editText), "%s: ", name);
+            if (labelLength <= 0 || (TZrSize)labelLength >= sizeof(label) ||
+                editLength <= 0 || (TZrSize)editLength >= sizeof(editText)) {
+                return ZR_FALSE;
+            }
+            if (!lsp_inlay_append_hint(state,
+                                       result,
+                                       position,
+                                       ZR_LSP_INLAY_HINT_KIND_PARAMETER,
+                                       ZR_FALSE,
+                                       ZR_TRUE,
+                                       label,
+                                       editText)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 /** @brief 从当前文档的规范声明查询中生成指定范围内的类型提示。
@@ -421,6 +644,11 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
     }
     ZrCore_Array_Free(state, &declarations);
 
+    if (!lsp_inlay_append_parameter_hints(state, context, uri, analyzer, range, result)) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, result);
+        return ZR_FALSE;
+    }
+
     return ZR_TRUE;
 }
 
@@ -434,6 +662,7 @@ void ZrLanguageServer_Lsp_FreeInlayHints(SZrState *state, SZrArray *result) {
     for (TZrSize index = 0; index < result->length; index++) {
         SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(result, index);
         if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
+            ZrLanguageServer_Lsp_FreeTextEdits(state, &(*hintPtr)->textEdits);
             ZrCore_Memory_RawFree(state->global, *hintPtr, sizeof(SZrLspInlayHint));
         }
     }

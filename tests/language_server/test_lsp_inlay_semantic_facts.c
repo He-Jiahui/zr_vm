@@ -1004,6 +1004,293 @@ static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState 
     TEST_PASS(timer, summary);
 }
 
+static const TZrChar *inlay_hint_edit_text(SZrLspInlayHint *hint) {
+    SZrLspTextEdit **editPtr;
+
+    if (hint == ZR_NULL || !hint->textEdits.isValid || hint->textEdits.length == 0) {
+        return ZR_NULL;
+    }
+    editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(&hint->textEdits, 0);
+    return editPtr != ZR_NULL && *editPtr != ZR_NULL ? test_string_ptr((*editPtr)->newText) : ZR_NULL;
+}
+
+static SZrLspInlayHint *inlay_hint_with_label(SZrArray *hints, const TZrChar *label, TZrInt32 line) {
+    if (hints == ZR_NULL || label == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0; index < hints->length; index++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
+        const TZrChar *hintLabel;
+        if (hintPtr == ZR_NULL || *hintPtr == ZR_NULL) {
+            continue;
+        }
+        hintLabel = test_string_ptr((*hintPtr)->label);
+        if (hintLabel != ZR_NULL && strcmp(hintLabel, label) == 0 &&
+            (line < 0 || (*hintPtr)->position.line == line)) {
+            return *hintPtr;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void test_inlay_exact_edit_and_exclusive_range(SZrState *state) {
+    const TZrChar *summary = "LSP Inlay Exact Type Edit Uses Exclusive Range";
+    const TZrChar *content =
+        "fn run(): void {\n"
+        "    var inferred = 1;\n"
+        "}\n";
+    const TZrChar *uriText = "file:///inlay_exact_edit_exclusive_range.zr";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrArray hints;
+    SZrLspInlayHint *hint;
+    const TZrChar *editText;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare exact inlay edit fixture");
+        return;
+    }
+
+    memset(&range, 0, sizeof(range));
+    range.end.line = 4;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Inlay request failed");
+        return;
+    }
+    hint = inlay_hint_with_label(&hints, ": int", 1);
+    if (hint == ZR_NULL) {
+        for (TZrSize index = 0; index < hints.length; index++) {
+            SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(&hints, index);
+            const TZrChar *label = hintPtr != ZR_NULL && *hintPtr != ZR_NULL
+                                       ? test_string_ptr((*hintPtr)->label)
+                                       : ZR_NULL;
+            if (label != ZR_NULL && strstr(label, ": int") == label &&
+                (*hintPtr)->position.line == 1) {
+                hint = *hintPtr;
+                break;
+            }
+        }
+    }
+    editText = inlay_hint_edit_text(hint);
+    if (hint == ZR_NULL || hint->position.character != 16 || editText == ZR_NULL ||
+        strcmp(editText, ": int") != 0 || strstr(editText, "range") != ZR_NULL) {
+        snprintf(reason, sizeof(reason),
+                 "Expected exclusive-ready type edit ': int' at 1:16; label=%s edit=%s",
+                 hint != ZR_NULL && hint->label != ZR_NULL ? test_string_ptr(hint->label) : "<null>",
+                 editText != ZR_NULL ? editText : "<null>");
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    range.start = hint->position;
+    range.end = hint->position;
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints) || hints.length != 0) {
+        snprintf(reason, sizeof(reason),
+                 "Empty range at the hint position included %llu hint(s)",
+                 (unsigned long long)hints.length);
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+
+    range.end.character = range.start.character + 1;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    hint = ZR_NULL;
+    if (ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        for (TZrSize index = 0; index < hints.length; index++) {
+            SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(&hints, index);
+            const TZrChar *label = hintPtr != ZR_NULL && *hintPtr != ZR_NULL
+                                       ? test_string_ptr((*hintPtr)->label)
+                                       : ZR_NULL;
+            if (label != ZR_NULL && strstr(label, ": int") == label && (*hintPtr)->position.line == 1) {
+                hint = *hintPtr;
+                break;
+            }
+        }
+    }
+    if (hint == ZR_NULL) {
+        SZrLspInlayHint **firstPtr = hints.length > 0
+                                         ? (SZrLspInlayHint **)ZrCore_Array_Get(&hints, 0)
+                                         : ZR_NULL;
+        snprintf(reason, sizeof(reason),
+                 "Range starting at the hint excluded the exact type; count=%llu label=%s",
+                 (unsigned long long)hints.length,
+                 firstPtr != ZR_NULL && *firstPtr != ZR_NULL ? test_string_ptr((*firstPtr)->label) : "<null>");
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_inlay_parameter_names_and_no_guessed_type(SZrState *state) {
+    const TZrChar *summary = "LSP Inlay Parameter Names And No Guessed Type";
+    const TZrChar *calls =
+        "fn add(left: int, right: int): int {\n"
+        "    return left + right;\n"
+        "}\n"
+        "fn main(): int {\n"
+        "    return add(1, 2);\n"
+        "}\n";
+    const TZrChar *named =
+        "fn add(left: int, right: int): int {\n"
+        "    return left + right;\n"
+        "}\n"
+        "fn main(): int {\n"
+        "    return add(left: 1, right: 2);\n"
+        "}\n";
+    const TZrChar *unresolved =
+        "fn main(): int {\n"
+        "    return missing(1, 2);\n"
+        "}\n";
+    const TZrChar *untyped =
+        "fn main(): int {\n"
+        "    var missing;\n"
+        "    return 0;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrArray hints;
+    SZrLspInlayHint *leftHint;
+    SZrLspInlayHint *rightHint;
+    const TZrChar *leftEdit;
+    const TZrChar *rightEdit;
+    TZrBool namedClean = ZR_FALSE;
+    TZrBool unresolvedClean = ZR_FALSE;
+    TZrBool untypedClean = ZR_FALSE;
+    TZrChar reason[768];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)"file:///inlay_parameter_names.zr",
+                               strlen("file:///inlay_parameter_names.zr"));
+    memset(&range, 0, sizeof(range));
+    range.end.line = 8;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 8);
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, calls, strlen(calls), 1) ||
+        !ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to collect parameter inlays");
+        return;
+    }
+    leftHint = inlay_hint_with_label(&hints, "left:", 4);
+    rightHint = inlay_hint_with_label(&hints, "right:", 4);
+    leftEdit = inlay_hint_edit_text(leftHint);
+    rightEdit = inlay_hint_edit_text(rightHint);
+    if (leftHint == ZR_NULL || rightHint == ZR_NULL ||
+        leftHint->kind != ZR_LSP_INLAY_HINT_KIND_PARAMETER ||
+        rightHint->kind != ZR_LSP_INLAY_HINT_KIND_PARAMETER ||
+        leftEdit == ZR_NULL || strcmp(leftEdit, "left: ") != 0 ||
+        rightEdit == ZR_NULL || strcmp(rightEdit, "right: ") != 0) {
+        snprintf(reason, sizeof(reason),
+                 "Expected parameter edits left:/right: on add(1, 2); count=%llu left=%s right=%s",
+                 (unsigned long long)hints.length,
+                 leftEdit != ZR_NULL ? leftEdit : "<null>",
+                 rightEdit != ZR_NULL ? rightEdit : "<null>");
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)"file:///inlay_named_arguments.zr",
+                               strlen("file:///inlay_named_arguments.zr"));
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 8);
+    if (context != ZR_NULL && uri != ZR_NULL &&
+        ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, named, strlen(named), 1) &&
+        ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        namedClean = inlay_hint_with_label(&hints, "left:", -1) == ZR_NULL &&
+                     inlay_hint_with_label(&hints, "right:", -1) == ZR_NULL;
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)"file:///inlay_unresolved_call.zr",
+                               strlen("file:///inlay_unresolved_call.zr"));
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (context != ZR_NULL && uri != ZR_NULL &&
+        ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, unresolved, strlen(unresolved), 1) &&
+        ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        unresolvedClean = ZR_TRUE;
+        for (TZrSize index = 0; index < hints.length; index++) {
+            SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(&hints, index);
+            if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL &&
+                (*hintPtr)->kind == ZR_LSP_INLAY_HINT_KIND_PARAMETER) {
+                unresolvedClean = ZR_FALSE;
+            }
+        }
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)"file:///inlay_untyped_local.zr",
+                               strlen("file:///inlay_untyped_local.zr"));
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (context != ZR_NULL && uri != ZR_NULL &&
+        ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, untyped, strlen(untyped), 1) &&
+        ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        untypedClean = ZR_TRUE;
+        for (TZrSize index = 0; index < hints.length; index++) {
+            SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(&hints, index);
+            const TZrChar *edit = hintPtr != ZR_NULL ? inlay_hint_edit_text(*hintPtr) : ZR_NULL;
+            if (edit != ZR_NULL) {
+                untypedClean = ZR_FALSE;
+            }
+        }
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!namedClean || !unresolvedClean || !untypedClean) {
+        snprintf(reason, sizeof(reason),
+                 "Named/unresolved/untyped inlay policy failed; named=%d unresolved=%d untyped=%d",
+                 namedClean, unresolvedClean, untypedClean);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    TEST_PASS(timer, summary);
+}
+
 #include "test_lsp_inlay_canonical_declaration_cases.h"
 #include "test_lsp_completion_snapshot_fact_cases.h"
 #include "test_lsp_signature_snapshot_fact_cases.h"
@@ -1033,6 +1320,8 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(state, global);
 
     test_inlay_hint_uses_initializer_numeric_fact(state);
+    test_inlay_exact_edit_and_exclusive_range(state);
+    test_inlay_parameter_names_and_no_guessed_type(state);
     test_inlay_hint_fails_closed_without_resolved_declaration_fact(state);
     test_completion_detail_uses_initializer_numeric_fact(state);
     test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(state);

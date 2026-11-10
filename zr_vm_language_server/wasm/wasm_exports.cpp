@@ -435,6 +435,8 @@ static cJSON* serialize_rich_hover(SZrState *state, SZrLspRichHover *hover) {
     return json;
 }
 
+static cJSON *serialize_text_edits(SZrState *state, SZrArray *edits);
+
 /* 单个内联提示的文案、位置和留白标志应属于同一 native 快照。 */
 static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
     cJSON *json = cJSON_CreateObject();
@@ -450,6 +452,9 @@ static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
     cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, hint->kind);
     cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_LEFT, hint->paddingLeft ? cJSON_True : cJSON_False);
     cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_RIGHT, hint->paddingRight ? cJSON_True : cJSON_False);
+    if (hint->textEdits.isValid && hint->textEdits.length > 0) {
+        cJSON_AddItemToObject(json, ZR_LSP_FIELD_TEXT_EDITS, serialize_text_edits(state, &hint->textEdits));
+    }
     free_cstr(state, label);
     return json;
 }

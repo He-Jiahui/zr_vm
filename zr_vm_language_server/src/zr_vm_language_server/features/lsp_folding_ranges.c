@@ -23,6 +23,7 @@ typedef struct SZrStructuralFoldingScanData {
     TZrSize contentLength;
     SZrBraceStart stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
     TZrSize stackLength;
+    TZrSize discarded;
 } SZrStructuralFoldingScanData;
 
 /* 只有跨行段才交给 stdio/WASM 发布；结果数组的 range 元素由 FreeFoldingRanges 归还。 */
@@ -103,7 +104,6 @@ typedef TZrBool (*TZrLspLineRunMatcher)(const TZrChar *content, const SZrLspLine
 
 /* 只识别连续的 `let/var 名称 = import(` 行，为 imports 折叠提供轻量文本入口。 */
 static TZrBool lsp_editor_line_is_import_declaration(const TZrChar *content, const SZrLspLineTrim *trim) {
-    /* BUG: 只按行文本识别，跨行模板或块注释里的伪 import 也能形成 imports 折叠。 */
     TZrSize cursor;
     static const TZrChar importToken[] = "import";
 
@@ -148,8 +148,29 @@ static TZrBool lsp_editor_line_is_import_declaration(const TZrChar *content, con
 
 /* 连续的整行 // 注释形成一个 comment 折叠段；行尾注释不属于这个扫描器。 */
 static TZrBool lsp_editor_line_is_comment(const TZrChar *content, const SZrLspLineTrim *trim) {
-    /* BUG: 行首 // 若处在跨行模板或块注释内，仍被归类为注释并生成伪折叠段。 */
     return lsp_editor_line_starts_with(content, trim, "//", 2);
+}
+
+/* 行折叠在分类当前行之后推进词法状态；行注释不跨行，换行本身不在本行切片里。 */
+static void lsp_editor_folding_finish_line(const TZrChar *content,
+                                           TZrSize contentLength,
+                                           TZrSize lineStart,
+                                           TZrSize lineEnd,
+                                           SZrLspEditorScanState *scanState) {
+    if (scanState == ZR_NULL) {
+        return;
+    }
+    (void)lsp_editor_scan_structural_chars(content,
+                                           contentLength,
+                                           lineStart,
+                                           lineEnd,
+                                           scanState,
+                                           ZR_NULL,
+                                           ZR_NULL);
+    if (scanState->mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+        scanState->mode = ZR_LSP_EDITOR_SCAN_CODE;
+        scanState->escaped = ZR_FALSE;
+    }
 }
 
 /* 扫描连续匹配行，供 import 和 comment 两次调用；空行会结束当前折叠段。 */
@@ -166,6 +187,7 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
     TZrInt32 blockStartCharacter = 0;
     TZrInt32 lastLine = 0;
     TZrInt32 lastEndCharacter = 0;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
 
     while (cursor <= contentLength) {
         TZrSize lineStart = cursor;
@@ -179,9 +201,12 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
         }
 
         /* BUG: trim 的字节偏移直接成为 LSP character；非 ASCII 前缀或内容使默认 UTF-16 客户端得到错误列。 */
-        matches = hasLine && matcher != ZR_NULL &&
+        matches = hasLine &&
+                  scanState.mode == ZR_LSP_EDITOR_SCAN_CODE &&
+                  matcher != ZR_NULL &&
                   lsp_editor_trim_line(content, lineStart, lineEnd, &trim) &&
                   matcher(content, &trim);
+        lsp_editor_folding_finish_line(content, contentLength, lineStart, lineEnd, &scanState);
         if (matches) {
             if (!inBlock) {
                 inBlock = ZR_TRUE;
@@ -245,8 +270,10 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
                                                        TZrSize contentLength) {
     SZrBraceStart stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
     TZrSize stackLength = 0;
+    TZrSize discarded = 0;
     TZrSize cursor = 0;
     TZrInt32 line = 0;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
 
     while (cursor <= contentLength) {
         TZrSize lineStart = cursor;
@@ -258,27 +285,35 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
             lineEnd++;
         }
 
-        /* BUG: 此处不继承词法状态，模板或块注释中的 //#region 也会被配成真实区域。 */
-        if (hasLine && lsp_editor_trim_line(content, lineStart, lineEnd, &trim)) {
-            /* BUG: 第 33 层 start 被丢弃，但其 end 仍弹出第 32 层，随后折叠范围错配。 */
-            if (lsp_editor_is_region_start_marker(content, &trim) &&
-                stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
-                stack[stackLength].line = line;
-                stack[stackLength].character = (TZrInt32)(trim.start - lineStart);
-                stackLength++;
-            } else if (lsp_editor_is_region_end_marker(content, &trim) && stackLength > 0) {
-                SZrBraceStart start = stack[--stackLength];
-                if (!lsp_editor_append_folding_range(state,
-                                                     result,
-                                                     start.line,
-                                                     start.character,
-                                                     line,
-                                                     (TZrInt32)(trim.end - lineStart),
-                                                     ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
-                    return ZR_FALSE;
+        if (hasLine &&
+            scanState.mode == ZR_LSP_EDITOR_SCAN_CODE &&
+            lsp_editor_trim_line(content, lineStart, lineEnd, &trim)) {
+            if (lsp_editor_is_region_start_marker(content, &trim)) {
+                if (stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
+                    stack[stackLength].line = line;
+                    stack[stackLength].character = (TZrInt32)(trim.start - lineStart);
+                    stackLength++;
+                } else {
+                    discarded++;
+                }
+            } else if (lsp_editor_is_region_end_marker(content, &trim)) {
+                if (discarded > 0) {
+                    discarded--;
+                } else if (stackLength > 0) {
+                    SZrBraceStart start = stack[--stackLength];
+                    if (!lsp_editor_append_folding_range(state,
+                                                         result,
+                                                         start.line,
+                                                         start.character,
+                                                         line,
+                                                         (TZrInt32)(trim.end - lineStart),
+                                                         ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
+                        return ZR_FALSE;
+                    }
                 }
             }
         }
+        lsp_editor_folding_finish_line(content, contentLength, lineStart, lineEnd, &scanState);
 
         if (lineEnd >= contentLength) {
             break;
@@ -304,24 +339,31 @@ static TZrBool lsp_editor_append_structural_folding_ranges_callback(TZrChar valu
     /* BUG: position_from_offset 按 UTF-8 字节递增列号，WASM 与默认 UTF-16 的 stdio 会发布错误列。 */
     position = lsp_editor_position_from_offset(data->content, data->contentLength, offset);
     if (value == '{') {
-        /* BUG: 超出第 32 层的 { 被忽略，其 } 却会弹出先前起点，破坏深嵌套折叠配对。 */
         if (data->stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
             data->stack[data->stackLength].line = position.line;
             data->stack[data->stackLength].character = position.character;
             data->stackLength++;
+        } else {
+            data->discarded++;
         }
         return ZR_TRUE;
     }
 
-    if (value == '}' && data->stackLength > 0) {
-        SZrBraceStart start = data->stack[--data->stackLength];
-        return lsp_editor_append_folding_range(data->state,
-                                               data->result,
-                                               start.line,
-                                               start.character,
-                                               position.line,
-                                               position.character,
-                                               ZR_LSP_FOLDING_RANGE_KIND_REGION);
+    if (value == '}') {
+        if (data->discarded > 0) {
+            data->discarded--;
+            return ZR_TRUE;
+        }
+        if (data->stackLength > 0) {
+            SZrBraceStart start = data->stack[--data->stackLength];
+            return lsp_editor_append_folding_range(data->state,
+                                                   data->result,
+                                                   start.line,
+                                                   start.character,
+                                                   position.line,
+                                                   position.character,
+                                                   ZR_LSP_FOLDING_RANGE_KIND_REGION);
+        }
     }
 
     return ZR_TRUE;
@@ -332,7 +374,7 @@ static TZrBool lsp_editor_append_structural_folding_ranges(SZrState *state,
                                                            SZrArray *result,
                                                            const TZrChar *content,
                                                            TZrSize contentLength) {
-    SZrLspEditorScanState scanState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
     SZrStructuralFoldingScanData data;
 
     data.state = state;
@@ -340,6 +382,7 @@ static TZrBool lsp_editor_append_structural_folding_ranges(SZrState *state,
     data.content = content;
     data.contentLength = contentLength;
     data.stackLength = 0;
+    data.discarded = 0;
     return lsp_editor_scan_structural_chars(content,
                                             contentLength,
                                             0,

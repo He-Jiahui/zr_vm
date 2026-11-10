@@ -151,35 +151,6 @@ static TZrBool import_action_line_identity_exists(SZrLspImportLine *lines,
     return ZR_FALSE;
 }
 
-static TZrSize import_action_skip_quoted_span(const TZrChar *content,
-                                              TZrSize cursor,
-                                              TZrSize contentLength) {
-    TZrChar quote;
-    TZrBool escaped = ZR_FALSE;
-
-    if (content == ZR_NULL || cursor >= contentLength ||
-        (content[cursor] != '"' && content[cursor] != '\'' && content[cursor] != '`')) {
-        return cursor;
-    }
-
-    quote = content[cursor++];
-    while (cursor < contentLength) {
-        TZrChar ch = content[cursor++];
-        if (escaped) {
-            escaped = ZR_FALSE;
-            continue;
-        }
-        if (ch == '\\') {
-            escaped = ZR_TRUE;
-            continue;
-        }
-        if (ch == quote) {
-            break;
-        }
-    }
-    return cursor;
-}
-
 static TZrBool import_action_identifier_at(const TZrChar *content,
                                            TZrSize contentLength,
                                            TZrSize offset,
@@ -200,58 +171,65 @@ static TZrBool import_action_identifier_at(const TZrChar *content,
     return ZR_TRUE;
 }
 
-/* remove-unused 只扫描导入块外的代码标识符，避免字符串或注释中的文字阻止清理。
- * BUG: 反引号模板中的 ${alias.member} 是可执行表达式，整段却被跳过；
- * 别名只在插值里使用时会被当作未使用，删除仍必需的导入。
- */
+/* remove-unused 只把导入块外的代码标识符当作使用；模板 ${...} 里的表达式算使用。 */
+typedef struct SZrLspImportAliasUseScan {
+    const TZrChar *content;
+    TZrSize contentLength;
+    const TZrChar *alias;
+    TZrSize aliasLength;
+    TZrSize ignoreStart;
+    TZrSize ignoreEnd;
+    TZrBool found;
+} SZrLspImportAliasUseScan;
+
+static TZrBool import_action_alias_use_callback(TZrSize offset, void *userData) {
+    SZrLspImportAliasUseScan *data = (SZrLspImportAliasUseScan *)userData;
+
+    if (data == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (offset >= data->ignoreStart && offset < data->ignoreEnd) {
+        return ZR_TRUE;
+    }
+    if (import_action_identifier_at(data->content,
+                                    data->contentLength,
+                                    offset,
+                                    data->alias,
+                                    data->aliasLength)) {
+        data->found = ZR_TRUE;
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool import_action_content_uses_alias_outside_range(const TZrChar *content,
                                                               TZrSize contentLength,
                                                               const TZrChar *alias,
                                                               TZrSize aliasLength,
                                                               TZrSize ignoreStart,
                                                               TZrSize ignoreEnd) {
-    TZrSize cursor = 0;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
+    SZrLspImportAliasUseScan data;
 
     if (content == ZR_NULL || alias == ZR_NULL || aliasLength == 0) {
         return ZR_FALSE;
     }
 
-    while (cursor < contentLength) {
-        TZrSize nextCursor;
-
-        if (cursor >= ignoreStart && cursor < ignoreEnd) {
-            cursor = ignoreEnd;
-            continue;
-        }
-        if (cursor + 1 < contentLength && content[cursor] == '/' && content[cursor + 1] == '/') {
-            while (cursor < contentLength && content[cursor] != '\n') {
-                cursor++;
-            }
-            continue;
-        }
-        if (cursor + 1 < contentLength && content[cursor] == '/' && content[cursor + 1] == '*') {
-            cursor += 2;
-            while (cursor + 1 < contentLength &&
-                   !(content[cursor] == '*' && content[cursor + 1] == '/')) {
-                cursor++;
-            }
-            cursor = cursor + 1 < contentLength ? cursor + 2 : contentLength;
-            continue;
-        }
-
-        nextCursor = import_action_skip_quoted_span(content, cursor, contentLength);
-        if (nextCursor != cursor) {
-            cursor = nextCursor;
-            continue;
-        }
-
-        if (import_action_identifier_at(content, contentLength, cursor, alias, aliasLength)) {
-            return ZR_TRUE;
-        }
-        cursor++;
-    }
-
-    return ZR_FALSE;
+    memset(&data, 0, sizeof(data));
+    data.content = content;
+    data.contentLength = contentLength;
+    data.alias = alias;
+    data.aliasLength = aliasLength;
+    data.ignoreStart = ignoreStart;
+    data.ignoreEnd = ignoreEnd;
+    (void)lsp_editor_visit_code_bytes(content,
+                                      contentLength,
+                                      0,
+                                      contentLength,
+                                      &scanState,
+                                      import_action_alias_use_callback,
+                                      &data);
+    return data.found;
 }
 
 /* source 动作仅修改文件顶部、可选 module 声明后的连续导入块；正文导入不参与本动作。 */
