@@ -547,9 +547,39 @@ static void compiler_collect_function_like_return_type(
         case ZR_AST_INTERFACE_DECLARATION:
             return;
 
+        case ZR_AST_SWITCH_EXPRESSION: {
+            SZrSwitchExpression *switchExpression = &node->data.switchExpression;
+
+            if (switchExpression->cases != ZR_NULL) {
+                for (TZrSize index = 0U; index < switchExpression->cases->count; index++) {
+                    SZrAstNode *caseNode = switchExpression->cases->nodes[index];
+                    if (caseNode == ZR_NULL || caseNode->type != ZR_AST_SWITCH_CASE) {
+                        continue;
+                    }
+                    compiler_collect_function_like_return_type(
+                            cs,
+                            caseNode->data.switchCase.block,
+                            hasReturnType,
+                            accumulatedType,
+                            firstReturnRange);
+                    if (cs->hasError) {
+                        return;
+                    }
+                }
+            }
+            if (switchExpression->defaultCase != ZR_NULL &&
+                switchExpression->defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
+                compiler_collect_function_like_return_type(
+                        cs,
+                        switchExpression->defaultCase->data.switchDefault.block,
+                        hasReturnType,
+                        accumulatedType,
+                        firstReturnRange);
+            }
+            return;
+        }
+
         default:
-            // BUG: switch 的 case/default block 未被遍历；仅在 switch 内 return 的无注解函数会被 builder
-            // 误当作无 return 并发布精确 Null。
             return;
     }
 }
