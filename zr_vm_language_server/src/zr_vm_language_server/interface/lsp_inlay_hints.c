@@ -24,11 +24,10 @@ static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right)
     return 0;
 }
 
-/* BUG: LSP Range 的 end 是排他的，这里把等于 end 的提示也纳入结果。
- * stdio 和 Wasm 均原样传入客户端范围，因此分页相邻范围可重复返回边界提示。 */
+/* LSP Range 的 end 是排他的。等于 end 的提示属于下一个范围。 */
 static TZrBool lsp_inlay_position_in_range(SZrLspPosition position, SZrLspRange range) {
     return lsp_inlay_compare_position(position, range.start) >= 0 &&
-           lsp_inlay_compare_position(position, range.end) <= 0;
+           lsp_inlay_compare_position(position, range.end) < 0;
 }
 
 /* 标签和事实均使用有界缓冲区；失败向上传递，避免把截断类型展示为完整类型。 */
