@@ -360,5 +360,8 @@ int handle_did_save(SZrStdioServer *server, const cJSON *params) {
         publish_diagnostics(server, uri);
         return 1;
     }
+    if (!ZrLanguageServer_LspWorkspace_CanProcessFileEvent(server->context, uri)) {
+        return 0;
+    }
     return update_document_contents_from_disk(server, uri);
 }
