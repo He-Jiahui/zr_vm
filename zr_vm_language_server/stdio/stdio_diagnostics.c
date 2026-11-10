@@ -112,6 +112,11 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
 
     params = cJSON_CreateObject();
     uriText = zr_string_to_c_string(uri);
+    if (uriText == ZR_NULL) {
+        cJSON_Delete(params);
+        free_diagnostics_array(server->state, &diagnostics);
+        return;
+    }
     fileVersion = get_file_version_for_uri(server, uri);
     if (diagnostic_push_is_current(server, uriText, resultId, fileVersion)) {
         free(uriText);
@@ -123,8 +128,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     apply_position_encoding_to_json_for_uri(server, uriText, diagnosticsJson);
     /* 发帧成功后才推进去重基线；失败时下一次更新仍可重试。 */
     if (params == ZR_NULL || diagnosticsJson == ZR_NULL ||
-        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI,
-                                uriText != NULL ? uriText : "") == ZR_NULL ||
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText) == ZR_NULL ||
         (fileVersion != ZR_NULL &&
          cJSON_AddNumberToObject(params, ZR_LSP_FIELD_VERSION,
                                  (double)fileVersion->version) == ZR_NULL)) {
@@ -134,15 +138,14 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
         cJSON_Delete(params);
     } else if (send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params) ==
                ZR_STDIO_SEND_OK) {
-        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", resultId, fileVersion);
+        (void)diagnostic_push_cache_store(server, uriText, resultId, fileVersion);
     }
 
     free(uriText);
     free_diagnostics_array(server->state, &diagnostics);
 }
 
-/** @brief 关闭或移除文档时推送空诊断，使客户端清除先前发布的结果。
- * BUG: URI 文本转换失败时仍以空 URI 发送清理通知，原 URI 的旧诊断得不到清除。 */
+/** @brief 关闭或移除文档时推送空诊断，使客户端清除先前发布的结果。 */
 void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     cJSON *params;
     cJSON *diagnostics;
@@ -152,9 +155,12 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
         return;
     }
 
+    uriText = zr_string_to_c_string(uri);
+    if (uriText == ZR_NULL) {
+        return;
+    }
     params = cJSON_CreateObject();
     diagnostics = cJSON_CreateArray();
-    uriText = zr_string_to_c_string(uri);
 
     if (diagnostic_push_is_current(server, uriText, "", ZR_NULL)) {
         free(uriText);
@@ -164,15 +170,14 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     }
 
     if (params == ZR_NULL || diagnostics == ZR_NULL ||
-        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI,
-                                uriText != NULL ? uriText : "") == ZR_NULL) {
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText) == ZR_NULL) {
         cJSON_Delete(params);
         cJSON_Delete(diagnostics);
     } else if (!stdio_json_add_owned_item(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnostics)) {
         cJSON_Delete(params);
     } else if (send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params) ==
                ZR_STDIO_SEND_OK) {
-        (void)diagnostic_push_cache_store(server, uriText != NULL ? uriText : "", "", ZR_NULL);
+        (void)diagnostic_push_cache_store(server, uriText, "", ZR_NULL);
     }
 
     free(uriText);
