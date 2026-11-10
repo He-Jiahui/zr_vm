@@ -130,14 +130,24 @@ static TZrBool project_resolver_is_absolute_path(const TZrChar *path) {
            path[1] == ':';
 }
 
-/* 模块缓存和文件定位共用分隔符及扩展名规范化，不在此绑定具体项目。
- * BUG: 内嵌 . 和 .. 段未拒绝，foo/../../secret 可从普通 import 进入 source 根拼接，File_NormalizePath 会折叠到根外文件；复现入口为 ResolveImportModuleKey 后 SourceLoadImplementation。 */
+/* `.` 与 `..` 整段会在后续路径折叠时离开 source 根，模块键里直接拒绝。 */
+static TZrBool project_resolver_segment_escapes_root(const TZrChar *buffer, TZrSize start, TZrSize end) {
+    TZrSize length = end - start;
+
+    if (length == 1 && buffer[start] == '.') {
+        return ZR_TRUE;
+    }
+    return length == 2 && buffer[start] == '.' && buffer[start + 1] == '.';
+}
+
+/* 模块缓存和文件定位共用分隔符及扩展名规范化，不在此绑定具体项目。 */
 static TZrBool project_resolver_normalize_module_key_text(const TZrChar *modulePath,
                                                           TZrChar *buffer,
                                                           TZrSize bufferSize) {
     TZrSize start = 0;
     TZrSize length;
     TZrSize writeIndex = 0;
+    TZrSize segmentStart = 0;
     TZrBool previousWasSeparator = ZR_FALSE;
 
     if (modulePath == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
@@ -181,10 +191,14 @@ static TZrBool project_resolver_normalize_module_key_text(const TZrChar *moduleP
             if (previousWasSeparator) {
                 continue;
             }
+            if (project_resolver_segment_escapes_root(buffer, segmentStart, writeIndex)) {
+                return ZR_FALSE;
+            }
             if (writeIndex + 1 >= bufferSize) {
                 return ZR_FALSE;
             }
             buffer[writeIndex++] = '/';
+            segmentStart = writeIndex;
             previousWasSeparator = ZR_TRUE;
             continue;
         }
@@ -199,7 +213,7 @@ static TZrBool project_resolver_normalize_module_key_text(const TZrChar *moduleP
     while (writeIndex > 0 && buffer[writeIndex - 1] == '/') {
         writeIndex--;
     }
-    if (writeIndex == 0) {
+    if (writeIndex == 0 || project_resolver_segment_escapes_root(buffer, segmentStart, writeIndex)) {
         return ZR_FALSE;
     }
 
