@@ -101,9 +101,19 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
                                           callBindingRowCount,
                                           stripGeneratedSymbols);
 
-    /* BUG: 写入或 flush 失败（如输出到 /dev/full）时未检查 ferror/fclose，
-     * 仍返回成功，使调用方接收空白或截断的 LLVM 产物。 */
-    fclose(file);
+    if (fflush(file) != 0 || ferror(file) != 0) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (fclose(file) != 0) {
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     backend_aot_release_function_table(state, &functionTable);
     backend_aot_exec_ir_release_module(state, &module);
     return ZR_TRUE;
