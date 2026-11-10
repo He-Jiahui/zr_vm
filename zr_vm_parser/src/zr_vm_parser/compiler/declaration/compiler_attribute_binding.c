@@ -192,7 +192,7 @@ static SZrString *metadata_path_leaf(SZrAstNode *node) {
            : ZR_NULL;
 }
 
-/* BUG: AttributeUsage 查找不到匹配的命名参数时仍回退到 position；第四项写成 inheritedTypo: false 会按位置当作 inherited 并成功注册，静默吞掉拼写错误。 */
+/* 已写了别的名字时，不能再把该位置的实参当成目标参数。 */
 static SZrAstNode *metadata_named_argument(
         SZrFunctionCall *call,
         const TZrChar *name,
@@ -209,6 +209,13 @@ static SZrAstNode *metadata_named_argument(
             if (argName != ZR_NULL && *argName != ZR_NULL &&
                 metadata_string_equals(*argName, name)) {
                 return call->args->nodes[index];
+            }
+        }
+        if (position < call->argNames->length) {
+            SZrString **slotName =
+                    (SZrString **)ZrCore_Array_Get(call->argNames, position);
+            if (slotName != ZR_NULL && *slotName != ZR_NULL) {
+                return ZR_NULL;
             }
         }
     }
