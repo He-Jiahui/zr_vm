@@ -575,8 +575,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
     if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
+    {
+        SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (fileVersion != ZR_NULL && fileVersion->usesFallbackAst) {
+            return ZR_FALSE;
+        }
+    }
 
-    /* BUG: 语法错后的 fallback AST 仍可命中当前光标，definition 会返回上一版本的目标。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||
@@ -614,8 +619,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
     if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
+    {
+        SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (fileVersion != ZR_NULL && fileVersion->usesFallbackAst) {
+            return ZR_FALSE;
+        }
+    }
 
-    /* BUG: fallback AST 可把当前装饰器光标映射到上一版本的表达式，hover 因而显示过时文案。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||
