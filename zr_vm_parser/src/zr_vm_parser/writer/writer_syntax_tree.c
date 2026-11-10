@@ -481,8 +481,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAs
     
     print_ast_node(state, file, ast, 0);
     
-    /* BUG: /dev/full 等目标的缓冲写入可在 fclose 才失败，忽略返回值会让
-     * .zrs 未成功落盘时仍报告真；调用方如只看布尔结果会误认快照生成成功。 */
-    fclose(file);
+    if (fclose(file) != 0) {
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }

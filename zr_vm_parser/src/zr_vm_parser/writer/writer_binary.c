@@ -89,9 +89,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
         return ZR_FALSE;
     }
 
-    /* BUG: /dev/full 等缓冲写入目标可在 fclose 才报告错误，此处忽略失败并返回真，
-     * CLI 编译路径因此可能把未落盘的 .zro 视为成功；见编译器调用点及本函数 fopen/fclose。 */
-    fclose(file);
+    if (fclose(file) != 0) {
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }
 
