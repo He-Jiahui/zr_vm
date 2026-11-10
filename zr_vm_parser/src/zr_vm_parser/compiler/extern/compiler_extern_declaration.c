@@ -11,6 +11,8 @@
 
 #include "compiler/extern/ffi_contract.h"
 
+#include <stdint.h>
+
 static const TZrChar *kCompilerEnumRuntimeValueTypeFieldName = "__zr_enumValueTypeName";
 static const TZrChar *kCompilerEnumRuntimeMembersFieldName = "__zr_enumMembers";
 
@@ -211,6 +213,12 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
     valueNode = memberNode->data.enumMember.value;
     if (valueNode == ZR_NULL &&
         extern_compiler_decorators_get_int_arg(memberNode->data.enumMember.decorators, "value", &explicitIntValue)) {
+        if (explicitIntValue == INT64_MAX) {
+            ZrParser_Compiler_Error(cs,
+                                    "Enum member value cannot increment past INT64_MAX",
+                                    memberNode->location);
+            return ZR_FALSE;
+        }
         ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
         *nextAutoValue = explicitIntValue + 1;
         return ZR_TRUE;
@@ -223,6 +231,12 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
                                     memberNode->location);
             return ZR_FALSE;
         }
+        if (*nextAutoValue == INT64_MAX) {
+            ZrParser_Compiler_Error(cs,
+                                    "Enum member value cannot increment past INT64_MAX",
+                                    memberNode->location);
+            return ZR_FALSE;
+        }
 
         ZrCore_Value_InitAsInt(cs->state, outValue, *nextAutoValue);
         (*nextAutoValue)++;
@@ -232,6 +246,12 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
     switch (valueNode->type) {
         case ZR_AST_INTEGER_LITERAL:
             explicitIntValue = valueNode->data.integerLiteral.value;
+            if (explicitIntValue == INT64_MAX) {
+                ZrParser_Compiler_Error(cs,
+                                        "Enum member value cannot increment past INT64_MAX",
+                                        memberNode->location);
+                return ZR_FALSE;
+            }
             ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
             *nextAutoValue = explicitIntValue + 1;
             return ZR_TRUE;
