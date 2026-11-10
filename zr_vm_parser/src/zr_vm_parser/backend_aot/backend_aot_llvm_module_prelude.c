@@ -230,6 +230,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SubIntConst(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddSigned(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddSignedConst(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddSignedModConst(ptr, ptr, i32, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddUnsigned(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddUnsignedConst(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SubSigned(ptr, ptr, i32, i32, i32)\n");

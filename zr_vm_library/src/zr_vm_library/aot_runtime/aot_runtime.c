@@ -6659,6 +6659,51 @@ TZrBool ZrLibrary_AotRuntime_AddSignedConst(SZrState *state,
     return ZR_TRUE;
 }
 
+/* ADD_SIGNED_MOD_CONST 先检查常量除数，再按解释器顺序做带溢出检查的加法和取模。 */
+TZrBool ZrLibrary_AotRuntime_AddSignedModConst(SZrState *state,
+                                               ZrAotGeneratedFrame *frame,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 leftSlot,
+                                               TZrUInt32 rightSlot,
+                                               TZrUInt32 constantIndex) {
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    const SZrTypeValue *divisorValue = aot_runtime_frame_constant(frame, constantIndex);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 divisor;
+
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL ||
+        divisorValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL ||
+        !ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) || !ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type) ||
+        !ZR_VALUE_IS_TYPE_INT(divisorValue->type)) {
+        return ZR_FALSE;
+    }
+
+    divisor = divisorValue->value.nativeObject.nativeInt64;
+    if (divisor == 0) {
+        ZrCore_Debug_RunError(state, "modulo by zero");
+    }
+
+    ZrCore_Value_InitAsInt(state,
+                           destinationValue,
+                           ZrCore_Integer_Modulo(state,
+                                                 ZrCore_Integer_Add(state,
+                                                                    leftValue->value.nativeObject.nativeInt64,
+                                                                    rightValue->value.nativeObject.nativeInt64),
+                                                 divisor));
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_AddUnsigned(SZrState *state,
                                          ZrAotGeneratedFrame *frame,
                                          TZrUInt32 destinationSlot,
