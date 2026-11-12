@@ -1,7 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "project/lsp_project_internal.h"
 
-/** 复用项目层文件事件资格判断，决定 didClose 后是否应恢复磁盘版本。 */
+/** 复用项目层文件事件资格判断，决定 didClose 与未打开文档的 didSave 能否读取磁盘版本。 */
 TZrBool ZrLanguageServer_LspWorkspace_CanProcessFileEvent(SZrLspContext *context,
                                                            SZrString *uri);
 
@@ -331,8 +331,8 @@ int handle_did_close(SZrStdioServer *server, const cJSON *params) {
     return 1;
 }
 
-/** @brief 保存通知刷新已提交快照的诊断；关闭的文档从磁盘重新取版本。
- * 携带 text 时沿用当前 overlay，保存通知不单独创建新文档版本。 */
+/** @brief 保存通知刷新已提交快照的诊断；未打开的文档仅在工作区根内（与 didClose 同一门禁）才从磁盘重新取版本。
+ * 携带 text 时沿用当前 overlay，保存通知不单独创建新文档版本；根外或借 `..` 离开根的未打开 URI 直接拒绝，不读盘。 */
 int handle_did_save(SZrStdioServer *server, const cJSON *params) {
     const cJSON *textJson;
     const char *uriText;
