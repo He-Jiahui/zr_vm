@@ -538,7 +538,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
 
 /**
  * @brief 为 LSP context 创建 URI 到文件版本的状态表，默认启用 token 与声明级复用。
- * BUG: HashSet_Init 失败仅写 isValid，构造仍返回 parser；后续新文件插入会失败。
+ * @return URI 表初始桶分配失败时释放解析器并返回 NULL：无桶的表会拒绝之后每个新 URI 的登记。
  */
 SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     if (state == ZR_NULL) {
@@ -553,6 +553,10 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     parser->state = state;
     ZrCore_HashSet_Construct(&parser->uriToFileMap);
     ZrCore_HashSet_Init(state, &parser->uriToFileMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
+    if (!parser->uriToFileMap.isValid) {
+        ZrCore_Memory_RawFree(state->global, parser, sizeof(SZrIncrementalParser));
+        return ZR_NULL;
+    }
     parser->parserState = ZR_NULL; // TODO: 仓内仅在此赋空及析构，核对该字段是否仍由外部 ABI 使用。
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
@@ -670,19 +674,19 @@ static TZrBool incremental_parser_update_file(
         }
         fileVersion->isOpenDocument = isOpenDocument;
 
-        /* BUG: Add 可因初始化、扩容或分配失败返回 NULL；仍返回成功且泄漏 fileVersion，
-         * 后续 GetFileVersion 找不到此 URI，上层误以为文档更新成功。 */
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
 
-        // 使用 ZrCore_HashSet_Add 添加，然后设置值
+        /* Add 返回空表示桶扩容被拒或表已失效：不发布未登记的版本，释放后报告失败。
+         * pair 节点由 GcMalloc 申请，其失败抛 MEMORY_ERROR 而不返回空，不经过此分支。 */
         SZrHashKeyValuePair *pair = ZrCore_HashSet_Add(state, &parser->uriToFileMap, &key);
-        if (pair != ZR_NULL) {
-            // 将 SZrFileVersion 指针存储为原生指针
-            SZrTypeValue value;
-            ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)fileVersion);
-            ZrCore_Value_Copy(state, &pair->value, &value);
+        if (pair == ZR_NULL) {
+            ZrLanguageServer_FileVersion_Free(state, fileVersion);
+            return ZR_FALSE;
         }
+        SZrTypeValue value;
+        ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)fileVersion);
+        ZrCore_Value_Copy(state, &pair->value, &value);
     }
 
     return ZR_TRUE;

@@ -118,7 +118,8 @@ typedef struct SZrIncrementalParser {
 } SZrIncrementalParser;
 
 /** @brief 为 LSP 上下文创建文档版本和解析状态的所有者。
- * @return 成功返回需用 IncrementalParser_Free 释放的解析器。 */
+ * @return 成功返回需用 IncrementalParser_Free 释放的解析器；解析器自身或 URI 表初始桶分配失败时
+ *         返回 NULL，不交出无法登记文档的解析器。 */
 ZR_LANGUAGE_SERVER_API SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state);
 
 /** @brief 在上下文结束时释放全部文件版本、AST 与解析状态。
@@ -129,7 +130,8 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_IncrementalParser_Free(SZrState *st
 /** @brief 将项目扫描或 provider 缓存中的磁盘文本写入版本表，供后续解析与索引读取。
  * @pre 已存在记录须提供递增版本；content 在调用期间有效。
  * @return 旧版本或已检查到的分配失败时为假；成功不代表 AST 已更新。
- * BUG: 首次 URI 的 HashSet_Add 失败时共享更新器仍返回真，且未释放新建的文件版本；调用方可能误认文本已入表。 */
+ * @note 首次 URI 无法登记进 URI 表（如桶扩容被拒）时返回假并释放新建的文件版本：
+ *       GetFileVersion 仍查不到该 URI，已登记的其他文档不受影响。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
                                                               SZrIncrementalParser *parser,
                                                               SZrString *uri,
@@ -139,7 +141,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZr
 /** @brief 将客户端打开文档的文本作为 overlay 写入版本表，优先于磁盘缓存参与语义请求。
  * @pre 通常须提供递增版本；首次覆盖同版本的磁盘快照可接受。
  * @return 通常接受更新时为真，调用方仍需解析并检查诊断。
- * BUG: 首次 URI 的 HashSet_Add 失败时共享更新器仍返回真，且未释放新建的文件版本；调用方可能误认 overlay 已入表。 */
+ * @note 首次 URI 无法登记进 URI 表时与 UpdateFile 相同：返回假并释放新建的文件版本，overlay 不入表。 */
 ZR_LANGUAGE_SERVER_API TZrBool
 ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
         SZrState *state,
