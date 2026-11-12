@@ -719,6 +719,7 @@ TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
     SZrTypeValue membersValue;
     SZrTypeValue underlyingValue;
     TZrInt64 nextAutoValue = 0;
+    TZrBool autoValueExhausted = ZR_FALSE;
     ZrExternCompilerTempRoot enumRoot = {0};
     ZrExternCompilerTempRoot membersRoot = {0};
 
@@ -830,9 +831,20 @@ TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
             }
 
             if (!hasExplicitValue) {
+                /* Same rule as prototype registration: after a member holding INT64_MAX
+                 * there is no representable successor for an auto value. */
+                if (autoValueExhausted) {
+                    ZrParser_Compiler_Error(cs,
+                                            "Enum member value cannot increment past INT64_MAX",
+                                            memberNode->location);
+                    extern_compiler_temp_root_end(&memberRoot);
+                    extern_compiler_temp_root_end(&membersRoot);
+                    extern_compiler_temp_root_end(&enumRoot);
+                    return ZR_FALSE;
+                }
                 explicitValue = nextAutoValue;
             }
-            nextAutoValue = explicitValue + 1;
+            extern_compiler_enum_advance_auto_value(explicitValue, &nextAutoValue, &autoValueExhausted);
 
             ZrCore_Value_InitAsInt(cs->state, &memberValue, explicitValue);
             memberNameText = ZrCore_String_GetNativeString(memberNode->data.enumMember.name->name);
