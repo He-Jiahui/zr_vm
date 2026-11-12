@@ -1152,8 +1152,8 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
 }
 
 /** @brief 在 AST 各节点域递归收集外部类型成员引用；命中必须继续覆盖兄弟子树。 */
-/* BUG: 多子树 case 使用 left || right，左子树已有引用时 C 短路会跳过右子树，
- * 例如二元表达式两侧都访问同一外部成员时，references 只返回左侧位置。 */
+/* 多子树 case 先逐一遍历各子树、再合并布尔结果；直接以 || 串接递归调用会被 C 短路，
+ * 前一棵子树命中后其余兄弟子树不再遍历，同一成员的后续使用点会从 references 中遗漏。 */
 static TZrBool semantic_query_append_external_type_member_locations_recursive(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrLspProjectIndex *projectIndex,
@@ -1450,27 +1450,15 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   uri,
                                                                                   result) || appended;
 
-        case ZR_AST_USING_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.usingStatement.resource,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.usingStatement.body,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_USING_STATEMENT: {
+            TZrBool resourceAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.usingStatement.resource, content, contentLength, query, uri, result);
+            TZrBool bodyAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.usingStatement.body, content, contentLength, query, uri, result);
+            return (TZrBool)(resourceAppended || bodyAppended || appended);
+        }
 
         case ZR_AST_BREAK_CONTINUE_STATEMENT:
             return semantic_query_append_external_type_member_locations_recursive(state, context,
@@ -1508,37 +1496,18 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   uri,
                                                                                   result) || appended;
 
-        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.tryCatchFinallyStatement.block,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
-                                                                                      projectIndex,
-                                                                                      analyzer,
-                                                                                      astRoot,
-                                                                                      node->data.tryCatchFinallyStatement.catchClauses,
-                                                                                      content,
-                                                                                      contentLength,
-                                                                                      query,
-                                                                                      uri,
-                                                                                      result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.tryCatchFinallyStatement.finallyBlock,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            TZrBool blockAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.tryCatchFinallyStatement.block, content, contentLength, query, uri, result);
+            TZrBool catchAppended = semantic_query_append_external_type_member_locations_in_node_array(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.tryCatchFinallyStatement.catchClauses, content, contentLength, query, uri, result);
+            TZrBool finallyAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.tryCatchFinallyStatement.finallyBlock, content, contentLength, query, uri, result);
+            return (TZrBool)(blockAppended || catchAppended || finallyAppended || appended);
+        }
 
         case ZR_AST_CATCH_CLAUSE:
             return semantic_query_append_external_type_member_locations_recursive(state, context,
@@ -1626,91 +1595,41 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   uri,
                                                                                   result) || appended;
 
-        case ZR_AST_IF_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.ifExpression.condition,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.ifExpression.thenExpr,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.ifExpression.elseExpr,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_IF_EXPRESSION: {
+            TZrBool conditionAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.ifExpression.condition, content, contentLength, query, uri, result);
+            TZrBool thenAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.ifExpression.thenExpr, content, contentLength, query, uri, result);
+            TZrBool elseAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.ifExpression.elseExpr, content, contentLength, query, uri, result);
+            return (TZrBool)(conditionAppended || thenAppended || elseAppended || appended);
+        }
 
-        case ZR_AST_SWITCH_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.switchExpression.expr,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
-                                                                                      projectIndex,
-                                                                                      analyzer,
-                                                                                      astRoot,
-                                                                                      node->data.switchExpression.cases,
-                                                                                      content,
-                                                                                      contentLength,
-                                                                                      query,
-                                                                                      uri,
-                                                                                      result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.switchExpression.defaultCase,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_SWITCH_EXPRESSION: {
+            TZrBool exprAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.switchExpression.expr, content, contentLength, query, uri, result);
+            TZrBool casesAppended = semantic_query_append_external_type_member_locations_in_node_array(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.switchExpression.cases, content, contentLength, query, uri, result);
+            TZrBool defaultAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.switchExpression.defaultCase, content, contentLength, query, uri, result);
+            return (TZrBool)(exprAppended || casesAppended || defaultAppended || appended);
+        }
 
-        case ZR_AST_SWITCH_CASE:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.switchCase.value,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.switchCase.block,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_SWITCH_CASE: {
+            TZrBool valueAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.switchCase.value, content, contentLength, query, uri, result);
+            TZrBool blockAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.switchCase.block, content, contentLength, query, uri, result);
+            return (TZrBool)(valueAppended || blockAppended || appended);
+        }
 
         case ZR_AST_SWITCH_DEFAULT:
             return semantic_query_append_external_type_member_locations_recursive(state, context,
@@ -1736,49 +1655,25 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       uri,
                                                                                       result) || appended;
 
-        case ZR_AST_CONSTRUCT_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.constructExpression.target,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
-                                                                                      projectIndex,
-                                                                                      analyzer,
-                                                                                      astRoot,
-                                                                                      node->data.constructExpression.args,
-                                                                                      content,
-                                                                                      contentLength,
-                                                                                      query,
-                                                                                      uri,
-                                                                                      result) || appended;
+        case ZR_AST_CONSTRUCT_EXPRESSION: {
+            TZrBool targetAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.constructExpression.target, content, contentLength, query, uri, result);
+            TZrBool argsAppended = semantic_query_append_external_type_member_locations_in_node_array(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.constructExpression.args, content, contentLength, query, uri, result);
+            return (TZrBool)(targetAppended || argsAppended || appended);
+        }
 
-        case ZR_AST_PRIMARY_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.primaryExpression.property,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
-                                                                                      projectIndex,
-                                                                                      analyzer,
-                                                                                      astRoot,
-                                                                                      node->data.primaryExpression.members,
-                                                                                      content,
-                                                                                      contentLength,
-                                                                                      query,
-                                                                                      uri,
-                                                                                      result) || appended;
+        case ZR_AST_PRIMARY_EXPRESSION: {
+            TZrBool propertyAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.primaryExpression.property, content, contentLength, query, uri, result);
+            TZrBool membersAppended = semantic_query_append_external_type_member_locations_in_node_array(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.primaryExpression.members, content, contentLength, query, uri, result);
+            return (TZrBool)(propertyAppended || membersAppended || appended);
+        }
 
         case ZR_AST_MEMBER_EXPRESSION:
             return node->data.memberExpression.computed
@@ -1819,113 +1714,51 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       uri,
                                                                                       result) || appended;
 
-        case ZR_AST_KEY_VALUE_PAIR:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.keyValuePair.key,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.keyValuePair.value,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_KEY_VALUE_PAIR: {
+            TZrBool keyAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.keyValuePair.key, content, contentLength, query, uri, result);
+            TZrBool valueAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.keyValuePair.value, content, contentLength, query, uri, result);
+            return (TZrBool)(keyAppended || valueAppended || appended);
+        }
 
-        case ZR_AST_WHILE_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.whileLoop.cond,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.whileLoop.block,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_WHILE_LOOP: {
+            TZrBool condAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.whileLoop.cond, content, contentLength, query, uri, result);
+            TZrBool blockAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.whileLoop.block, content, contentLength, query, uri, result);
+            return (TZrBool)(condAppended || blockAppended || appended);
+        }
 
-        case ZR_AST_FOR_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.forLoop.init,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.forLoop.cond,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.forLoop.step,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.forLoop.block,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_FOR_LOOP: {
+            TZrBool initAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.forLoop.init, content, contentLength, query, uri, result);
+            TZrBool condAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.forLoop.cond, content, contentLength, query, uri, result);
+            TZrBool stepAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.forLoop.step, content, contentLength, query, uri, result);
+            TZrBool blockAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.forLoop.block, content, contentLength, query, uri, result);
+            return (TZrBool)(initAppended || condAppended || stepAppended || blockAppended || appended);
+        }
 
-        case ZR_AST_FOREACH_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.foreachLoop.expr,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.foreachLoop.block,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
+        case ZR_AST_FOREACH_LOOP: {
+            TZrBool exprAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.foreachLoop.expr, content, contentLength, query, uri, result);
+            TZrBool blockAppended = semantic_query_append_external_type_member_locations_recursive(
+                    state, context, projectIndex, analyzer, astRoot,
+                    node->data.foreachLoop.block, content, contentLength, query, uri, result);
+            return (TZrBool)(exprAppended || blockAppended || appended);
+        }
 
         default:
             return appended;
