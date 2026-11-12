@@ -2566,6 +2566,215 @@ static void test_signature_variants_and_decorators_enter_build_facts(void) {
     destroy_test_state(state);
 }
 
+/* 沿用上面 interface-add 用例的流程（build facts → 逐个编译 struct 声明），在调用方持有的
+ * compiler state 内登记脚本里的 attribute schema，使测试能读取诊断文本与登记结果。
+ * 调用方负责 ZrParser_CompilerState_Free 和 ZrParser_Ast_Free。 */
+static SZrAstNode *compile_time_test_compile_structs_in_state(
+        SZrState *state,
+        SZrCompilerState *cs,
+        const TZrChar *source,
+        const TZrChar *sourceNameText) {
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)sourceNameText);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(cs, state);
+    cs->suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(cs, ast));
+    cs->compilePhase = ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION;
+    for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement != ZR_NULL && statement->type == ZR_AST_STRUCT_DECLARATION) {
+            ZrParser_Compiler_CompileStructDeclaration(cs, statement);
+        }
+    }
+    return ast;
+}
+
+static const SZrCompilerAttributeSchemaBinding *compile_time_test_find_attribute_schema(
+        SZrCompilerState *cs,
+        const TZrChar *name) {
+    if (cs == ZR_NULL || name == ZR_NULL || !cs->attributeSchemas.isValid) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0; index < cs->attributeSchemas.length; index++) {
+        const SZrCompilerAttributeSchemaBinding *schema =
+                (const SZrCompilerAttributeSchemaBinding *)ZrCore_Array_Get(
+                        &cs->attributeSchemas, index);
+        const TZrChar *schemaName =
+                schema != ZR_NULL && schema->name != ZR_NULL
+                        ? ZrCore_String_GetNativeString(schema->name)
+                        : ZR_NULL;
+        if (schemaName != ZR_NULL && strcmp(schemaName, name) == 0) {
+            return schema;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void test_attribute_usage_binds_positional_and_named_arguments(void) {
+    /* 三种写法都表示 targets=field、retention=runtime、repeatable=true、inherited=false。
+     * repeatable 与 inherited 取不同的值，名字和位置绑定错位时下面的断言会失败。 */
+    static const TZrChar *sources[] = {
+            /* 全部按位置给出。 */
+            "#zr.reflection.attributeUsage("
+            "zr.reflection.AttributeTargets.field, "
+            "zr.reflection.AttributeRetention.runtime, true, false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 全部命名，顺序与参数表相反。 */
+            "#zr.reflection.attributeUsage("
+            "inherited: false, repeatable: true, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "targets: zr.reflection.AttributeTargets.field)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 前两项按位置，后两项命名且与所在位置对调。 */
+            "#zr.reflection.attributeUsage("
+            "zr.reflection.AttributeTargets.field, "
+            "zr.reflection.AttributeRetention.runtime, "
+            "inherited: false, repeatable: true)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrCompilerState cs;
+        SZrAstNode *ast;
+        const SZrCompilerAttributeSchemaBinding *schema;
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ast = compile_time_test_compile_structs_in_state(
+                state, &cs, sources[index], "attribute_usage_argument_binding.zr");
+        TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+        schema = compile_time_test_find_attribute_schema(&cs, "Label");
+        TEST_ASSERT_NOT_NULL(schema);
+        TEST_ASSERT_EQUAL_UINT32(
+                (TZrUInt32)ZR_PARSER_ATTRIBUTE_TARGET_FIELD, schema->usage.targets);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PARSER_ATTRIBUTE_RETENTION_RUNTIME, schema->usage.retention);
+        TEST_ASSERT_TRUE(schema->usage.repeatable);
+        TEST_ASSERT_FALSE(schema->usage.inherited);
+
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+
+        /* 公开的源码编译入口接受同样的写法。 */
+        state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "attribute_usage_argument_binding.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(function);
+        ZrCore_Function_Free(state, function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_attribute_usage_rejects_misnamed_arguments(void) {
+    static const TZrChar *misnamedSources[] = {
+            /* 第四项拼错：曾按位置被当成 inherited 并成功注册。 */
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: false, inheritedTypo: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 位置实参之后接拼错的名字。 */
+            "#zr.reflection.attributeUsage("
+            "zr.reflection.AttributeTargets.field, "
+            "zr.reflection.AttributeRetention.runtime, "
+            "false, inheritedTypo: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 第一项拼错。 */
+            "#zr.reflection.attributeUsage("
+            "target: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 同一个名字写了两次，inherited 没有给出。 */
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: false, repeatable: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+            /* 名字指向已由位置实参给出的 targets。 */
+            "#zr.reflection.attributeUsage("
+            "zr.reflection.AttributeTargets.field, "
+            "zr.reflection.AttributeRetention.runtime, "
+            "false, targets: zr.reflection.AttributeTargets.field)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n",
+    };
+    /* 名字都对、值不是布尔字面量：仍按值的问题报告，不与名字错误混淆。 */
+    static const TZrChar *invalidValueSource =
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: 1, inherited: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state;
+    SZrCompilerState cs;
+    SZrAstNode *ast;
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(misnamedSources); index++) {
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+        ast = compile_time_test_compile_structs_in_state(
+                state, &cs, misnamedSources[index], "attribute_usage_misnamed_argument.zr");
+        TEST_ASSERT_TRUE(cs.hasError);
+        TEST_ASSERT_NOT_NULL(cs.errorMessage);
+        TEST_ASSERT_NOT_NULL_MESSAGE(
+                strstr(cs.errorMessage,
+                       "attributeUsage.arguments: unknown or duplicate named argument"),
+                cs.errorMessage);
+        TEST_ASSERT_NULL(compile_time_test_find_attribute_schema(&cs, "Label"));
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+
+        /* 公开的源码编译入口同样不产出函数。 */
+        state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "attribute_usage_misnamed_argument.zr");
+        function = ZrParser_Source_Compile(
+                state, misnamedSources[index], strlen(misnamedSources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    ast = compile_time_test_compile_structs_in_state(
+            state, &cs, invalidValueSource, "attribute_usage_invalid_value.zr");
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+            strstr(cs.errorMessage,
+                   "attributeUsage.arguments: values must be canonical compile-time constants"),
+            cs.errorMessage);
+    TEST_ASSERT_NULL(compile_time_test_find_attribute_schema(&cs, "Label"));
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
 #include "test_compile_time_decorator_shape_retention_cases.h"
 
 // 主函数
@@ -2586,6 +2795,8 @@ int main(void) {
     RUN_TEST(test_conditional_disabled_call_still_type_checks_arguments);
     RUN_TEST(test_readonly_struct_attribute_schema_binds_typed_field_metadata);
     RUN_TEST(test_attribute_schema_rejects_invalid_shape_and_application);
+    RUN_TEST(test_attribute_usage_binds_positional_and_named_arguments);
+    RUN_TEST(test_attribute_usage_rejects_misnamed_arguments);
     RUN_TEST(test_declaration_transform_accepts_typed_empty_patch_once);
     RUN_TEST(test_declaration_transform_generated_field_enters_normal_layout);
     RUN_TEST(test_declaration_transform_interface_add_enters_normal_contract);

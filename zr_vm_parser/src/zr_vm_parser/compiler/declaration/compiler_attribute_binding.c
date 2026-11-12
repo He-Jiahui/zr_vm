@@ -348,6 +348,13 @@ static TZrBool metadata_parse_usage(
     retention = metadata_named_argument(attribute->call, "retention", 1U);
     repeatable = metadata_named_argument(attribute->call, "repeatable", 2U);
     inherited = metadata_named_argument(attribute->call, "inherited", 3U);
+    /* 实参恰为四个，取不到某项只会是它的位置上写了别的名字：拼错、重复，或指向已按位置给出的项。 */
+    if (targets == ZR_NULL || retention == ZR_NULL || repeatable == ZR_NULL ||
+        inherited == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs, "attributeUsage.arguments: unknown or duplicate named argument", location);
+        return ZR_FALSE;
+    }
     memset(usage, 0, sizeof(*usage));
     if (!metadata_parse_target_flags(targets, &usage->targets) || usage->targets == 0U ||
         !metadata_parse_retention(retention, &usage->retention) ||
