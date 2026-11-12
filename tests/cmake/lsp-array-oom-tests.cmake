@@ -19,6 +19,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             add_reference_symbol
             symbol_reference
             snapshot_capture
+            external_highlight_locations
             incremental_parser_new
             incremental_parser_insert
             incremental_parser_insert_open)

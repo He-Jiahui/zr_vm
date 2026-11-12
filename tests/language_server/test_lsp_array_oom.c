@@ -23,6 +23,9 @@ typedef struct SLspArrayOomAllocator {
     TZrPtr failResizePointer;
     TZrPtr capturedArrayAllocation;
     TZrSize failedResizeCount;
+    TZrSize watchedRecordSize;
+    TZrSize watchedRecordAllocations;
+    TZrSize watchedRecordFrees;
     TZrBool captureNextArrayAllocation;
     TZrBool failNextMatchingAllocation;
     /* URI map buckets use the non-throwing HashSet_Rehash path, so one rejection is observable. */
@@ -33,6 +36,16 @@ typedef struct SLspArrayOomAllocator {
 
 static int g_failures;
 
+/* RawMalloc/RawFree pass the exact record size with the untyped NONE tag, so a watched size
+ * singles out one kind of native record without counting array buffers or GC objects. */
+static TZrBool lsp_array_oom_is_watched_record(const SLspArrayOomAllocator *allocator,
+                                               TZrSize size,
+                                               TZrInt64 flag) {
+    return allocator->watchedRecordSize != 0U && size == allocator->watchedRecordSize &&
+           flag == ZR_MEMORY_NATIVE_TYPE_NONE;
+}
+
+/* Failure injection is attached to the real VM allocator used by production arrays. */
 /* Failure injection is attached to the real VM allocator used by production arrays and URI maps. */
 static TZrPtr lsp_array_oom_allocator(TZrPtr userData,
                                       TZrPtr pointer,
@@ -74,6 +87,9 @@ static TZrPtr lsp_array_oom_allocator(TZrPtr userData,
         if (originalSize <= allocator->liveBytes) {
             allocator->liveBytes -= originalSize;
         }
+        if (pointer != ZR_NULL && lsp_array_oom_is_watched_record(allocator, originalSize, flag)) {
+            allocator->watchedRecordFrees++;
+        }
         free(pointer);
         return ZR_NULL;
     }
@@ -82,6 +98,9 @@ static TZrPtr lsp_array_oom_allocator(TZrPtr userData,
         TZrPtr result = malloc((size_t)newSize);
         if (result != ZR_NULL) {
             allocator->liveBytes += newSize;
+            if (lsp_array_oom_is_watched_record(allocator, newSize, flag)) {
+                allocator->watchedRecordAllocations++;
+            }
             if (flag == ZR_MEMORY_NATIVE_TYPE_ARRAY &&
                 allocator->captureNextArrayAllocation) {
                 allocator->capturedArrayAllocation = result;
@@ -486,6 +505,98 @@ static void test_snapshot_capture_preserves_cache_when_growth_fails(SZrState *st
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+/* Callers own each returned highlight record; release them before the array buffer. */
+static TZrBool request_and_release_highlights(SZrState *state,
+                                              SZrLspContext *context,
+                                              SZrString *uri,
+                                              SZrLspPosition position,
+                                              TZrSize *outCount) {
+    SZrArray highlights;
+    TZrBool found;
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4U);
+    found = ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, position, &highlights);
+    *outCount = highlights.length;
+    for (TZrSize index = 0U; index < highlights.length; index++) {
+        SZrLspDocumentHighlight **slot =
+                (SZrLspDocumentHighlight **)ZrCore_Array_Get(&highlights, index);
+        if (slot != ZR_NULL && *slot != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *slot, sizeof(SZrLspDocumentHighlight));
+        }
+    }
+    ZrCore_Array_Free(state, &highlights);
+    return found;
+}
+
+/* An external highlight request collects one SZrLspLocation per reference only to project it
+ * into the caller's highlights, so every collected record must be freed before it returns. */
+static void check_highlight_request_releases_locations(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *uri,
+                                                       SZrLspPosition position,
+                                                       TZrSize minimumHighlights,
+                                                       const char *label) {
+    SLspArrayOomAllocator *allocator =
+            (SLspArrayOomAllocator *)state->global->upstreamAllocationArguments;
+    TZrSize highlightCount = 0U;
+    TZrBool found;
+    char message[192];
+
+    /* The first request may populate analyzer and metadata caches; measure a repeated one. */
+    (void)request_and_release_highlights(state, context, uri, position, &highlightCount);
+
+    allocator->watchedRecordSize = sizeof(SZrLspLocation);
+    allocator->watchedRecordAllocations = 0U;
+    allocator->watchedRecordFrees = 0U;
+    found = request_and_release_highlights(state, context, uri, position, &highlightCount);
+    allocator->watchedRecordSize = 0U;
+
+    printf("INFO: %s highlights=%u locations allocated=%u freed=%u\n",
+           label,
+           (unsigned)highlightCount,
+           (unsigned)allocator->watchedRecordAllocations,
+           (unsigned)allocator->watchedRecordFrees);
+    (void)snprintf(message, sizeof(message),
+                   "%s highlight request returns the same-document ranges", label);
+    check(found && highlightCount >= minimumHighlights, message);
+    (void)snprintf(message, sizeof(message),
+                   "%s highlight request collects temporary locations", label);
+    check(allocator->watchedRecordAllocations > 0U, message);
+    (void)snprintf(message, sizeof(message),
+                   "%s highlight request frees every collected location", label);
+    check(allocator->watchedRecordAllocations == allocator->watchedRecordFrees, message);
+}
+
+static void test_external_highlights_release_collected_locations(SZrState *state) {
+    /* The import literal resolves to an external module declaration and the receiver member to
+     * an external type member; each target kind collects its references through its own path. */
+    static const char *content =
+            "var system = import(\"zr.system\");\n"
+            "system.console;\n"
+            "var {LinkedList} = import(\"zr.container\");\n"
+            "var list: LinkedList<int> = null;\n"
+            "list.addLast(1);\n"
+            "list.addLast(2);\n";
+    static const char *uriText = "file:///array-oom-external-highlights.zr";
+    const SZrLspPosition importLiteralPosition = {0, 21};
+    const SZrLspPosition typeMemberPosition = {4, 5};
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    TZrBool opened = context != ZR_NULL && uri != ZR_NULL &&
+                     ZrLanguageServer_Lsp_UpdateDocument(
+                             state, context, uri, content, strlen(content), 1U);
+
+    check(opened, "external highlight test opens a real document importing native modules");
+    if (opened) {
+        check_highlight_request_releases_locations(
+                state, context, uri, importLiteralPosition, 1U, "external module declaration");
+        check_highlight_request_releases_locations(
+                state, context, uri, typeMemberPosition, 2U, "external type member");
+    }
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
 /* A parser whose URI map never got buckets could not store any document, so none is handed out. */
 static void test_incremental_parser_new_fails_when_uri_map_cannot_initialize(SZrState *state) {
     SLspArrayOomAllocator *allocator =
@@ -580,7 +691,6 @@ static void test_parser_insert_fails_when_uri_map_cannot_grow(SZrState *state, T
 
     ZrLanguageServer_IncrementalParser_Free(state, parser);
 }
-
 int main(int argc, char **argv) {
     SLspArrayOomAllocator allocator = {0};
     SZrCallbackGlobal callbacks = {0};
@@ -622,6 +732,8 @@ int main(int argc, char **argv) {
         test_symbol_reference_reports_growth_failure(state);
     } else if (strcmp(argv[1], "snapshot_capture") == 0) {
         test_snapshot_capture_preserves_cache_when_growth_fails(state);
+    } else if (strcmp(argv[1], "external_highlight_locations") == 0) {
+        test_external_highlights_release_collected_locations(state);
     } else if (strcmp(argv[1], "incremental_parser_new") == 0) {
         test_incremental_parser_new_fails_when_uri_map_cannot_initialize(state);
     } else if (strcmp(argv[1], "incremental_parser_insert") == 0) {
