@@ -792,6 +792,62 @@ static void test_incremental_parser_does_not_reparse_declaration_over_unparsed_c
     TEST_PASS(timer, summary);
 }
 
+/* 上一份文本没有解析过时，只改注释的更新不能按 token 等价清掉 dirty 并沿用落后的 AST。 */
+static void test_incremental_parser_does_not_reuse_tokens_over_unparsed_content(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reuse Tokens Over Unparsed Content";
+    const TZrChar *initial =
+            "fn first(): int { return 1; } // a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *unparsed =
+            "fn first(): int { return 7; } // a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *commentOnly =
+            "fn first(): int { return 7; } // b\n"
+            "fn second(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///token-equivalent-unparsed.zr",
+            strlen("file:///token-equivalent-unparsed.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, initial, strlen(initial), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, unparsed, strlen(unparsed), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, commentOnly, strlen(commentOnly), 3U)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to apply a comment-only update over unparsed content");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || !fileVersion->isDirty ||
+        fileVersion->lastChangeInfo.isTokenEquivalent ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !top_level_function_returns_integer(fileVersion->ast, 0U, 7)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "A comment-only edit over unparsed content must stay dirty and rebuild the AST");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
 /* 编辑改变声明范围时应完整重建，避免复用节点携带过期源码偏移。 */
 static void test_incremental_parser_falls_back_for_unstable_declaration_range(
         SZrState *state) {
@@ -1134,6 +1190,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_incremental_parser_does_not_reparse_declaration_over_unparsed_content(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reuse_tokens_over_unparsed_content(state);
     TEST_DIVIDER();
 
     test_incremental_parser_falls_back_for_unstable_declaration_range(state);

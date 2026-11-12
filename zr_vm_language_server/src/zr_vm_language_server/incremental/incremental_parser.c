@@ -626,7 +626,7 @@ static TZrBool incremental_parser_update_file(
             fileVersion->hasIncrementalInfo = ZR_FALSE;
             return ZR_TRUE;
         }
-        /* 仅有非回退 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
+        /* 仅有非回退且已对应上一份文本的 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
         SZrFileChangeInfo changeInfo;
         ZrLanguageServer_IncrementalChange_Compute(
                 uri,
@@ -636,6 +636,7 @@ static TZrBool incremental_parser_update_file(
                 contentLength,
                 &changeInfo);
         changeInfo.isTokenEquivalent = fileVersion->ast != ZR_NULL &&
+                                       !fileVersion->isDirty &&
                                        !fileVersion->usesFallbackAst &&
                                        ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
                                                state,
