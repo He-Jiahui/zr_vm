@@ -1,0 +1,197 @@
+name: Supplemental PR integration validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supplemental-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-full:
+    name: Linux Debug full build (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Record source identity
+        run: |
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: zr_vm_language_server_extension/package-lock.json
+      - name: Install extension dependencies
+        working-directory: zr_vm_language_server_extension
+        run: npm ci
+      - name: Configure Debug
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: >-
+          cmake -S . -B "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
+          -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF
+          -DBUILD_TESTS=ON -DBUILD_CLI=ON
+          -DBUILD_LANGUAGE_SERVER=ON -DBUILD_RUST_BINDING=ON
+          -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+      - name: Build all default targets
+        run: cmake --build "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}" --parallel 2
+      - name: Validate required CTest registrations
+        env:
+          BUILD_DIR: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          build = os.environ['BUILD_DIR']
+          required = [
+              'language_pipeline', 'language_server', 'debug_metadata', 'debug_hook_core', 'debug_library', 'core_runtime',
+              'interpreter_quickening', 'lexer_diagnostics', 'expression_fragment_parser',
+              'macro_token_stream_limits', 'writer_output_failure',
+              'macro_callable_return_inference', 'compile_time_execution',
+              'async_function_access_modifier', 'language_server_stdio_diagnostic_publication',
+              'language_server_stdio_document_close', 'language_server_stdio_document_sync_conformance',
+              'property_consumer_contracts', 'macro_parser_primary_budget',
+              'aot_llvm_symbol_stripping', 'aot_backend_adapters',
+              'language_server_lsp_semantic_snapshot', 'language_server_wasm_response', 'language_server_wasm_exports', 'project_run_module_failure',
+              'language_server_canonical_hover_format', 'macro_nominal_declaration_publication',
+              'union_switch_binding_lifetime', 'aot_llvm_specialized_cast_fusion',
+              'rust_binding_api', 'zr_vm_rust_binding_cargo_check', 'zr_vm_rust_binding_cargo_test',
+              'ssa_batch_vectorization', 'core_exception_worker_forward',
+              'function_instruction_verify', 'fused_add_operand_packing',
+              'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary',
+              'language_server_incremental_parser_tests', 'language_server_lsp_interface_tests',
+              'language_server_lsp_advanced_editor_features_tests',
+              'language_server_stdio_protocol_conformance',
+              'language_server_lsp_array_oom_cache_new',
+              'language_server_lsp_array_oom_symbol_table_new',
+              'language_server_lsp_array_oom_reference_tracker_new',
+              'language_server_lsp_array_oom_symbol_new',
+              'language_server_lsp_array_oom_add_reference',
+              'language_server_lsp_array_oom_add_reference_symbol',
+              'language_server_lsp_array_oom_symbol_reference',
+              'language_server_lsp_array_oom_snapshot_capture',
+              'language_server_lsp_array_oom_external_highlight_locations',
+              'language_server_lsp_array_oom_incremental_parser_new',
+              'language_server_lsp_array_oom_incremental_parser_insert',
+              'language_server_lsp_array_oom_incremental_parser_insert_open',
+          ]
+          result = subprocess.run(['ctest', '--test-dir', build, '--show-only=json-v1'],
+                                  check=True, text=True, capture_output=True)
+          actual = {test['name'] for test in json.loads(result.stdout)['tests']}
+          missing = sorted(set(required) - actual)
+          if missing:
+              print('Missing required CTest registrations:', *missing, sep='\n  ', file=sys.stderr)
+              sys.exit(1)
+          print(f'All {len(required)} required CTest registrations are present.')
+          PY
+      - name: Run reviewed CTest regressions
+        run: >-
+          ctest --test-dir "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
+          --output-on-failure --no-tests=error
+          -R '^(language_pipeline|language_server|debug_metadata|debug_hook_core|debug_library|core_runtime|interpreter_quickening|lexer_diagnostics|expression_fragment_parser|macro_token_stream_limits|writer_output_failure|macro_callable_return_inference|compile_time_execution|async_function_access_modifier|language_server_stdio_diagnostic_publication|language_server_stdio_document_close|language_server_stdio_document_sync_conformance|property_consumer_contracts|macro_parser_primary_budget|aot_llvm_symbol_stripping|aot_backend_adapters|language_server_lsp_semantic_snapshot|language_server_wasm_response|language_server_wasm_exports|project_run_module_failure|language_server_canonical_hover_format|macro_nominal_declaration_publication|union_switch_binding_lifetime|aot_llvm_specialized_cast_fusion|rust_binding_api|zr_vm_rust_binding_cargo_check|zr_vm_rust_binding_cargo_test|ssa_batch_vectorization|core_exception_worker_forward|function_instruction_verify|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary|language_server_incremental_parser_tests|language_server_lsp_interface_tests|language_server_lsp_advanced_editor_features_tests|language_server_stdio_protocol_conformance|language_server_lsp_array_oom_(cache_new|symbol_table_new|reference_tracker_new|symbol_new|add_reference|add_reference_symbol|symbol_reference|snapshot_capture|external_highlight_locations|incremental_parser_new|incremental_parser_insert|incremental_parser_insert_open))$'
+      - name: Run unregistered regression executables
+        working-directory: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/bin
+        run: |
+          ./zr_vm_project_import_resolver_test
+          ./zr_vm_aot_c_iterator_contracts_test
+          ./zr_vm_aot_c_iterator_shared_library_smoke_test
+          ./zr_vm_semantic_facts_test
+          ./zr_vm_compiler_semantic_query_diagnostics_test
+      - name: Compile extension and run unit tests
+        working-directory: zr_vm_language_server_extension
+        run: |
+          npm run compile
+          npm run test:unit
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supplemental-linux-logs-${{ matrix.compiler }}
+          path: |
+            ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/CMakeFiles/CMakeError.log
+            ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/CMakeFiles/CMakeOutput.log
+          if-no-files-found: ignore
+
+  windows-smoke:
+    name: Windows MSVC CLI, LSP, parser, and fused-add smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Record source identity
+        run: |
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Configure Debug
+        run: >-
+          cmake -S . -B "D:/cargo-targets/zr-ci"
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=OFF
+          -DBUILD_TESTS=ON -DBUILD_CLI=ON
+          -DBUILD_LANGUAGE_SERVER=ON -DBUILD_RUST_BINDING=OFF
+          -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+      - name: Build Windows smoke targets
+        run: >-
+          cmake --build "D:/cargo-targets/zr-ci" --config Debug --parallel 2
+          --target zr_vm_cli_executable zr_vm_language_server_stdio
+          zr_vm_parser_test zr_vm_expression_fragment_parser_test
+          zr_vm_async_function_access_modifier_test
+          zr_vm_aot_c_iterator_contracts_test
+          zr_vm_aot_llvm_specialized_cast_fusion_test
+          zr_vm_fused_add_operand_packing_test
+          zr_vm_function_instruction_verification_test
+          zr_vm_project_import_resolver_test
+      - name: Validate required Windows CTest registrations
+        env:
+          BUILD_DIR: D:/cargo-targets/zr-ci
+        shell: pwsh
+        run: |
+          $listed = ctest --test-dir $env:BUILD_DIR -C Debug --show-only=json-v1 | ConvertFrom-Json
+          $actual = @($listed.tests | ForEach-Object { $_.name })
+          $required = @('expression_fragment_parser', 'async_function_access_modifier', 'function_instruction_verify', 'aot_llvm_specialized_cast_fusion', 'fused_add_operand_packing', 'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary')
+          $missing = @($required | Where-Object { $_ -notin $actual })
+          if ($missing.Count) { throw "Missing required CTest registrations: $($missing -join ', ')" }
+      - name: Run Windows parser, CLI, and fused-add regressions
+        run: >-
+          ctest --test-dir "D:/cargo-targets/zr-ci"
+          -C Debug --output-on-failure --no-tests=error
+          -R '^(expression_fragment_parser|async_function_access_modifier|function_instruction_verify|aot_llvm_specialized_cast_fusion|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary)$'
+      - name: Run Windows resolver regression executable
+        working-directory: D:/cargo-targets/zr-ci\bin\Debug
+        run: .\zr_vm_project_import_resolver_test.exe
+      - name: Upload Windows failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supplemental-windows-logs
+          path: |
+            D:/cargo-targets/zr-ci/Testing/Temporary/LastTest.log
+            D:/cargo-targets/zr-ci/CMakeFiles/CMakeError.log
+            D:/cargo-targets/zr-ci/CMakeFiles/CMakeOutput.log
+          if-no-files-found: ignore
