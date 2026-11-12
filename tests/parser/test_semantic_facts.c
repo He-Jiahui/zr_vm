@@ -1191,5 +1191,6 @@ int main(void) {
     RUN_TEST(test_semantic_receiver_guards_preserve_distinct_nodes);
     RUN_TEST(test_cfg_definite_assignment_accepts_standalone_body_root);
     RUN_TEST(test_cfg_method_bodies_keep_independent_assignment_and_definitions);
+    RUN_TEST(test_cfg_type_declarations_leave_method_body_writes_to_method_roots);
     return UNITY_END();
 }

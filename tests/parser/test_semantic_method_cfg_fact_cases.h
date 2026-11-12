@@ -394,4 +394,121 @@ static void test_cfg_method_bodies_keep_independent_assignment_and_definitions(v
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* 类型声明只是声明方法，不执行方法体，所以它不能收下方法体里的事实。
+ * 方法根在 script 根之后运行，会盖掉方法内读取的结果；能看出类型声明是否收下方法体写入的，
+ * 是类型声明之后 script 自己的读取：收下的话，这次读取会变成 INIT，到达定义会指向方法里的写入。
+ * 两次写入用只有范围的合成节点，走确定赋值的范围回退；到达定义本来就按范围归属。 */
+static void test_cfg_type_declarations_leave_method_body_writes_to_method_roots(void) {
+    const TZrChar *source =
+            "var total: int;\n"
+            "class Box {\n"
+            "    pub fn bump(): int {\n"
+            "        total = 1;\n"
+            "        return total;\n"
+            "    }\n"
+            "}\n"
+            "struct Point {\n"
+            "    pub fn bump(): int {\n"
+            "        total = 2;\n"
+            "        return total;\n"
+            "    }\n"
+            "}\n"
+            "return total;\n";
+    const TZrChar *name = "facts_method_cfg_type_statement.zr";
+    const TZrSymbolId symbolId = 501U;
+    SZrString *sourceName = ZrCore_String_Create(g_state, (TZrNativeString)name, strlen(name));
+    SZrSemanticContext *context;
+    SZrAstNode *ast;
+    SZrAstNodeArray *statements;
+    SZrAstNode *pattern;
+    SZrAstNode *scriptRead;
+    SZrAstNode *methodReads[2];
+    SZrAstNode writes[2];
+    SZrFileRange writeRanges[2];
+    const SZrSemanticReferenceFact *scriptFact;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    statements = ast->data.script.statements;
+    TEST_ASSERT_NOT_NULL(statements);
+    TEST_ASSERT_EQUAL_UINT64(4U, statements->count);
+    pattern = method_cfg_declaration_pattern(statements->nodes[0]);
+    TEST_ASSERT_NULL(statements->nodes[0]->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, statements->nodes[1]->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, statements->nodes[2]->type);
+    scriptRead = method_cfg_return_expr(statements->nodes[3]);
+    TEST_ASSERT_TRUE(find_source_range(source, sourceName, "total = 1", 0, 0, strlen("total"),
+                                       &writeRanges[0]));
+    TEST_ASSERT_TRUE(find_source_range(source, sourceName, "total = 2", 0, 0, strlen("total"),
+                                       &writeRanges[1]));
+    for (index = 0; index < 2; index++) {
+        SZrAstNodeArray *members = method_cfg_member_array(statements->nodes[index + 1]);
+        SZrAstNodeArray *body;
+
+        TEST_ASSERT_NOT_NULL(members);
+        TEST_ASSERT_EQUAL_UINT64(1U, members->count);
+        body = method_cfg_body_statements(members->nodes[0]);
+        TEST_ASSERT_EQUAL_UINT64(2U, body->count);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, body->nodes[0]->type);
+        methodReads[index] = method_cfg_return_expr(body->nodes[1]);
+        init_identifier_node_with_range(&writes[index], writeRanges[index]);
+    }
+    TEST_ASSERT_NOT_EQUAL_UINT64(pattern->location.start.offset, writeRanges[0].start.offset);
+    TEST_ASSERT_NOT_EQUAL_UINT64(pattern->location.start.offset, writeRanges[1].start.offset);
+    TEST_ASSERT_NOT_EQUAL_UINT64(writeRanges[0].start.offset, writeRanges[1].start.offset);
+
+    context = ZrParser_SemanticContext_New(g_state);
+    TEST_ASSERT_NOT_NULL(context);
+    method_cfg_append_decl(context, pattern, symbolId);
+    for (index = 0; index < 2; index++) {
+        method_cfg_append_use(context,
+                              &writes[index],
+                              ZR_SEMANTIC_REFERENCE_WRITE,
+                              symbolId,
+                              pattern->location);
+        method_cfg_append_use(context,
+                              methodReads[index],
+                              ZR_SEMANTIC_REFERENCE_READ,
+                              symbolId,
+                              pattern->location);
+    }
+    method_cfg_append_use(context,
+                          scriptRead,
+                          ZR_SEMANTIC_REFERENCE_READ,
+                          symbolId,
+                          pattern->location);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(context, ast));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(context, ast));
+
+    scriptFact = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            context, scriptRead, ZR_SEMANTIC_REFERENCE_READ);
+    TEST_ASSERT_NOT_NULL(scriptFact);
+    TEST_ASSERT_TRUE(scriptFact->hasDefiniteAssignmentState);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNINIT,
+                                  scriptFact->definiteAssignmentState,
+                                  "A type declaration must not apply a method body write to the script flow");
+    TEST_ASSERT_TRUE(scriptFact->hasDefinitionRange);
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(pattern->location.start.offset,
+                                     scriptFact->definitionRange.start.offset,
+                                     "A method body write must not reach a script read after the type declaration");
+    TEST_ASSERT_FALSE(method_cfg_fact_defines_offset(scriptFact, writeRanges[0].start.offset));
+    TEST_ASSERT_FALSE(method_cfg_fact_defines_offset(scriptFact, writeRanges[1].start.offset));
+
+    for (index = 0; index < 2; index++) {
+        method_cfg_assert_read(context,
+                               methodReads[index],
+                               ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT,
+                               ZR_TRUE,
+                               writeRanges[index].start.offset,
+                               writeRanges[1 - index].start.offset);
+    }
+
+    ZrParser_SemanticContext_Free(context);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 #endif
