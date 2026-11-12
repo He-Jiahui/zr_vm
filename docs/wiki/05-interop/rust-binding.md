@@ -64,7 +64,7 @@ checkpoint 成功创建时额外保留 owner，Rust Drop 先释放 core 快照�
 `ZrRustBinding_Value_ReadBool`、`ZrRustBinding_Value_ReadInt`、`ZrRustBinding_Value_ReadFloat`
 和 `ZrRustBinding_Value_ReadString` 复制 scalar/string，Array/Object 用
 `ZrRustBinding_Value_Array_Length/Get/Push`、`ZrRustBinding_Value_Object_Get/Set` 访问。
-当前 `ReadInt` 会把超过 `INT64_MAX` 的 VM `uint64` 直接窄化为有符号值且仍返回 OK；调用方不能用它无损读取该范围。
+`ReadInt` 只产出 `int64`：VM `uint64` 超过 `INT64_MAX` 时返回 `INVALID_ARGUMENT` 且不写输出，argument view 的 `ReadInt` 规则相同；当前没有无符号读取入口。
 返回的字符串写入调用方 buffer；当前 C API 不提供所需长度查询。容量不足时返回
 `BUFFER_TOO_SMALL`，调用方可扩大 buffer 后重试；Rust 安全层当前使用固定 4096 字节 buffer。
 value 不可跨 runtime 线程共享。

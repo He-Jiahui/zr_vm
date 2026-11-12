@@ -255,6 +255,13 @@ static TZrBool legacy_property_entry_is_setter(
 }
 
 /* class 使用已保存名称位置；interface 缺该字段，需在声明源码范围找原拼写。 */
+static TZrBool legacy_property_is_identifier_byte(TZrChar value) {
+    return (value >= 'a' && value <= 'z') ||
+           (value >= 'A' && value <= 'Z') ||
+           (value >= '0' && value <= '9') ||
+           value == '_';
+}
+
 static TZrBool legacy_property_find_name_slice(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *entry,
@@ -297,12 +304,37 @@ static TZrBool legacy_property_find_name_slice(
         node->location.end.offset > ps->lexer->sourceLength) {
         return ZR_FALSE;
     }
-    /* BUG: interface 名称按声明全文首次匹配；如 `pub get b: int;` 的 `b`
-     * 先命中 `pub`，相关诊断指错位置，替换构建器也会找不到 get/set 而放弃自动修复。 */
+    /* 名称标识符节点记录了解析时的 token 位置；优先使用它，名称前注释或
+     * 关键字里的同名文本就不会被当成属性名。拼写核对失败才退回文本扫描。 */
+    {
+        const SZrIdentifier *identifier =
+                node->data.interfacePropertySignature.name;
+        const SZrAstNode *nameNode = (const SZrAstNode *)(
+                (const char *)identifier -
+                offsetof(SZrAstNode, data.identifier));
+        TZrSize nameStart = nameNode->location.start.offset;
+
+        if (nameNode->type == ZR_AST_IDENTIFIER_LITERAL &&
+            nameStart >= node->location.start.offset &&
+            nameNode->location.end.offset >= nameStart &&
+            nameNode->location.end.offset - nameStart == nameLength &&
+            nameLength <= node->location.end.offset - nameStart &&
+            memcmp(ps->lexer->source + nameStart, nameText, nameLength) == 0) {
+            outSlice->start = nameStart;
+            outSlice->length = nameLength;
+            return ZR_TRUE;
+        }
+    }
     for (TZrSize offset = node->location.start.offset;
          offset + nameLength <= node->location.end.offset;
          offset++) {
-        if (memcmp(ps->lexer->source + offset, nameText, nameLength) == 0) {
+        TZrSize end = offset + nameLength;
+        TZrBool leftBoundary = offset == 0U ||
+                               !legacy_property_is_identifier_byte(ps->lexer->source[offset - 1U]);
+        TZrBool rightBoundary = end >= ps->lexer->sourceLength ||
+                                !legacy_property_is_identifier_byte(ps->lexer->source[end]);
+        if (leftBoundary && rightBoundary &&
+            memcmp(ps->lexer->source + offset, nameText, nameLength) == 0) {
             outSlice->start = offset;
             outSlice->length = nameLength;
             return ZR_TRUE;

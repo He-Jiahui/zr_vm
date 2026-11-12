@@ -463,10 +463,53 @@ static TZrBool semantic_da_variable_declaration_slot(SZrAstNode *statement,
     return semantic_da_find_declaration_symbol(analysis, statement, pattern, outSymbolIndex);
 }
 
+/** @brief class/struct 方法的可执行体；抽象方法没有 body。 */
+static SZrAstNode *semantic_da_method_body(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (node->type) {
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.body;
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.body;
+        default:
+            return ZR_NULL;
+    }
+}
+
+/** @brief 事实落在某个成员方法体内时，类型声明语句不能再把它当成自己的 transfer。 */
+static TZrBool semantic_da_fact_in_member_method(const SZrSemanticDaAnalysis *analysis,
+                                                 SZrAstNode *typeNode,
+                                                 const SZrSemanticReferenceFact *fact) {
+    SZrAstNodeArray *members = ZR_NULL;
+    TZrSize index;
+
+    if (typeNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (typeNode->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeNode->data.classDeclaration.members;
+    } else if (typeNode->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeNode->data.structDeclaration.members;
+    }
+    if (members == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < members->count; index++) {
+        SZrAstNode *body = semantic_da_method_body(members->nodes[index]);
+        if (semantic_da_node_contains_fact(analysis, body, fact)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /**
  * @brief 按 statement 的已知表达式子节点或节点范围筛选本次 transfer 应消费的事实。
- * @note block、catch、switch-default 与 try 语句不直接归属事实；其他未列类型走节点/范围回退。
- * TODO: parser 将 lambda body 保存在 initializer 内，compiler 会编译 block 并产生 READ facts；resolver 只为 SCRIPT/FUNCTION/BLOCK 建 CFG root 且 default 直接返回，range fallback 可能把嵌套 body fact 归入外层 statement。先定闭包创建/调用的 DA 语义，再用合法嵌套 lambda fixture 核对 fact/query 边界。
+ * @note block、catch、switch-default 与 try 语句不直接归属事实；class/struct 不接收已落入方法体的事实。
+ * TODO: parser 将 lambda body 保存在 initializer 内，compiler 会编译 block 并产生 READ facts；未列 statement 的范围回退仍可能把嵌套 lambda fact 归入外层 statement。先定闭包创建/调用的 DA 语义，再用合法嵌套 lambda fixture 核对 fact/query 边界。
  */
 /* The AST index below replaces the historical range-only lambda fallback. */
 static TZrBool semantic_da_fact_in_statement(const SZrSemanticDaAnalysis *analysis,
@@ -507,6 +550,10 @@ static TZrBool semantic_da_fact_in_statement(const SZrSemanticDaAnalysis *analys
         case ZR_AST_SWITCH_DEFAULT:
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
             return ZR_FALSE;
+        case ZR_AST_CLASS_DECLARATION:
+        case ZR_AST_STRUCT_DECLARATION:
+            return semantic_da_node_contains_fact(analysis, statement, fact) &&
+                   !semantic_da_fact_in_member_method(analysis, statement, fact);
         case ZR_AST_FUNCTION_DECLARATION: {
             EZrSemanticDaAstMatch match =
                     ZrParser_SemanticDaAst_Match(analysis->astIndex, statement, fact->node);
@@ -734,10 +781,9 @@ typedef struct SZrSemanticDaRootAnalysis {
 } SZrSemanticDaRootAnalysis;
 
 /**
- * @brief 仅为 script、function declaration 和 block 路径调度 CFG 根。
- * BUG: class/struct 本身落入 CFG 的普通 statement；范围回退可把成员方法局部声明和 READ 一并交给外层 transfer，而成员方法 body 没有独立 CFG 根。未初始化声明 fact 因外层 statement 类型而被标 INIT，query 因此不发应有诊断。合法方法体由 compiler_class/compiler_struct 编译，需补成员根遍历与端到端覆盖。
+ * @brief 为 script、function、独立 block，以及调用方传入的方法体 block 运行 CFG。
+ * @note class/struct 方法体由 VisitCfgRoots 以 body block 传入，不再包进类型声明语句。
  */
-/* Indexed ownership now excludes member bodies; their independent CFGs remain separate work. */
 static TZrBool semantic_da_resolve_cfg_root(SZrAstNode *root, void *userData) {
     SZrSemanticDaRootAnalysis *analysis = (SZrSemanticDaRootAnalysis *)userData;
 

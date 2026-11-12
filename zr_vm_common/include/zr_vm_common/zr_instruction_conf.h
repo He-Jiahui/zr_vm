@@ -420,4 +420,13 @@ union TZrInstruction {
 };
 
 typedef union TZrInstruction TZrInstruction;
+
+/** @brief ADD_SIGNED_LOAD_STACK_LOAD_CONST 的常量槽与常量下标能否共存。
+ * operand0[2] 与 operand1[1] 占用同一段操作数字节。先写入常量下标后，
+ * operand0[2] 必须仍等于计划中的常量物化槽，融合或重映射才可以保留这条指令。
+ */
+#define ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(slot, constantIndex)                                            \
+    (((TZrInstruction){.instruction.operand.operand1[1] = (TZrUInt16)(constantIndex)})                                \
+             .instruction.operand.operand0[2] == (TZrUInt8)(slot))
+
 #endif // ZR_INSTRUCTION_CONF_H

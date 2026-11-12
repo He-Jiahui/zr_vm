@@ -300,7 +300,7 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     }
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->exceptionRecoverPoint = ZR_NULL;
-    /* BUG: 主线程有恢复点时，exception.c:590-595 会在 ResetThread 后复制 worker 异常；这里先清空三字段使其丢失。 */
+    /* 线程复用必须清空本槽。worker 向主线程转发时，调用方要先把异常写入主线程槽。 */
     ZrCore_Value_ResetAsNull(&state->currentException);
     state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
     state->hasCurrentException = ZR_FALSE;

@@ -421,6 +421,22 @@
     )
 
     zr_vm_add_unity_test_target(
+            zr_vm_project_run_module_failure_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_project_run_module_failure.c
+    )
+    target_include_directories(zr_vm_project_run_module_failure_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_project_run_module_failure_test)
+    add_test(
+            NAME project_run_module_failure
+            COMMAND $<TARGET_FILE:zr_vm_project_run_module_failure_test>
+    )
+    set_tests_properties(project_run_module_failure PROPERTIES TIMEOUT 120)
+
+    zr_vm_add_unity_test_target(
             zr_vm_project_import_aot_provider_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_project_import_aot_provider_runtime.c
     )

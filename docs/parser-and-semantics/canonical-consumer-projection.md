@@ -131,7 +131,9 @@ source-local hover 同样只消费 `ZrParser_SemanticQuery_SymbolAt()`。query �
 TypeId、signature display、declaration AST identity 与 reference/declaration range；独立
 `ZrLanguageServer_LspCanonicalHover_BuildSymbol()` projector 只格式化该 copied view。callable 优先
 显示 canonical signature，其他符号只格式化 exact TypeId，TypeId unavailable 时明确显示
-`cannot infer exact type`。hover range 始终使用 resolved reference fact range，不能退回请求点、
+`cannot infer exact type`。TypeId 在类型图里有节点、但排不成完整的悬停行（文本超过悬停缓冲，
+或超过排版的嵌套深度）时显示 `Type: unknown`，与表达式悬停的写法相同；这是排版失败，不是推断
+失败，也不产生诊断 2020。hover range 始终使用 resolved reference fact range，不能退回请求点、
 symbol-table lookup range 或 callee/name 扫描。
 
 Hover documentation 同样按 `SymbolId` 查询 `ZrParser_SemanticQuery_DocumentationOfSymbol()`，

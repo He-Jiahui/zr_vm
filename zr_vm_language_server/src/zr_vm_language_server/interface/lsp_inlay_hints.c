@@ -26,7 +26,7 @@ static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right)
     return 0;
 }
 
-/* LSP Range 的 end 排他；空范围不包含任何提示，相邻分页不会重复边界提示。 */
+/* LSP Range end is exclusive: start belongs to this range, end belongs to the next. stdio and Wasm pass the range unchanged; adjacent pages do not repeat boundary hints, and an empty range contains none. */
 static TZrBool lsp_inlay_position_in_range(SZrLspPosition position, SZrLspRange range) {
     return lsp_inlay_compare_position(position, range.start) >= 0 &&
            lsp_inlay_compare_position(position, range.end) < 0;

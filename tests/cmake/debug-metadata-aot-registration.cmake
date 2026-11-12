@@ -404,6 +404,20 @@ if (TARGET zr_vm_aot_llvm_symbol_stripping_test)
     )
 endif ()
 
+if (TARGET zr_vm_aot_llvm_specialized_cast_fusion_test)
+    add_test(
+            NAME aot_llvm_specialized_cast_fusion
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_llvm_specialized_cast_fusion"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_llvm_specialized_cast_fusion_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_llvm_specialized_cast_fusion_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_llvm_specialized_cast_fusion_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_llvm_specialized_cast_fusion_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_metadata_module_hash_golden_test)
     add_test(
             NAME metadata_module_hash_golden

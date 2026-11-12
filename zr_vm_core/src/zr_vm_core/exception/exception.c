@@ -67,15 +67,20 @@ static void exception_throw_impl(
         ZR_ABORT();
     }
 
-    /* TODO: ResetThread 清异常三字段后本分支才复制到 main；尚未找到合法的同原生线程 secondary/no-local-recovery 调用链。下一步核查宿主 state API、worker 入口及 root/close 回调的恢复点与线程归属，再判断此顺序是否造成可达的原 Error 丢失。 */
+    /* ResetThread 会清空 worker 异常槽。主线程的 currentException 会被 GC 扫描，
+     * 所以先把值挂过去，再重置 worker，避免转发到空异常。 */
     if (state != state->global->mainThreadState) {
+        SZrState *mainThread = state->global->mainThreadState;
+        TZrBool forwardToMain = mainThread != ZR_NULL && mainThread->exceptionRecoverPoint != ZR_NULL;
+        if (forwardToMain) {
+            mainThread->currentException = state->currentException;
+            mainThread->currentExceptionStatus = state->currentExceptionStatus;
+            mainThread->hasCurrentException = state->hasCurrentException;
+        }
         errorCode = ZrCore_State_ResetThread(state, errorCode);
         state->threadStatus = errorCode;
-        if (state->global->mainThreadState != ZR_NULL && state->global->mainThreadState->exceptionRecoverPoint != ZR_NULL) {
-            state->global->mainThreadState->currentException = state->currentException;
-            state->global->mainThreadState->currentExceptionStatus = state->currentExceptionStatus;
-            state->global->mainThreadState->hasCurrentException = state->hasCurrentException;
-            exception_throw_on_state(state->global->mainThreadState, errorCode);
+        if (forwardToMain) {
+            exception_throw_on_state(mainThread, errorCode);
         }
     }
 
