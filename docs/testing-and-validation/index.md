@@ -1,5 +1,6 @@
 ---
 related_code:
+  - .github/workflows/pr-regression-validation.yml
   - scripts/artifacts/policy.py
   - scripts/artifacts/maintenance.py
   - scripts/artifacts/ExecutePlan.ps1
@@ -216,3 +217,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 
 - [SSA interface contract matrix](ssa-interface-contract-matrix.md)：19接口族/20操作的实际与planned归属、状态和生命周期。
 - [SSA contract compatibility](ssa-contract-compatibility.md)：独立版本域、reserved、hash provenance、历史ABI隔离与下游兼容政策。
+
+- [PR integration regression gates](pr-integration-gates.md): reviewed parser, runtime, AOT, LSP and Rust combinations.

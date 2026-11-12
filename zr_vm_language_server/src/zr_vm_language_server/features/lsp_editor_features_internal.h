@@ -20,11 +20,26 @@ typedef enum EZrLspEditorScanMode {
     ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING
 } EZrLspEditorScanMode;
 
-/** 跨扫描区间保留的状态；分段调用者必须传递上一区间的结束状态。 */
+/** 模板插值嵌套上限；超出后不再把 `${` 切回代码，避免无界状态。 */
+#define ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH 32U
+
+/** 跨扫描区间保留的状态；分段调用者必须传递上一区间的结束状态。
+ * interpolationDepth 记录尚未闭合的 `${`；每一层的 brace depth 只计插值内部的代码花括号。
+ * `${` 与对应的闭合 `}` 本身不是代码结构括号。
+ * 模板边界跟随 lexer：第一个未转义的反引号结束整个模板，哪怕它出现在插值、字符串或注释里。
+ * 插值内的嵌套模板写作转义反引号对；templateNested 与 interpolationNested 记录文本属于哪一层。 */
 typedef struct SZrLspEditorScanState {
     EZrLspEditorScanMode mode;
     TZrBool escaped;
+    TZrBool templateNested;
+    TZrSize interpolationDepth;
+    TZrSize interpolationBraceDepth[ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH];
+    TZrBool interpolationNested[ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH];
 } SZrLspEditorScanState;
+
+/** 从代码态开始扫描；未写出的插值字段保持零。 */
+#define ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT \
+    { .mode = ZR_LSP_EDITOR_SCAN_CODE, .escaped = ZR_FALSE }
 
 /** 只接收代码区的花括号；返回失败会中止扫描，供折叠与缩进调用方控制。 */
 typedef TZrBool (*TZrLspEditorStructuralCharCallback)(TZrChar value,
@@ -70,6 +85,7 @@ TZrBool lsp_editor_append_text_edit(SZrState *state,
 /**
  * @brief 给缩进、折叠扫描代码花括号；调用方可跨连续区间传入 scanState。
  * @pre 若 startOffset 不是文首，scanState 应反映其前文词法状态。
+ * @note 反引号模板里的 `${...}` 会回到代码态；插值定界符本身不回调。
  */
 TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
                                          TZrSize contentLength,
@@ -78,6 +94,20 @@ TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
                                          SZrLspEditorScanState *scanState,
                                          TZrLspEditorStructuralCharCallback callback,
                                          void *userData);
+/** @brief 回调返回假时提前结束。只访问代码态字节，模板插值内的标识符包含在内。 */
+typedef TZrBool (*TZrLspEditorCodeByteCallback)(TZrSize offset, void *userData);
+/**
+ * @brief 按共享词法状态访问 [startOffset, endOffset) 中的代码字节。
+ * @pre 若 startOffset 不是文首，scanState 应反映其前文词法状态。
+ * @return 参数无效或回调请求停止时返回假；扫描完成返回真。
+ */
+TZrBool lsp_editor_visit_code_bytes(const TZrChar *content,
+                                    TZrSize contentLength,
+                                    TZrSize startOffset,
+                                    TZrSize endOffset,
+                                    SZrLspEditorScanState *scanState,
+                                    TZrLspEditorCodeByteCallback callback,
+                                    void *userData);
 /** @brief 给 code action、document link 和 CodeLens 筛掉注释/字面量中的文本候选。 */
 TZrBool lsp_editor_offset_is_code(const TZrChar *content,
                                   TZrSize contentLength,

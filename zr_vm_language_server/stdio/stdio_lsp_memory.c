@@ -58,22 +58,9 @@ void free_completion_items_array(SZrState *state, SZrArray *items) {
     ZrCore_Array_Free(state, items);
 }
 
-/* inlayHint.label 是 VM 字符串；此处只处理 LSP 层的原生项与容器。 */
+/* inlayHint.label 是 VM 字符串；编辑数组与提示外壳交给接口层同一释放路径。 */
 void free_inlay_hints_array(SZrState *state, SZrArray *hints) {
-    TZrSize index;
-
-    if (state == ZR_NULL || hints == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < hints->length; index++) {
-        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
-        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
-            ZrCore_Memory_RawFree(state->global, *hintPtr, sizeof(SZrLspInlayHint));
-        }
-    }
-
-    ZrCore_Array_Free(state, hints);
+    ZrLanguageServer_Lsp_FreeInlayHints(state, hints);
 }
 
 /* 文档高亮的范围是值字段；结果逐项释放后再释放数组缓冲区。 */

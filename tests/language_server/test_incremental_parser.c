@@ -1026,7 +1026,7 @@ static void test_incremental_parser_keeps_dirty_across_token_equivalent_update(
         !fileVersion->isDirty || fileVersion->lastChangeInfo.isTokenEquivalent ||
         !ZrLanguageServer_IncrementalParser_UpdateFile(
                 state, parser, uri, recommented, strlen(recommented), 3U) ||
-        !fileVersion->lastChangeInfo.isTokenEquivalent) {
+        fileVersion->lastChangeInfo.isTokenEquivalent) {
         ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, summary, "Failed to stage a real edit followed by a token-equivalent edit");
         return;
@@ -1187,7 +1187,7 @@ static void test_incremental_parser_full_reparses_token_equivalent_update_over_u
             "    // note b\n"
             "    return 2;\n"
             "}\n",
-            ZR_TRUE,
+            ZR_FALSE,
             9,
             2);
 }

@@ -277,6 +277,12 @@ static cJSON *serialize_inlay_hint(const SZrLspInlayHint *hint) {
         cJSON_AddStringToObject(json, ZR_LSP_FIELD_LABEL, "");
     }
 
+    if (hint->textEdits.isValid && hint->textEdits.length > 0) {
+        cJSON_AddItemToObject(json,
+                              ZR_LSP_FIELD_TEXT_EDITS,
+                              serialize_text_edits_array((SZrArray *)&hint->textEdits));
+    }
+
     return json;
 }
 

@@ -68,11 +68,12 @@ static TZrBool lsp_editor_is_keyword_identifier(const TZrChar *text, TZrSize len
     return ZR_FALSE;
 }
 
-/* 为整文件导入去重扫描识别 let/var 形式；这里只判断单行形状，不识别词法作用域。 */
+/* 识别单行 let/var 导入；outAliasOffset 是别名在该行内的字节下标。 */
 static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
                                                      TZrSize length,
                                                      const TZrChar *alias,
-                                                     TZrSize aliasLength) {
+                                                     TZrSize aliasLength,
+                                                     TZrSize *outAliasOffset) {
     TZrSize cursor = 0;
 
     if (line == ZR_NULL || alias == ZR_NULL || aliasLength == 0) {
@@ -93,6 +94,9 @@ static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
     if (length - cursor < aliasLength || memcmp(line + cursor, alias, aliasLength) != 0) {
         return ZR_FALSE;
     }
+    if (outAliasOffset != ZR_NULL) {
+        *outAliasOffset = cursor;
+    }
     cursor += aliasLength;
     if (cursor < length && lsp_editor_is_identifier_part(line[cursor])) {
         return ZR_FALSE;
@@ -100,77 +104,167 @@ static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
     return lsp_editor_line_contains_text(line + cursor, length - cursor, "import(");
 }
 
-/* 候选搜索跳过行内注释及引号内容；跨行注释再由 offset_is_code 复核。 */
-static TZrSize lsp_editor_skip_non_code_span_on_line(const TZrChar *content,
-                                                     TZrSize cursor,
-                                                     TZrSize lineEnd) {
-    TZrChar quote;
-    TZrBool escaped = ZR_FALSE;
+#define ZR_LSP_IMPORT_SCOPE_BRACE_LIMIT 64U
+#define ZR_LSP_IMPORT_SCOPE_DECLARATION_LIMIT 64U
 
-    if (content == ZR_NULL || cursor >= lineEnd) {
-        return cursor;
-    }
+typedef struct SZrLspImportBraceStack {
+    TZrSize opens[ZR_LSP_IMPORT_SCOPE_BRACE_LIMIT];
+    TZrSize openCount;
+    TZrSize discarded;
+} SZrLspImportBraceStack;
 
-    if (content[cursor] == '/' && cursor + 1 < lineEnd && content[cursor + 1] == '/') {
-        return lineEnd;
-    }
-    if (content[cursor] == '/' && cursor + 1 < lineEnd && content[cursor + 1] == '*') {
-        cursor += 2;
-        while (cursor + 1 < lineEnd) {
-            if (content[cursor] == '*' && content[cursor + 1] == '/') {
-                return cursor + 2;
-            }
-            cursor++;
-        }
-        return lineEnd;
-    }
-    if (content[cursor] != '"' && content[cursor] != '\'' && content[cursor] != '`') {
-        return cursor;
-    }
+typedef struct SZrLspImportBraceSnap {
+    TZrSize offset;
+    SZrLspImportBraceStack stack;
+    TZrBool captured;
+} SZrLspImportBraceSnap;
 
-    quote = content[cursor++];
-    while (cursor < lineEnd) {
-        TZrChar ch = content[cursor++];
-        if (escaped) {
-            escaped = ZR_FALSE;
-            continue;
-        }
-        if (ch == '\\') {
-            escaped = ZR_TRUE;
-            continue;
-        }
-        if (ch == quote) {
-            break;
+typedef struct SZrLspImportBraceCapture {
+    SZrLspImportBraceStack current;
+    SZrLspImportBraceSnap *snaps;
+    TZrSize snapCount;
+} SZrLspImportBraceCapture;
+
+static void lsp_editor_import_capture_braces_before(SZrLspImportBraceCapture *data, TZrSize index) {
+    if (data == ZR_NULL) {
+        return;
+    }
+    for (TZrSize snapIndex = 0; snapIndex < data->snapCount; snapIndex++) {
+        SZrLspImportBraceSnap *snap = &data->snaps[snapIndex];
+        if (!snap->captured && snap->offset <= index) {
+            snap->stack = data->current;
+            snap->captured = ZR_TRUE;
         }
     }
-    return cursor;
 }
 
-/* BUG: 全文件扫描不区分局部作用域；别处函数的局部同名 import 会压掉当前缺失导入建议。 */
+static TZrBool lsp_editor_import_brace_callback(TZrChar value, TZrSize offset, void *userData) {
+    SZrLspImportBraceCapture *data = (SZrLspImportBraceCapture *)userData;
+
+    if (data == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    lsp_editor_import_capture_braces_before(data, offset);
+    if (value == '{') {
+        if (data->current.openCount < ZR_LSP_IMPORT_SCOPE_BRACE_LIMIT) {
+            data->current.opens[data->current.openCount++] = offset;
+        } else {
+            data->current.discarded++;
+        }
+    } else if (value == '}') {
+        if (data->current.discarded > 0) {
+            data->current.discarded--;
+        } else if (data->current.openCount > 0) {
+            data->current.openCount--;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_editor_import_brace_stack_encloses(const SZrLspImportBraceStack *declaration,
+                                                      const SZrLspImportBraceStack *use) {
+    if (declaration == ZR_NULL || use == ZR_NULL || declaration->discarded != 0 ||
+        declaration->openCount > use->openCount) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < declaration->openCount; index++) {
+        if (declaration->opens[index] != use->opens[index]) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+/* 只把使用点仍能看见的导入当作已存在。其它函数里的同名局部导入不遮蔽当前用法。 */
 static TZrBool lsp_editor_has_import_alias(const TZrChar *content,
                                            TZrSize contentLength,
                                            const TZrChar *alias,
-                                           TZrSize aliasLength) {
+                                           TZrSize aliasLength,
+                                           TZrSize useOffset) {
+    SZrLspImportBraceSnap snaps[ZR_LSP_IMPORT_SCOPE_DECLARATION_LIMIT + 1];
+    TZrSize declarationCount = 0;
     TZrSize cursor = 0;
+    TZrBool overflow = ZR_FALSE;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
+    SZrLspImportBraceCapture capture;
+    const SZrLspImportBraceSnap *useSnap;
 
-    if (content == ZR_NULL || alias == ZR_NULL || aliasLength == 0) {
+    if (content == ZR_NULL || alias == ZR_NULL || aliasLength == 0 || useOffset > contentLength) {
         return ZR_FALSE;
     }
 
-    while (cursor < contentLength) {
+    memset(snaps, 0, sizeof(snaps));
+    while (cursor < contentLength && !overflow) {
         TZrSize lineStart = cursor;
         TZrSize lineEnd = cursor;
+        TZrSize aliasOffset = 0;
         while (lineEnd < contentLength && content[lineEnd] != '\n') {
             lineEnd++;
         }
-        if (lsp_editor_offset_is_code(content, contentLength, lineStart) &&
-            lsp_editor_line_declares_import_alias(content + lineStart, lineEnd - lineStart, alias, aliasLength)) {
-            return ZR_TRUE;
+        if (lsp_editor_line_declares_import_alias(content + lineStart,
+                                                  lineEnd - lineStart,
+                                                  alias,
+                                                  aliasLength,
+                                                  &aliasOffset)) {
+            TZrSize absoluteAlias = lineStart + aliasOffset;
+            if (absoluteAlias < useOffset &&
+                lsp_editor_offset_is_code(content, contentLength, absoluteAlias)) {
+                if (declarationCount >= ZR_LSP_IMPORT_SCOPE_DECLARATION_LIMIT) {
+                    overflow = ZR_TRUE;
+                } else {
+                    snaps[declarationCount].offset = absoluteAlias;
+                    declarationCount++;
+                }
+            }
         }
         cursor = lineEnd < contentLength ? lineEnd + 1 : lineEnd;
     }
+    if (overflow) {
+        return ZR_TRUE;
+    }
 
+    snaps[declarationCount].offset = useOffset;
+    memset(&capture, 0, sizeof(capture));
+    capture.snaps = snaps;
+    capture.snapCount = declarationCount + 1;
+    if (!lsp_editor_scan_structural_chars(content,
+                                          contentLength,
+                                          0,
+                                          contentLength,
+                                          &scanState,
+                                          lsp_editor_import_brace_callback,
+                                          &capture)) {
+        return ZR_TRUE;
+    }
+    lsp_editor_import_capture_braces_before(&capture, contentLength + 1);
+    useSnap = &snaps[declarationCount];
+    if (!useSnap->captured) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < declarationCount; index++) {
+        if (snaps[index].captured &&
+            lsp_editor_import_brace_stack_encloses(&snaps[index].stack, &useSnap->stack)) {
+            return ZR_TRUE;
+        }
+    }
     return ZR_FALSE;
+}
+
+typedef struct SZrLspMissingImportCodeMap {
+    TZrChar *marks;
+    TZrSize lineStart;
+    TZrSize lineEnd;
+} SZrLspMissingImportCodeMap;
+
+static TZrBool lsp_editor_mark_line_code_byte(TZrSize offset, void *userData) {
+    SZrLspMissingImportCodeMap *data = (SZrLspMissingImportCodeMap *)userData;
+    if (data == ZR_NULL || data->marks == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (offset >= data->lineStart && offset < data->lineEnd) {
+        data->marks[offset - data->lineStart] = 1;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool lsp_editor_module_last_segment_matches(SZrString *moduleName,
@@ -369,6 +463,10 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
                                                                 SZrLspMissingImportCandidate *candidate) {
     TZrSize lineStart;
     TZrSize lineEnd;
+    TZrSize lineLength;
+    TZrChar *codeMarks = ZR_NULL;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
+    SZrLspMissingImportCodeMap codeMap;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL || candidate == ZR_NULL) {
         return ZR_FALSE;
@@ -376,13 +474,33 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
 
     lineStart = lsp_editor_line_start_offset(content, contentLength, range.start.line);
     lineEnd = lsp_editor_line_end_offset(content, contentLength, range.start.line);
+    lineLength = lineEnd > lineStart ? lineEnd - lineStart : 0;
+    if (lineLength > 0) {
+        codeMarks = (TZrChar *)calloc(lineLength, sizeof(TZrChar));
+        if (codeMarks == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        codeMap.marks = codeMarks;
+        codeMap.lineStart = lineStart;
+        codeMap.lineEnd = lineEnd;
+        if (!lsp_editor_visit_code_bytes(content,
+                                         contentLength,
+                                         0,
+                                         lineEnd,
+                                         &scanState,
+                                         lsp_editor_mark_line_code_byte,
+                                         &codeMap)) {
+            free(codeMarks);
+            return ZR_FALSE;
+        }
+    }
+
     for (TZrSize cursor = lineStart; cursor + 1 < lineEnd;) {
         TZrSize aliasStart;
         TZrSize aliasEnd;
         TZrSize memberEnd;
-        TZrSize nextCodeOffset = lsp_editor_skip_non_code_span_on_line(content, cursor, lineEnd);
-        if (nextCodeOffset != cursor) {
-            cursor = nextCodeOffset;
+        if (codeMarks == ZR_NULL || codeMarks[cursor - lineStart] == 0) {
+            cursor++;
             continue;
         }
         if (!lsp_editor_is_identifier_start(content[cursor]) ||
@@ -396,13 +514,13 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
         while (aliasEnd < lineEnd && lsp_editor_is_identifier_part(content[aliasEnd])) {
             aliasEnd++;
         }
-        if (!lsp_editor_offset_is_code(content, contentLength, aliasStart)) {
-            cursor = aliasEnd + 1;
-            continue;
-        }
         if (aliasEnd >= lineEnd || content[aliasEnd] != '.' ||
             lsp_editor_is_keyword_identifier(content + aliasStart, aliasEnd - aliasStart) ||
-            lsp_editor_has_import_alias(content, contentLength, content + aliasStart, aliasEnd - aliasStart)) {
+            lsp_editor_has_import_alias(content,
+                                        contentLength,
+                                        content + aliasStart,
+                                        aliasEnd - aliasStart,
+                                        aliasStart)) {
             cursor = aliasEnd + 1;
             continue;
         }
@@ -426,11 +544,13 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
                                                         content + aliasStart,
                                                         aliasEnd - aliasStart,
                                                         candidate)) {
+            free(codeMarks);
             return ZR_TRUE;
         }
         cursor = memberEnd;
     }
 
+    free(codeMarks);
     return ZR_FALSE;
 }
 

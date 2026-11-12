@@ -6,8 +6,7 @@ const {
 } = require('../out/debug/breakpointReplay.js');
 
 // 覆盖 launch 前保存编辑器绝对路径、模块加载后才获知 runtime 相对路径的衔接。
-// BUG: 测试把 C:/Repo 和 c:/repo 当同一路径，但 store 仅在 win32 折叠大小写；
-// Linux/macOS 上此处期望非空重放会失败，测试不能作为跨平台回归门禁。
+// Match resolved paths using the host platform's case rules.
 test('PendingSourceBreakpointStore replays pre-launch editor breakpoints after runtime source resolution', () => {
     const store = new PendingSourceBreakpointStore();
     const desiredBreakpoints = [
@@ -22,8 +21,19 @@ test('PendingSourceBreakpointStore replays pre-launch editor breakpoints after r
         [],
     );
 
+    if (process.platform !== 'win32') {
+        assert.deepEqual(
+            store.replayBindingsForResolvedSource('src/main.zr', 'c:/repo/src/main.zr'),
+            [],
+            'POSIX source matching remains case-sensitive',
+        );
+    }
+
+    const resolvedEditorPath = process.platform === 'win32'
+        ? 'c:/repo/src/main.zr'
+        : 'C:/Repo/src/main.zr';
     assert.deepEqual(
-        store.replayBindingsForResolvedSource('src/main.zr', 'c:/repo/src/main.zr'),
+        store.replayBindingsForResolvedSource('src/main.zr', resolvedEditorPath),
         [
             {
                 sourcePath: 'C:/Repo/src/main.zr',
