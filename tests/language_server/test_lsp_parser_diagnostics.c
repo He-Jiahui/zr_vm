@@ -482,6 +482,47 @@ cleanup:
     }
 }
 
+/* 首 token 跨行时，诊断范围要覆盖整个 token，并按 CRLF 文本投影成 LSP 行列。 */
+static void test_lsp_first_token_multiline_lex_range(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token Multiline Lex Diagnostic Range";
+    const TZrChar *broken = "`ab\r\ncd";
+    const TZrChar *failure = ZR_NULL;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrArray diagnostics = {0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, "file:///first_token_multiline.zr", strlen("file:///first_token_multiline.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        failure = "failed to create multiline first-token context or URI";
+    } else if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, broken, strlen(broken), 1) ||
+               !ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+               diagnostics.length != 1) {
+        failure = "multiline unfinished template string must be acknowledged with one diagnostic";
+    } else {
+        SZrLspDiagnostic **entry = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, 0);
+        const TZrChar *message = entry != ZR_NULL && *entry != ZR_NULL
+                                     ? test_string_text((*entry)->message) : ZR_NULL;
+        if (message == ZR_NULL || strcmp(message, "unfinished template string") != 0 ||
+            (*entry)->range.start.line != 0 || (*entry)->range.start.character != 0 ||
+            (*entry)->range.end.line != 1 || (*entry)->range.end.character != 2) {
+            failure = "multiline first-token diagnostic must span 0:0 to 1:2";
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
 static void test_lsp_missing_index_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Index Close Parser Diagnostic";
@@ -1215,6 +1256,8 @@ int main(void) {
     test_lsp_first_token_resource_failures(state);
     TEST_DIVIDER();
     test_lsp_first_token_user_text_errors(state);
+    TEST_DIVIDER();
+    test_lsp_first_token_multiline_lex_range(state);
     TEST_DIVIDER();
     test_lsp_missing_index_close_parser_diagnostic(state);
     TEST_DIVIDER();
