@@ -7,6 +7,7 @@
 
 #include "harness/path_support.h"
 #include "harness/windows_crash_diagnostics.h"
+#include "zr_vm_library/file.h"
 #include "zr_vm_rust_binding.h"
 
 static ZrRustBindingRuntime *g_checkpointReplayRuntime;
@@ -1866,6 +1867,111 @@ static void test_rust_binding_native_builder_rejects_invalid_function_descriptor
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)capture.destroyCount);
 }
 
+/* 以 base 为前缀构造一条恰好 targetLength 字节的目录路径；每个分量不超过 64 字节，且不以分隔符结尾
+ * （结尾是分隔符时 scaffold 拼接不再补 '/'，下面用例里的长度算式就不成立了）。 */
+static void build_path_with_length(const TZrChar *base,
+                                   TZrSize targetLength,
+                                   TZrChar *buffer,
+                                   TZrSize bufferSize) {
+    TZrSize baseLength;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(base);
+    TEST_ASSERT_NOT_NULL(buffer);
+    baseLength = strlen(base);
+    TEST_ASSERT_TRUE(targetLength < bufferSize);
+    TEST_ASSERT_TRUE(baseLength + 2U <= targetLength);
+
+    memcpy(buffer, base, baseLength);
+    for (index = baseLength; index < targetLength; index++) {
+        if ((index - baseLength) % 64U == 0U && index + 1U < targetLength) {
+            buffer[index] = '/';
+        } else {
+            buffer[index] = 'a';
+        }
+    }
+    buffer[targetLength] = '\0';
+}
+
+static void assert_scaffold_rejects_truncated_path(const TZrChar *rootPath,
+                                                   const TZrChar *projectName,
+                                                   const TZrChar *workspaceRoot) {
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingErrorInfo errorInfo;
+    ZrRustBindingStatus status;
+    EZrLibrary_File_Exist rootExistence;
+    TZrBool returnedWorkspace;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+    clean_directory_tree(workspaceRoot);
+
+    scaffoldOptions.rootPath = rootPath;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    status = ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace);
+    /* Free 会清空最近错误，所以错误快照和落盘状态都要在收尾之前取。 */
+    ZrRustBinding_GetLastErrorInfo(&errorInfo);
+    rootExistence = ZrLibrary_File_Exist((TZrNativeString)workspaceRoot);
+
+    /* 先收尾再断言：Unity 的失败断言会 longjmp 跳过后面的清理，句柄和超长目录树都不能留下。 */
+    returnedWorkspace = workspace != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+    if (workspace != ZR_NULL) {
+        (void)ZrRustBinding_ProjectWorkspace_Free(workspace);
+    }
+    clean_directory_tree(workspaceRoot);
+
+    TEST_ASSERT_FALSE_MESSAGE(returnedWorkspace,
+                              "scaffold returned a workspace for a path that does not fit the path buffer");
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_IO_ERROR, status);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_IO_ERROR, errorInfo.status);
+    /* 拒绝必须发生在任何 mkdir 之前：连脚手架根目录本身也不应被创建。 */
+    TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LIBRARY_FILE_NOT_EXIST,
+                                  rootExistence,
+                                  "scaffold created directories before rejecting the truncated path");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(errorInfo.message, "scaffold path is too long"), errorInfo.message);
+}
+
+/* {root}/src/main.zr 恰好比路径缓冲区多一个字节；src、bin 和 {root}/p.zrp 都装得下，
+ * 所以只有入口源文件路径会被截断。 */
+static void test_rust_binding_scaffold_rejects_truncated_entry_source_path(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    build_workspace_root("truncated_entry_source", workspaceRoot, sizeof(workspaceRoot));
+    build_path_with_length(workspaceRoot,
+                           ZR_LIBRARY_MAX_PATH_LENGTH - strlen("/src/main.zr"),
+                           longRoot,
+                           sizeof(longRoot));
+    assert_scaffold_rejects_truncated_path(longRoot, "p", workspaceRoot);
+}
+
+/* {root}/truncated_project.zrp 恰好多一个字节，而 src/main.zr 装得下：只有项目文件路径会被截断，
+ * 截断结果缺少 .zrp 后缀的最后一个字符。 */
+static void test_rust_binding_scaffold_rejects_truncated_project_file_path(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    build_workspace_root("truncated_project_file", workspaceRoot, sizeof(workspaceRoot));
+    build_path_with_length(workspaceRoot,
+                           ZR_LIBRARY_MAX_PATH_LENGTH - strlen("/truncated_project.zrp"),
+                           longRoot,
+                           sizeof(longRoot));
+    assert_scaffold_rejects_truncated_path(longRoot, "truncated_project", workspaceRoot);
+}
+
+/* 根目录很短，但项目名本身就超过路径缓冲区。 */
+static void test_rust_binding_scaffold_rejects_oversized_project_name(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longProjectName[ZR_LIBRARY_MAX_PATH_LENGTH + 1U];
+
+    build_workspace_root("oversized_project_name", workspaceRoot, sizeof(workspaceRoot));
+    memset(longProjectName, 'p', sizeof(longProjectName) - 1U);
+    longProjectName[sizeof(longProjectName) - 1U] = '\0';
+    assert_scaffold_rejects_truncated_path(workspaceRoot, longProjectName, workspaceRoot);
+}
+
 static void test_rust_binding_selected_native_link_contract(void) {
 #if ZR_VM_RUST_BINDING_TEST_LINK_STATIC
     TEST_ASSERT_FALSE(ZR_VM_RUST_BINDING_TEST_LINK_SHARED);
@@ -2071,6 +2177,9 @@ int main(void) {
 
     RUN_FILTERED_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
     RUN_FILTERED_TEST(test_rust_binding_open_missing_project_reports_not_found_error_info);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_truncated_entry_source_path);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_truncated_project_file_path);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_oversized_project_name);
     RUN_FILTERED_TEST(test_rust_binding_bare_runtime_run_reports_unsupported_error_info);
     RUN_FILTERED_TEST(test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable);
     RUN_FILTERED_TEST(test_rust_binding_run_named_module_preserves_module_name_and_program_args);
