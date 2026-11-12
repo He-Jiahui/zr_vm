@@ -90,6 +90,7 @@ typedef struct SZrFileVersion {
     TZrBool hasIncrementalInfo;         // 是否有增量信息
     EZrIncrementalParseMode lastParseMode; // actual parse path used for the current AST
     SZrArray parserDiagnostics;      // 语法诊断信息（SZrDiagnostic*）
+    TZrBool previousContentHasCurrentAst; // 最近一次更新前，AST 已是上一份文本的无错解析结果
 } SZrFileVersion;
 
 /** @brief 为解析、导航和语义请求固定一次文本内容读取。

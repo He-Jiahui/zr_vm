@@ -107,9 +107,8 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
-/* hasLexError also carries allocation/ownership failures. Only the existing text
- * scanner's explicit user-error messages are evidence of invalid source text.
- * Unknown messages fail closed; keep this list aligned with lexer.c SyntaxError sites. */
+/* hasLexError 也会承载分配和所有权失败。只有扫描器明确写出的用户文本错误才算源码非法。
+ * 未知消息保持拒绝提交。这份名单必须和 lexer.c 的 SyntaxError 调用保持一致。 */
 static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
     static const TZrChar *const messages[] = {
         "Hexadecimal literal requires a digit",
@@ -125,7 +124,7 @@ static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
         "unfinished character literal"
     };
 
-    if (!token->hasLexError || token->lexErrorMessage == ZR_NULL) {
+    if (token == ZR_NULL || !token->hasLexError || token->lexErrorMessage == ZR_NULL) {
         return ZR_FALSE;
     }
     for (TZrSize index = 0; index < sizeof(messages) / sizeof(messages[0]); index++) {
@@ -136,7 +135,7 @@ static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
     return ZR_FALSE;
 }
 
-/** @brief 首 token 的明确用户文本错误发生在回调安装前；以该 token 范围记录为语法诊断。 */
+/** @brief 首 token 的用户文本错误发生在回调安装前；用该 token 范围补一条语法诊断。 */
 static TZrBool collect_initial_lex_diagnostic(SZrState *state,
                                               SZrFileVersion *fileVersion,
                                               const SZrParserState *parserState,
@@ -150,7 +149,7 @@ static TZrBool collect_initial_lex_diagnostic(SZrState *state,
         return ZR_FALSE;
     }
     lexer = parserState->lexer;
-    /* 分配、所有权与源证据失败不是用户文本错误，保持拒绝提交。 */
+    /* 分配、所有权和源证据失败不是用户文本错误，保持拒绝提交。 */
     if (lexer == ZR_NULL || lexer->buffer == ZR_NULL || lexer->hasSourceEvidenceError ||
         !initial_lex_error_is_user_text(&lexer->t) || parserState->errorMessage == ZR_NULL ||
         !fileVersion->parserDiagnostics.isValid || fileVersion->parserDiagnostics.head == ZR_NULL) {
@@ -354,6 +353,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
     fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
+    fileVersion->previousContentHasCurrentAst = ZR_FALSE;
     ZrCore_Array_Init(state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
@@ -501,6 +501,12 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 声明级局部替换以旧文本和 AST 一一对应为前提：旧文本未解析、处于回退或带语法错误时都不成立。
+     * 必须在标脏和清诊断之前记录。 */
+    fileVersion->previousContentHasCurrentAst =
+            fileVersion->ast != ZR_NULL && !fileVersion->isDirty &&
+            !fileVersion->usesFallbackAst &&
+            !parser_diagnostics_have_errors(fileVersion);
     file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
@@ -620,7 +626,7 @@ static TZrBool incremental_parser_update_file(
             fileVersion->hasIncrementalInfo = ZR_FALSE;
             return ZR_TRUE;
         }
-        /* 仅有非回退 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
+        /* 仅有非回退且已对应上一份文本的 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
         SZrFileChangeInfo changeInfo;
         ZrLanguageServer_IncrementalChange_Compute(
                 uri,
@@ -630,6 +636,7 @@ static TZrBool incremental_parser_update_file(
                 contentLength,
                 &changeInfo);
         changeInfo.isTokenEquivalent = fileVersion->ast != ZR_NULL &&
+                                       !fileVersion->isDirty &&
                                        !fileVersion->usesFallbackAst &&
                                        ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
                                                state,
@@ -751,7 +758,7 @@ static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
 /**
  * @brief 为指定 URI 更新解析结果：优先 token 复用，再尝试单声明替换，最后完整解析。
  * @note 语法错误可保留上一棵有效 AST，并以 usesFallbackAst 告知编辑器查询不能当成当前结果。
- * @note State_Init 在回调安装前预读首 token；其扫描期词法错误由本层补入当前诊断并提交，
+ * @note State_Init 在回调安装前预读首 token。明确的用户文本错误补进当前诊断并提交；
  *       资源、所有权与源证据失败仍返回 FALSE。
  */
 TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
@@ -825,10 +832,12 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     }
 
     /* 只有声明级重解析证明未触及节点位置稳定，才能原位替换并保留其余 AST。
-     * BUG: 此门槛未排除 usesFallbackAst；V1 有效、V2 等长语法错保留 V1 AST、V3
-     *      等长改另一声明时，局部成功可把 V1 当成 V3 并清除 V2 的错误诊断。 */
+     * 回退 AST 属于上一份合法文本，不能作为当前文本的局部替换基准；
+     * 带语法错误的恢复树、或落后于上一份文本的树同样不能。 */
     if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
         fileVersion->ast != ZR_NULL &&
+        !fileVersion->usesFallbackAst &&
+        fileVersion->previousContentHasCurrentAst &&
         fileVersion->hasIncrementalInfo) {
         SZrFileVersionContentSnapshot previousSnapshot = {0};
 
