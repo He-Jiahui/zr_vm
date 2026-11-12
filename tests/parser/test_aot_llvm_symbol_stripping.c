@@ -1,8 +1,16 @@
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "unity.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
@@ -333,6 +341,88 @@ static void test_aot_llvm_strip_generated_symbols_renames_private_function_symbo
     free(generatedLlvmText);
 }
 
+// 输出落不了盘时 writer 必须报告失败并删除输出路径；随后同一函数写普通文件成功，证明失败只来自 I/O。
+// 输出路径是指向 /dev/full 的符号链接：失败清理的 remove 只删除该链接，不会触碰设备节点。
+static void test_aot_llvm_writer_fails_and_removes_output_that_cannot_be_flushed(void) {
+#if defined(_WIN32)
+    TEST_IGNORE_MESSAGE("LLVM writer flush failure is driven through /dev/full, which Windows does not provide");
+#else
+    static const char probeText[] = "zr-aot-llvm-flush-probe";
+    SZrState *state;
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar controlPath[ZR_TESTS_PATH_MAX];
+    TZrChar unflushablePath[ZR_TESTS_PATH_MAX];
+    struct stat deviceStatus;
+    struct stat linkStatus;
+    FILE *probe;
+    TZrBool probeRejectedFlush;
+    TZrBool controlWritten;
+    TZrBool unflushableWritten;
+    TZrBool outputRemoved;
+
+    /* 先确认本机 /dev/full 让缓冲写入在 flush 时失败；否则后面的断言没有证明力。 */
+    if (stat("/dev/full", &deviceStatus) != 0 || !S_ISCHR(deviceStatus.st_mode)) {
+        TEST_IGNORE_MESSAGE("/dev/full is not available on this host");
+    }
+    probe = fopen("/dev/full", "wb");
+    if (probe == ZR_NULL) {
+        TEST_IGNORE_MESSAGE("/dev/full cannot be opened for writing on this host");
+    }
+    probeRejectedFlush = (TZrBool)(fputs(probeText, probe) < 0 || fflush(probe) != 0);
+    (void)fclose(probe);
+    if (!probeRejectedFlush) {
+        TEST_IGNORE_MESSAGE("/dev/full does not reject buffered writes on this host");
+    }
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_llvm_symbol_stripping",
+                                                       "generated",
+                                                       "flushable_control",
+                                                       ".ll",
+                                                       controlPath,
+                                                       sizeof(controlPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_llvm_symbol_stripping",
+                                                       "generated",
+                                                       "unflushable",
+                                                       ".ll",
+                                                       unflushablePath,
+                                                       sizeof(unflushablePath)));
+    /* 上一次运行若中途失败会留下链接；先清掉，symlink 才不会因 EEXIST 失败。 */
+    (void)unlink(unflushablePath);
+    if (symlink("/dev/full", unflushablePath) != 0) {
+        TEST_IGNORE_MESSAGE("cannot create a symbolic link to /dev/full in the test artifact directory");
+    }
+
+    /* 环境准备都在建 state 之前完成，上面任何一次跳过都不会留下未释放的 VM。 */
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_llvm_direct_call_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_llvm_unflushable_output";
+    options.sourceHash = "aot-llvm-unflushable-output";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-llvm-unflushable-output";
+    options.requireExecutableLowering = ZR_TRUE;
+
+    /* 先写落不了盘的路径，再用同一 state 把同一函数写进普通文件：
+     * 后者成功说明前者的失败只来自 I/O，且失败路径释放临时表后 writer 仍可用。 */
+    unflushableWritten = ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, unflushablePath, &options);
+    outputRemoved = (TZrBool)(lstat(unflushablePath, &linkStatus) != 0);
+    if (!outputRemoved) {
+        (void)unlink(unflushablePath);
+    }
+    controlWritten = ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, controlPath, &options);
+    ZrTests_Runtime_State_Destroy(state);
+
+    TEST_ASSERT_FALSE_MESSAGE(unflushableWritten,
+                              "LLVM writer reported success for output that could not be flushed");
+    TEST_ASSERT_TRUE_MESSAGE(outputRemoved, "LLVM writer left the unflushable output path behind");
+    TEST_ASSERT_TRUE_MESSAGE(controlWritten, "the same function must still be writable to a regular file");
+#endif
+}
+
 // 真实运行时准备调用时，接收者别名须在身份拒绝和扩栈后仍指向 caller 存储。
 static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(void) {
     static const TZrByte payload[] = {0x10u, 0x32u, 0x54u, 0x76u,
@@ -588,6 +678,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_llvm_default_preserves_generated_function_symbols);
     RUN_TEST(test_aot_llvm_strip_generated_symbols_renames_private_function_symbols);
+    RUN_TEST(test_aot_llvm_writer_fails_and_removes_output_that_cannot_be_flushed);
     RUN_TEST(test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage);
     return UNITY_END();
 }

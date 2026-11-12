@@ -1,12 +1,16 @@
 #include "unity.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "harness/runtime_support.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -270,6 +274,197 @@ static void test_getinfo_reports_name_source_line_and_parameter_count(void) {
     destroy_compiled_state(state, function);
 }
 
+/* what 中的 f 让 core 临时压入活动帧的函数值；脚本拿到的 func 必须是该帧自身。 */
+static void test_getinfo_function_option_returns_the_active_function(void) {
+    const TZrChar *source =
+            "let debug = import(\"zr.debug\");\n"
+            "fn inspect(value: int) {\n"
+            "    var info = debug.getinfo(1, \"f\");\n"
+            "    return info;\n"
+            "}\n"
+            "return inspect(7);\n";
+    SZrState *state = create_test_state();
+    SZrFunction *function;
+    SZrTypeValue result;
+    SZrObject *infoObject;
+    const SZrTypeValue *functionValue;
+    SZrFunction *activeFunction;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmLibDebug_Register(state->global));
+    function = compile_source(state, source, "debug_library_getinfo_function.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE_MESSAGE(ZrTests_Runtime_Function_Execute(state, function, &result),
+                             current_exception_message(state));
+    infoObject = value_as_object(state, &result);
+    TEST_ASSERT_NOT_NULL(infoObject);
+    functionValue = object_field(state, infoObject, "func");
+    TEST_ASSERT_NOT_NULL(functionValue);
+    activeFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, functionValue);
+    TEST_ASSERT_NOT_NULL(activeFunction);
+    TEST_ASSERT_NOT_NULL(activeFunction->functionName);
+    TEST_ASSERT_EQUAL_STRING("inspect", ZrCore_String_GetNativeString(activeFunction->functionName));
+
+    destroy_compiled_state(state, function);
+}
+
+/* 只搬迁 VM 栈块的 allocator：扩栈必定换地址，旧块清零后保留到用例结束。
+ * 仍按扩栈前地址读取的代码因此稳定读到 null，而不是碰巧尚未被复用的旧内容。 */
+typedef struct DebugLibraryStackMovingAllocator {
+    TZrPtr retired[8];
+    TZrUInt32 retiredCount;
+} DebugLibraryStackMovingAllocator;
+
+static TZrPtr debug_library_stack_moving_allocator(TZrPtr userData,
+                                                   TZrPtr pointer,
+                                                   TZrSize originalSize,
+                                                   TZrSize newSize,
+                                                   TZrInt64 flag) {
+    DebugLibraryStackMovingAllocator *allocator = (DebugLibraryStackMovingAllocator *)userData;
+    TZrPtr movedPointer;
+
+    /* 首次分配、释放以及非栈块沿用测试默认 allocator，只拦截栈的重分配。 */
+    if (flag != ZR_MEMORY_NATIVE_TYPE_STACK || pointer == ZR_NULL || newSize == 0u) {
+        return ZrTests_Runtime_Allocator_Default(ZR_NULL, pointer, originalSize, newSize, flag);
+    }
+    if (allocator->retiredCount >= ZR_ARRAY_COUNT(allocator->retired)) {
+        return ZR_NULL;
+    }
+
+    movedPointer = malloc(newSize);
+    if (movedPointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memcpy(movedPointer, pointer, originalSize < newSize ? originalSize : newSize);
+    memset(pointer, 0, originalSize);
+    allocator->retired[allocator->retiredCount++] = pointer;
+    return movedPointer;
+}
+
+/* 脚本 getinfo 的一次直接调用：实参是 C 侧稳定副本，与 native 分派交给回调的形态一致。 */
+typedef struct DebugLibraryGetinfoCall {
+    ZrLibCallContext context;
+    SZrTypeValue arguments[2];
+    SZrTypeValue result;
+    TZrBool returned;
+} DebugLibraryGetinfoCall;
+
+static void invoke_getinfo_callback(SZrState *state, TZrPtr arguments) {
+    DebugLibraryGetinfoCall *call = (DebugLibraryGetinfoCall *)arguments;
+
+    ZR_UNUSED_PARAMETER(state);
+    call->returned = call->context.functionDescriptor->callback(&call->context, &call->result);
+}
+
+static const ZrLibFunctionDescriptor *find_debug_function_descriptor(const TZrChar *name) {
+    const ZrLibModuleDescriptor *module = ZrVmLibDebug_GetModuleDescriptor();
+    TZrSize index;
+
+    if (module == ZR_NULL || module->functions == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0; index < module->functionCount; index++) {
+        if (module->functions[index].name != ZR_NULL && strcmp(module->functions[index].name, name) == 0) {
+            return &module->functions[index];
+        }
+    }
+    return ZR_NULL;
+}
+
+/* getinfo("f") 在栈满时会让 core 扩栈并搬迁整段 VM 栈。回调必须按偏移找回调用前的
+ * 栈顶：从搬迁后的槽拷出函数值，并把栈顶恢复到当前栈块内，不能留下扩栈前的地址。 */
+static void test_getinfo_function_option_restores_stack_top_after_stack_relocation(void) {
+    DebugLibraryStackMovingAllocator allocator;
+    SZrCallbackGlobal callbacks = {0};
+    SZrGlobalState *global;
+    SZrState *state;
+    const ZrLibFunctionDescriptor *descriptor = find_debug_function_descriptor("getinfo");
+    SZrString *whatString;
+    SZrFunction *function;
+    DebugLibraryGetinfoCall call;
+    TZrStackValuePointer functionSlot;
+    TZrStackValuePointer slot;
+    TZrStackValuePointer stackBaseBefore;
+    TZrStackValuePointer relocatedTop;
+    TZrMemoryOffset stackTopOffset;
+    SZrObject *infoObject;
+    const SZrTypeValue *functionValue;
+    EZrThreadStatus status;
+    TZrBool whatRooted;
+    TZrBool stackMoved;
+    TZrBool stackTopRestored;
+    TZrBool returnedFunction;
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(descriptor);
+    TEST_ASSERT_NOT_NULL(descriptor->callback);
+    memset(&allocator, 0, sizeof(allocator));
+    global = ZrCore_GlobalState_New(debug_library_stack_moving_allocator, &allocator, 12345, &callbacks);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrCore_GlobalState_InitRegistry(state, global);
+    TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
+    TEST_ASSERT_TRUE(state->stackTail.valuePointer - state->stackTop.valuePointer >= 1);
+
+    /* what 字符串只由 C 侧实参持有，显式加根；函数对象随后由它所在的栈槽保活。 */
+    whatString = ZrCore_String_Create(state, "f", 1);
+    TEST_ASSERT_NOT_NULL(whatString);
+    whatRooted = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(whatString));
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    /* 把入口帧改成贴着 stackTail 的调用窗口：函数槽是最后一个逻辑槽，
+     * 栈顶等于 stackTail，getinfo 的临时压栈必须扩栈。 */
+    functionSlot = state->stackTail.valuePointer - 1;
+    for (slot = state->stackTop.valuePointer; slot < state->stackTail.valuePointer; slot++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+    }
+    ZrCore_Stack_SetRawObjectValue(state, functionSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    state->baseCallInfo.functionBase.valuePointer = functionSlot;
+    state->baseCallInfo.functionTop.valuePointer = state->stackTail.valuePointer;
+    state->stackTop.valuePointer = state->stackTail.valuePointer;
+    stackBaseBefore = state->stackBase.valuePointer;
+    stackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
+
+    memset(&call, 0, sizeof(call));
+    call.context.state = state;
+    call.context.moduleDescriptor = ZrVmLibDebug_GetModuleDescriptor();
+    call.context.functionDescriptor = descriptor;
+    call.context.argumentValues = call.arguments;
+    call.context.argumentCount = ZR_ARRAY_COUNT(call.arguments);
+    ZrLib_Value_SetInt(state, &call.arguments[0], 1);
+    ZrLib_Value_SetStringObject(state, &call.arguments[1], whatString);
+    ZrLib_Value_SetNull(&call.result);
+    status = ZrCore_Exception_TryRun(state, invoke_getinfo_callback, &call);
+
+    stackMoved = (TZrBool)(state->stackBase.valuePointer != stackBaseBefore);
+    relocatedTop = ZrCore_Stack_LoadOffsetToPointer(state, stackTopOffset);
+    stackTopRestored = (TZrBool)(state->stackTop.valuePointer == relocatedTop);
+    /* 失败路径也回到当前栈块内的栈顶，后续读取与释放不在失效地址上进行。 */
+    state->stackTop.valuePointer = relocatedTop;
+    infoObject = value_as_object(state, &call.result);
+    functionValue = infoObject != ZR_NULL ? ZrLib_Object_GetFieldCString(state, infoObject, "func") : ZR_NULL;
+    returnedFunction = (TZrBool)(functionValue != ZR_NULL &&
+                                 functionValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                                 functionValue->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    if (whatRooted) {
+        ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(whatString));
+    }
+    ZrCore_GlobalState_Free(global);
+    /* VM 只认得搬迁后的栈块；保留下来的旧块在 state 释放后归还。 */
+    for (index = 0u; index < allocator.retiredCount; index++) {
+        free(allocator.retired[index]);
+    }
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, status);
+    TEST_ASSERT_TRUE_MESSAGE(call.returned, "getinfo must return an info object");
+    TEST_ASSERT_TRUE_MESSAGE(stackMoved, "the temporary function push must have relocated the VM stack");
+    TEST_ASSERT_TRUE_MESSAGE(stackTopRestored, "getinfo must restore the stack top inside the relocated stack");
+    TEST_ASSERT_TRUE_MESSAGE(returnedFunction, "func must be the callable read from the relocated stack");
+}
+
 static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void) {
     const TZrChar *source =
             "let debug = import(\"zr.debug\");\n"
@@ -421,6 +616,8 @@ int main(void) {
     RUN_TEST(test_registered_debug_module_exports_lua_aligned_api_surface);
     RUN_TEST(test_traceback_returns_known_script_call_chain);
     RUN_TEST(test_getinfo_reports_name_source_line_and_parameter_count);
+    RUN_TEST(test_getinfo_function_option_returns_the_active_function);
+    RUN_TEST(test_getinfo_function_option_restores_stack_top_after_stack_relocation);
     RUN_TEST(test_getlocal_and_setlocal_read_and_change_active_script_locals);
     RUN_TEST(test_upvalue_helpers_read_write_and_identify_closure_cells);
     RUN_TEST(test_sethook_invokes_script_hook_and_gethook_reports_state);
