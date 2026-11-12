@@ -83,8 +83,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
     writer_binary_write_native_string_with_length(file, moduleHash);
     fwrite(&importsLength, sizeof(TZrUInt64), 1, file);
     fwrite(&declaresLength, sizeof(TZrUInt64), 1, file);
-
-    if (!ZrParser_Writer_WriteIoFunction(state, file, function, "__entry", options)) {
+    /* fwrite 的结果未逐次检查；缓冲区写满时的刷新失败只置流错误标志，此后若无待写数据 fclose 仍返回 0。 */
+    if (!ZrParser_Writer_WriteIoFunction(state, file, function, "__entry", options) || ferror(file) != 0) {
         fclose(file);
         return ZR_FALSE;
     }

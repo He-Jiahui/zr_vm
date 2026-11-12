@@ -2595,7 +2595,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
         }
         fprintf(file, "\n");
     }
-    
+
+    /* fprintf 的结果未逐次检查；缓冲区写满时的刷新失败只置流错误标志，此后若无待写数据 fclose 仍返回 0。 */
+    if (ferror(file) != 0) {
+        fclose(file);
+        return ZR_FALSE;
+    }
     if (fclose(file) != 0) {
         return ZR_FALSE;
     }
