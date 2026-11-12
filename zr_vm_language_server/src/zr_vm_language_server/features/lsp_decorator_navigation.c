@@ -469,7 +469,8 @@ static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLsp
     }
 }
 
-/* 两个尝试入口共享上下文分析器 AST；语法错误时它可能仍是上一有效版本的树。 */
+/* 两个尝试入口共享上下文分析器 AST；语法错误时它可能仍是上一有效版本的树，
+ * 因此两个入口都先以 usesFallbackAst 拒绝该状态，再把当前光标交给本函数匹配。 */
 static TZrBool decorator_navigation_find_hit(SZrSemanticAnalyzer *analyzer,
                                              SZrFileRange position,
                                              SZrLspDecoratorHit *outHit) {
@@ -555,7 +556,9 @@ static TZrBool decorator_navigation_create_hover(SZrState *state,
     return ZR_TRUE;
 }
 
-/* 普通 definition 在语义查询前调用：仅光标落在装饰器上时把跳转目标指向受修饰声明。 */
+/* 普通 definition 在语义查询前调用：仅光标落在装饰器上时把跳转目标指向受修饰声明。
+ * 文档处于语法错误回退（usesFallbackAst）时分析器仍持有上一棵有效 AST，此时返回 false，
+ * 不把旧树的目标投影到当前文本；外层 definition 继续走后续分支。 */
 TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
@@ -575,8 +578,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
     if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
+    {
+        SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (fileVersion != ZR_NULL && fileVersion->usesFallbackAst) {
+            return ZR_FALSE;
+        }
+    }
 
-    /* BUG: 语法错后的 fallback AST 仍可命中当前光标，definition 会返回上一版本的目标。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||
@@ -591,7 +599,8 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
     return decorator_navigation_append_definition(state, context, result, uri, target.range);
 }
 
-/* 普通 hover 优先调用：装饰器命中时展示表达式类别和受修饰目标，否则允许后续语义分支继续。 */
+/* 普通 hover 优先调用：装饰器命中时展示表达式类别和受修饰目标，否则允许后续语义分支继续。
+ * 回退 AST（usesFallbackAst）期间同样返回 false，避免展示上一版本的装饰器文案。 */
 TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrString *uri,
@@ -614,8 +623,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
     if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
+    {
+        SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (fileVersion != ZR_NULL && fileVersion->usesFallbackAst) {
+            return ZR_FALSE;
+        }
+    }
 
-    /* BUG: fallback AST 可把当前装饰器光标映射到上一版本的表达式，hover 因而显示过时文案。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||

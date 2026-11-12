@@ -909,9 +909,16 @@ the externally opened project lifecycle alongside multi-root/provider reload;
 the workspace-folder smoke retains its removed-root release assertion. See
 [Plan 01 Task 6 Sub05](../plans/lsp/optimize/2026-09-07-plan01-task06-sub05-closed-project-diagnostic-target.md).
 
-`didSave` without text refreshes a disk document or
-confirms an existing open overlay. A supplied `text` does not become a same-
-version change. A syntactically invalid but committed full replacement remains
+`didSave` without text confirms an existing open overlay. For an unopened
+document it refreshes the disk content only when the URI resolves inside a
+registered workspace root, through the same file-event gate as `didClose`; a
+root-external URI, including one that leaves the root through `..`, is ignored
+without a disk read. The C handler fixture used for close also checks the save
+gate: an unopened root-external save registers no file version, a `..` path
+below a registered root is rejected although the file is readable through it,
+an in-root save reloads changed disk content as the next generation, and an
+open root-external overlay keeps its client version and text. A supplied `text`
+does not become a same-version change. A syntactically invalid but committed full replacement remains
 synchronized: the server determines commit status from the content snapshot,
 not from the semantic-analysis success value used to publish diagnostics.
 
@@ -941,10 +948,13 @@ the client applies edits with a newer document version before sending didSave.
 The focused save fixture checks an empty client and a save-aware client,
 the complete textDocumentSync object, exact formatting text/range, diagnostics
 at versions 1 and 2, an empty edit after formatting, definition coordinates and
-clean shutdown. A disk fixture changes a cached class declaration, requires
-didSave to publish diagnostics with the next generation, and checks the new
-definition range. General formatter correctness and versioned edit acceptance
-remain separate Plan 02/04 obligations. Evidence is in
+clean shutdown. A disk fixture under a registered workspace root changes a
+cached class declaration, requires didSave to publish diagnostics with the next
+generation, and checks the new definition range. A second fixture saves an
+unopened root-external file, directly and through a `..` path below the root,
+before saving the in-root file, and requires the first published diagnostics to
+belong to the in-root document. General formatter correctness and versioned
+edit acceptance remain separate Plan 02/04 obligations. Evidence is in
 [Plan 00 Task 4 Sub05](../plans/lsp/optimize/2026-09-05-plan00-task04-sub05-save-notification.md).
 
 ## Matrix

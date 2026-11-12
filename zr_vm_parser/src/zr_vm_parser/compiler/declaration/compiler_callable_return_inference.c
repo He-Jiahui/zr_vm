@@ -1,4 +1,5 @@
 #include "compiler/compiler_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 
 /**
  * @brief 对 return 表达式做尽力类型推断，为候选合并提供类型证据。
@@ -368,6 +369,151 @@ static TZrBool compiler_register_callable_parameter_types(
     return !cs->hasError;
 }
 
+static void compiler_collect_function_like_return_type(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool *hasReturnType,
+        SZrInferredType *accumulatedType,
+        SZrFileRange *firstReturnRange);
+
+/**
+ * @brief 把 union switch case 的 payload 绑定登记到当前（case 专属）类型环境，供 case 体内的 return 表达式解析。
+ * @note 复用 compile_switch_statement 的模式解析与 payload 类型登记入口，使推断看到的绑定与实际编译一致，
+ *       而不会误用外层同名变量。解析以探测方式进行：case 不是模式或模式本身有错时恢复错误状态并保持静默，
+ *       诊断仍由真正的 switch 编译发布。
+ */
+static void compiler_register_switch_case_pattern_bindings(
+        SZrCompilerState *cs,
+        SZrAstNode *caseValue,
+        SZrString *switchUnionTypeName) {
+    SZrString *variantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNodeArray *borrowedBindings = ZR_NULL;
+    SZrAstNode *variant = ZR_NULL;
+    TZrBool resolved;
+    TZrBool savedHadRecoverableError;
+    TZrBool savedHasFatalError;
+    TZrBool savedHasCompileTimeError;
+    TZrBool savedSuppressErrorOutput;
+    SZrFileRange savedErrorLocation;
+    const TZrChar *savedErrorMessage;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        caseValue == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    savedHadRecoverableError = cs->hadRecoverableError;
+    savedHasFatalError = cs->hasFatalError;
+    savedHasCompileTimeError = cs->hasCompileTimeError;
+    savedSuppressErrorOutput = cs->suppressErrorOutput;
+    savedErrorLocation = cs->errorLocation;
+    savedErrorMessage = cs->errorMessage;
+    cs->suppressErrorOutput = ZR_TRUE;
+
+    if (switchUnionTypeName != ZR_NULL &&
+        (caseValue->type == ZR_AST_IDENTIFIER_LITERAL ||
+         caseValue->type == ZR_AST_PRIMARY_EXPRESSION)) {
+        resolved = try_resolve_union_variant_pattern_for_type(
+                cs, caseValue, switchUnionTypeName, &variantName, &bindings, &variant);
+    } else {
+        resolved = try_resolve_union_variant_pattern_expression(
+                cs, caseValue, &variantName, &bindings, &variant);
+    }
+
+    if (resolved && !cs->hasError && variantName != ZR_NULL && variant != ZR_NULL &&
+        bindings != ZR_NULL && bindings->nodes != ZR_NULL) {
+        for (TZrSize index = 0U; index < bindings->count && !cs->hasError; index++) {
+            SZrAstNode *bindingNode = bindings->nodes[index];
+            SZrInferredType unknownType;
+
+            if (bindingNode == ZR_NULL ||
+                bindingNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+                bindingNode->data.identifier.name == ZR_NULL) {
+                continue;
+            }
+            /* 先以未知类型遮蔽外层同名变量；字段类型可转换时再细化为声明类型。 */
+            ZrParser_InferredType_Init(cs->state, &unknownType, ZR_VALUE_TYPE_OBJECT);
+            ZrParser_TypeEnvironment_RegisterVariable(
+                    cs->state, cs->typeEnv, bindingNode->data.identifier.name, &unknownType);
+            ZrParser_InferredType_Free(cs->state, &unknownType);
+            register_union_variant_payload_binding_type(
+                    cs,
+                    variant,
+                    switchUnionTypeName,
+                    index,
+                    bindingNode->data.identifier.name,
+                    bindingNode->data.identifier.isMoveBinding);
+        }
+    }
+
+    /* 调用形 payload 的绑定数组借用自 AST；对象形 payload 的绑定数组由解析器新建，须在此释放。 */
+    if (caseValue->type == ZR_AST_PRIMARY_EXPRESSION &&
+        caseValue->data.primaryExpression.members != ZR_NULL &&
+        caseValue->data.primaryExpression.members->nodes != ZR_NULL &&
+        caseValue->data.primaryExpression.members->count > 0U) {
+        SZrAstNodeArray *members = caseValue->data.primaryExpression.members;
+        SZrAstNode *payload = members->nodes[members->count - 1U];
+
+        if (payload != ZR_NULL && payload->type == ZR_AST_FUNCTION_CALL) {
+            borrowedBindings = payload->data.functionCall.args;
+        }
+    }
+    if (bindings != ZR_NULL && bindings != borrowedBindings) {
+        ZrParser_AstNodeArray_Free(cs->state, bindings);
+    }
+
+    cs->suppressErrorOutput = savedSuppressErrorOutput;
+    if (cs->hasError) {
+        ZrParser_Compiler_ClearStructuredError(cs);
+        cs->hasError = ZR_FALSE;
+        cs->hadRecoverableError = savedHadRecoverableError;
+        cs->hasFatalError = savedHasFatalError;
+        cs->hasCompileTimeError = savedHasCompileTimeError;
+        cs->errorLocation = savedErrorLocation;
+        cs->errorMessage = savedErrorMessage;
+    }
+}
+
+/**
+ * @brief 在 case 专属的临时类型环境中登记模式绑定，再收集该 case 块的 return 类型候选。
+ * @note 临时环境不关联 semantic context：绑定只为推断提供类型，不发布符号或声明事实；递归返回后恢复并释放。
+ */
+static void compiler_collect_switch_case_return_type(
+        SZrCompilerState *cs,
+        SZrAstNode *caseNode,
+        SZrString *switchUnionTypeName,
+        TZrBool *hasReturnType,
+        SZrInferredType *accumulatedType,
+        SZrFileRange *firstReturnRange) {
+    SZrTypeEnvironment *savedEnv = cs->typeEnv;
+    SZrTypeEnvironment *caseEnv;
+
+    if (caseNode->data.switchCase.block == ZR_NULL) {
+        return;
+    }
+    caseEnv = ZrParser_TypeEnvironment_New(cs->state);
+    if (caseEnv == ZR_NULL) {
+        /* 与块级环境分配失败相同：不在缺少模式绑定的环境里扫描该 case，避免发布误用外层变量的类型。 */
+        return;
+    }
+    caseEnv->parent = savedEnv;
+    caseEnv->semanticContext = ZR_NULL;
+    cs->typeEnv = caseEnv;
+
+    compiler_register_switch_case_pattern_bindings(
+            cs, caseNode->data.switchCase.value, switchUnionTypeName);
+    compiler_collect_function_like_return_type(
+            cs,
+            caseNode->data.switchCase.block,
+            hasReturnType,
+            accumulatedType,
+            firstReturnRange);
+
+    cs->typeEnv = savedEnv;
+    ZrParser_TypeEnvironment_Free(cs->state, caseEnv);
+}
+
 /**
  * @brief 遍历 callable 体内受支持的控制结构并按词法块收集 return 类型候选。
  * @note 嵌套 callable 不属于当前 callable 的返回集合；块级临时环境在递归返回后恢复并释放。
@@ -547,9 +693,61 @@ static void compiler_collect_function_like_return_type(
         case ZR_AST_INTERFACE_DECLARATION:
             return;
 
+        case ZR_AST_SWITCH_EXPRESSION: {
+            SZrSwitchExpression *switchExpression = &node->data.switchExpression;
+
+            if (switchExpression->cases != ZR_NULL && switchExpression->cases->nodes != ZR_NULL &&
+                switchExpression->cases->count > 0U) {
+                SZrInferredType subjectType;
+                SZrString *switchUnionTypeName = ZR_NULL;
+
+                /* 与 compile_switch_statement 相同：subject 是 union 时，裸变体名的 case 才按模式解析。 */
+                ZrParser_InferredType_Init(cs->state, &subjectType, ZR_VALUE_TYPE_OBJECT);
+                if (switchExpression->expr != ZR_NULL && !cs->hasError) {
+                    if (!compiler_try_infer_expression_type_soft(
+                                cs, switchExpression->expr, &subjectType)) {
+                        ZrParser_InferredType_Free(cs->state, &subjectType);
+                        ZrParser_InferredType_Init(
+                                cs->state, &subjectType, ZR_VALUE_TYPE_OBJECT);
+                    } else if (subjectType.typeName != ZR_NULL &&
+                               try_find_union_declaration_for_type_name(
+                                       cs, subjectType.typeName) != ZR_NULL) {
+                        switchUnionTypeName = subjectType.typeName;
+                    }
+                }
+
+                for (TZrSize index = 0U; index < switchExpression->cases->count; index++) {
+                    SZrAstNode *caseNode = switchExpression->cases->nodes[index];
+                    if (caseNode == ZR_NULL || caseNode->type != ZR_AST_SWITCH_CASE) {
+                        continue;
+                    }
+                    compiler_collect_switch_case_return_type(
+                            cs,
+                            caseNode,
+                            switchUnionTypeName,
+                            hasReturnType,
+                            accumulatedType,
+                            firstReturnRange);
+                    if (cs->hasError) {
+                        ZrParser_InferredType_Free(cs->state, &subjectType);
+                        return;
+                    }
+                }
+                ZrParser_InferredType_Free(cs->state, &subjectType);
+            }
+            if (switchExpression->defaultCase != ZR_NULL &&
+                switchExpression->defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
+                compiler_collect_function_like_return_type(
+                        cs,
+                        switchExpression->defaultCase->data.switchDefault.block,
+                        hasReturnType,
+                        accumulatedType,
+                        firstReturnRange);
+            }
+            return;
+        }
+
         default:
-            // BUG: switch 的 case/default block 未被遍历；仅在 switch 内 return 的无注解函数会被 builder
-            // 误当作无 return 并发布精确 Null。
             return;
     }
 }
