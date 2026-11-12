@@ -306,30 +306,32 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
             lineEnd++;
         }
 
-          if (hasLine &&
-              scanState.mode == ZR_LSP_EDITOR_SCAN_CODE &&
-              lsp_editor_trim_line(content, lineStart, lineEnd, &trim)) {
-              if (lsp_editor_is_region_start_marker(content, &trim)) {
-                  if (stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
-                      stack[stackLength].line = line;
-                      stack[stackLength].character = lsp_folding_utf16_column(content, contentLength, lineStart, trim.start);
-                      stackLength++;
-                  } else {
-                      discarded++;
-                  }
-              } else if (lsp_editor_is_region_end_marker(content, &trim)) {
-                  if (discarded > 0) {
-                      discarded--;
-                  } else if (stackLength > 0) {
-                      SZrBraceStart start = stack[--stackLength];
-                      if (!lsp_editor_append_folding_range(state, result, start.line, start.character, line,
-                                                           lsp_folding_utf16_column(content, contentLength, lineStart, trim.end),
-                                                           ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
-                          return ZR_FALSE;
-                      }
-                  }
-              }
-          }
+        if (hasLine &&
+            scanState.mode == ZR_LSP_EDITOR_SCAN_CODE &&
+            lsp_editor_trim_line(content, lineStart, lineEnd, &trim)) {
+            if (lsp_editor_is_region_start_marker(content, &trim)) {
+                if (stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
+                    stack[stackLength].line = line;
+                    stack[stackLength].character =
+                            lsp_folding_utf16_column(content, contentLength, lineStart, trim.start);
+                    stackLength++;
+                } else {
+                    discarded++;
+                }
+            } else if (lsp_editor_is_region_end_marker(content, &trim)) {
+                if (discarded > 0) {
+                    discarded--;
+                } else if (stackLength > 0) {
+                    SZrBraceStart start = stack[--stackLength];
+                    if (!lsp_editor_append_folding_range(state,
+                                                         result,
+                                                         start.line,
+                                                         start.character,
+                                                         line,
+                                                         lsp_folding_utf16_column(content, contentLength, lineStart, trim.end),
+                                                         ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
+                        return ZR_FALSE;
+                    }
                 }
             }
         }
@@ -343,33 +345,6 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
     }
 
     return ZR_TRUE;
-}
-
-/* 把花括号偏移换成内部 UTF-16 位置：行号沿游标累加，列只在当前行内换算。
- * 偏移若回退（扫描器不会这样交付）就退回整份快照的换算，保证结果仍然正确。 */
-static SZrLspPosition lsp_folding_structural_position(SZrStructuralFoldingScanData *data, TZrSize offset) {
-    SZrLspPosition position;
-
-    if (offset > data->contentLength) {
-        offset = data->contentLength;
-    }
-    if (offset < data->lineScanOffset) {
-        return lsp_editor_position_from_offset(data->content, data->contentLength, offset);
-    }
-    while (data->lineScanOffset < offset) {
-        if (data->content[data->lineScanOffset] == '\n') {
-            data->line++;
-            data->lineStartOffset = data->lineScanOffset + 1;
-        }
-        data->lineScanOffset++;
-    }
-
-    position.line = data->line;
-    position.character = lsp_folding_utf16_column(data->content,
-                                                  data->contentLength,
-                                                  data->lineStartOffset,
-                                                  offset);
-    return position;
 }
 
 /* 共用词法扫描器只交付代码态花括号；回调将配对结果追加为结构折叠段。 */
