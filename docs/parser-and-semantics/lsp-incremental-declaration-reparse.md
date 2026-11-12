@@ -1,21 +1,26 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/syntax/lexer.c
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
-  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_parser.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_declaration_index.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_syntax_reparse.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_parser/include/zr_vm_parser/parser.h
-  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser.c
 implementation_files:
-  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_parser/src/zr_vm_parser/syntax/lexer.c
+  - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_parser.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_declaration_index.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_syntax_reparse.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
-  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser.c
 plan_sources:
+  - user: 2026-11-13 review and integrate GitHub PRs
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_lsp_parser_diagnostics.c
+  - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/test_incremental_parser.c
   - tests/language_server/test_lsp_incremental_equivalence.c
   - tests/language_server/test_lsp_project_features.c
@@ -102,3 +107,25 @@ aggregation, and the cross-toolchain acceptance matrix remain separate work.
 | --- | --- | --- | --- |
 | 2026-08-23 13:27 +08:00 | 已完成 | 发布 declaration-scoped incremental reparse、显式 full fallback 和 public-contract dependency gate。 | GCC focused direct tests exit 0：incremental parser、incremental equivalence、semantic snapshot、project features。 |
 | 2026-08-26 06:49 +08:00 | 已完成 | 将历史 AST 保留请求设为 full-reparse 边界，避免语义快照与原地更新后的当前根别名。 | GCC、Clang、MSVC 的 incremental parser、10,000 次 incremental equivalence 与完整 LSP interface 均直接 exit 0。 |
+
+## Initial lexical errors and pending text
+
+The lexer scans the first token during parser-state initialization, before the
+language server installs diagnostic callbacks. The incremental parser accepts
+that failure as a source diagnostic only when its message is in the lexer's
+explicit source-error list. Allocation, ownership, and source-evidence failures
+continue to reject parsing without inventing a source diagnostic. An unfinished
+block comment reports `unfinished block comment` and belongs to this list even
+though the resulting token is end-of-source.
+
+`test_lsp_parser_diagnostics.c` checks the exact message and
+`parser_syntax_error` code for an initially unfinished block comment.
+`test_lsp_source_contracts.c` checks both directions of the lexer/list mapping,
+so a new lexical error must update the language-server list in the same change.
+
+Token-equivalent text updates preserve a pending dirty flag. Declaration
+replacement additionally requires an AST that matches the preceding text and
+has neither fallback status nor parser errors. Otherwise full parsing rebuilds
+the current document and retains the prior valid AST only as an explicit
+fallback. These rules prevent a later whitespace or declaration edit from
+clearing an earlier unparsed change or lexical error.

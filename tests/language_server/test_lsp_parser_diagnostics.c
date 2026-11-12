@@ -334,6 +334,7 @@ static void test_lsp_first_token_user_text_errors(SZrState *state) {
         const TZrChar *message;
     } cases[] = {
         {"0x", "Hexadecimal literal requires a digit"},
+        {"/* unterminated", "unfinished block comment"},
         {"1e+", "Numeric exponent requires a digit"},
         {"1e9999", "Floating-point literal is out of range"},
         {"019", "Invalid digit in integer literal"},
