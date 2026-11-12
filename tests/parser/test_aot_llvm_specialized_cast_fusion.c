@@ -463,7 +463,7 @@ static void test_llvm_hand_built_casts_and_fusions_lower_exact_operands(void) {
                                                            sizeof(objectPath)));
         snprintf(command,
                  sizeof(command),
-                 "\"%s\" -c -o \"%s\" \"%s\"",
+                 "\"%s\" " ZR_VM_TESTS_LLVM_POINTER_FLAGS " -c -o \"%s\" \"%s\"",
                  ZR_VM_TESTS_LLVM_COMPILER,
                  objectPath,
                  llvmPath);
