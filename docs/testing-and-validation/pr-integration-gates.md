@@ -77,3 +77,7 @@ result, and result assertion while exercising successful inference.
 
 Native generic constraints use the supported builtin equatability protocol.
 Primitive type names are not protocol or nominal prototype constraints.
+
+Native fixture modules set an explicit version of 1.0.0 so compile-time import
+metadata and runtime callable metadata agree. The generic registration test
+checks generic inference and execution independently of omitted-version defaults.
