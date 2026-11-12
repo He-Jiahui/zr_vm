@@ -2901,6 +2901,14 @@ static TZrBool backend_aot_c_scalar_locals_instruction_preserves_reaching_writes
         const TZrInstruction *instruction) {
     TZrUInt32 stepFlags = backend_aot_c_step_flags_for_instruction(function, instruction);
 
+    /* 融合迭代跳转虽属控制流，仍把 move-next 结果写进 operandExtra 帧槽；
+     * 不能让之前的标量局部写入继续到达后面残留的 JUMP_IF。 */
+    if (instruction != ZR_NULL &&
+        (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+         instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE))) {
+        return ZR_FALSE;
+    }
+
     return (TZrBool)((stepFlags &
                       (ZR_AOT_EMITTER_STEP_FLAG_CONTROL_FLOW |
                        ZR_AOT_EMITTER_STEP_FLAG_RETURN)) != 0u);
