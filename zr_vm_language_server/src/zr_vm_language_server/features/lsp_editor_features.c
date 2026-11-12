@@ -60,23 +60,10 @@ static TZrBool lsp_editor_source_is_current_syntax(
 }
 
 /* 格式化、折叠和编辑提案共用此投影，输入偏移必须属于同一份快照。 */
-/* BUG: 非 ASCII 字节被逐个计作 UTF-16 列；例如格式化“中 ”时全文编辑 end.character 得到 4 而非 2，默认 UTF-16 客户端会得到错位范围。 */
 SZrLspPosition lsp_editor_position_from_offset(const TZrChar *content,
                                                TZrSize contentLength,
                                                TZrSize offset) {
-    SZrLspPosition position = {0, 0};
-    TZrSize limit = offset < contentLength ? offset : contentLength;
-
-    for (TZrSize index = 0; index < limit; index++) {
-        if (content[index] == '\n') {
-            position.line++;
-            position.character = 0;
-        } else {
-            position.character++;
-        }
-    }
-
-    return position;
+    return ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content, contentLength, offset);
 }
 
 /* 按整行规划编辑的入口先对齐行首；越界请求被限制在文末。 */
@@ -125,7 +112,7 @@ static SZrLspRange lsp_editor_full_document_range(const TZrChar *content, TZrSiz
     return range;
 }
 
-/* 把字节范围交给编辑器协议；非 ASCII 列的已知偏差继承 position_from_offset。 */
+/* 把字节范围交给编辑器协议；列号沿用同一份快照的 UTF-16 编解码。 */
 SZrLspRange lsp_editor_range_from_offsets(const TZrChar *content,
                                           TZrSize contentLength,
                                           TZrSize startOffset,
@@ -309,11 +296,41 @@ TZrBool lsp_editor_offset_is_code(const TZrChar *content,
     return scanState.mode == ZR_LSP_EDITOR_SCAN_CODE;
 }
 
-/* 当前格式化策略固定四空格缩进，调用方在此之前已确定代码块深度。 */
-static TZrBool lsp_text_builder_append_indent(SZrLspTextBuilder *builder, TZrInt32 indentLevel) {
+#define ZR_LSP_FORMATTING_DEFAULT_TAB_SIZE 4
+#define ZR_LSP_FORMATTING_MAX_TAB_SIZE 32
+
+/* NULL 保持既有四空格；显式选项只接受 1 到 32 的 tabSize，其余回退到默认宽度。 */
+static SZrLspFormattingOptions lsp_editor_formatting_options_or_default(
+        const SZrLspFormattingOptions *options) {
+    SZrLspFormattingOptions resolved;
+
+    resolved.tabSize = ZR_LSP_FORMATTING_DEFAULT_TAB_SIZE;
+    resolved.insertSpaces = ZR_TRUE;
+    if (options == ZR_NULL) {
+        return resolved;
+    }
+    if (options->tabSize >= 1 && options->tabSize <= ZR_LSP_FORMATTING_MAX_TAB_SIZE) {
+        resolved.tabSize = options->tabSize;
+    }
+    resolved.insertSpaces = options->insertSpaces ? ZR_TRUE : ZR_FALSE;
+    return resolved;
+}
+
+/* 缩进深度由调用方确定；insertSpaces 为假时每级写一个制表符。 */
+static TZrBool lsp_text_builder_append_indent(SZrLspTextBuilder *builder,
+                                              TZrInt32 indentLevel,
+                                              SZrLspFormattingOptions options) {
     for (TZrInt32 level = 0; level < indentLevel; level++) {
-        if (!lsp_text_builder_append_range(builder, "    ", 4)) {
-            return ZR_FALSE;
+        if (!options.insertSpaces) {
+            if (!lsp_text_builder_append_char(builder, '\t')) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+        for (TZrInt32 space = 0; space < options.tabSize; space++) {
+            if (!lsp_text_builder_append_char(builder, ' ')) {
+                return ZR_FALSE;
+            }
         }
     }
     return ZR_TRUE;
@@ -408,6 +425,7 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
                                           TZrSize contentLength,
                                           TZrSize startOffset,
                                           TZrSize endOffset,
+                                          SZrLspFormattingOptions options,
                                           TZrSize *outLength) {
     SZrLspTextBuilder builder = {0};
     TZrSize cursor;
@@ -434,18 +452,24 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
         TZrSize lineEnd = cursor;
         TZrSize trimStart;
         TZrSize trimEnd;
-        TZrBool hasNewline;
+        TZrSize newlineStart;
+        TZrSize newlineLength = 0;
 
         while (lineEnd < endOffset && content[lineEnd] != '\n') {
             lineEnd++;
         }
-        hasNewline = lineEnd < endOffset && content[lineEnd] == '\n';
+        newlineStart = lineEnd;
+        if (lineEnd < endOffset && content[lineEnd] == '\n') {
+            newlineLength = 1;
+            if (lineEnd > lineStart && content[lineEnd - 1] == '\r') {
+                newlineStart = lineEnd - 1;
+                newlineLength = 2;
+                lineEnd = newlineStart;
+            }
+        }
 
         trimStart = lineStart;
         trimEnd = lineEnd;
-        if (trimEnd > trimStart && content[trimEnd - 1] == '\r') {
-            trimEnd--;
-        }
         /* BUG: parser 允许反引号模板跨行；TEMPLATE_STRING 模式下也剪空白并重加缩进，会改变模板字符串值。 */
         while (trimStart < trimEnd &&
                (content[trimStart] == ' ' || content[trimStart] == '\t')) {
@@ -468,7 +492,7 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
                 scanStart++;
             }
 
-            if (!lsp_text_builder_append_indent(&builder, indent) ||
+            if (!lsp_text_builder_append_indent(&builder, indent, options) ||
                 !lsp_text_builder_append_range(&builder, content + trimStart, trimEnd - trimStart)) {
                 free(builder.data);
                 return ZR_NULL;
@@ -487,15 +511,16 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
             }
         }
 
-        if (hasNewline && !lsp_text_builder_append_char(&builder, '\n')) {
+        if (newlineLength > 0 &&
+            !lsp_text_builder_append_range(&builder, content + newlineStart, newlineLength)) {
             free(builder.data);
             return ZR_NULL;
         }
-        if (hasNewline && scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+        if (newlineLength > 0 && scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
             scanState.mode = ZR_LSP_EDITOR_SCAN_CODE;
             scanState.escaped = ZR_FALSE;
         }
-        cursor = hasNewline ? lineEnd + 1 : lineEnd;
+        cursor = lineEnd + newlineLength;
     }
 
     if (builder.data == ZR_NULL) {
@@ -510,18 +535,34 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
     return builder.data;
 }
 
+/* 片段末尾不带 LF 的 \r 既不是 LF 也不是 CRLF，共享 codec 也不把它计成一列：
+ * 编辑范围的终点会落在它前面。把片段终点收到这些 \r 之前，替换文本才与范围对应同一段字节，
+ * 否则客户端应用编辑后会多出一个 \r。 */
+static TZrSize lsp_editor_trim_trailing_lone_cr(const TZrChar *content,
+                                                TZrSize startOffset,
+                                                TZrSize endOffset) {
+    while (endOffset > startOffset && content[endOffset - 1] == '\r') {
+        endOffset--;
+    }
+    return endOffset;
+}
+
 /**
  * @brief 供 stdio、WASM 和测试请求全文格式化；未检出旧语法迁移项且文本有差异时追加单个编辑。
  * @note result 可为已初始化数组；无修改时成功返回空增量，调用方须用 FreeTextEdits 清理。
- * @note TODO: stdio 调用方未传入 FormattingOptions；需确认固定四空格策略是否应覆盖客户端 tabSize/insertSpaces。
+ * @note options 为 NULL 时使用四空格；换行符按原文的 LF 或 CRLF 逐行保留。
+ * @note 文末不带 LF 的 \r 留在编辑之外，原样保留。
  */
 TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
                                            SZrLspContext *context,
                                            SZrString *uri,
+                                           const SZrLspFormattingOptions *options,
                                            SZrArray *result) {
     SZrFileVersionContentSnapshot snapshot;
+    SZrLspFormattingOptions resolvedOptions;
     TZrChar *formatted;
     TZrSize formattedLength;
+    TZrSize formatEnd;
     SZrLspRange range;
     TZrBool isCurrentSyntax;
 
@@ -550,23 +591,27 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
         return ZR_TRUE;
     }
 
+    resolvedOptions = lsp_editor_formatting_options_or_default(options);
+    formatEnd = lsp_editor_trim_trailing_lone_cr(snapshot.content, 0, snapshot.contentLength);
     formatted = lsp_editor_format_segment(snapshot.content,
                                           snapshot.contentLength,
                                           0,
-                                          snapshot.contentLength,
+                                          formatEnd,
+                                          resolvedOptions,
                                           &formattedLength);
     if (formatted == ZR_NULL) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    if (formattedLength == snapshot.contentLength &&
+    if (formattedLength == formatEnd &&
         memcmp(formatted, snapshot.content, formattedLength) == 0) {
         free(formatted);
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
+    /* 文末的 \r 不占列，全文范围的终点与 formatEnd 是同一个位置。 */
     range = lsp_editor_full_document_range(snapshot.content, snapshot.contentLength);
     if (!lsp_editor_append_text_edit(state, result, range, formatted, formattedLength)) {
         free(formatted);
@@ -581,15 +626,17 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
 
 /**
  * @brief 供 stdio 单区间和多区间适配器请求整行范围格式化。
- * @note 结果替换区间可能扩到请求边界之外；多区间调用方须处理编辑重叠。
- * @note TODO: stdio 调用方只传 range，未传 FormattingOptions；需与全文格式化统一核对客户端选项契约。
+ * @note 结果替换区间会扩到整行并包含该行的 LF 或 CRLF；多区间调用方须先合并相交行。
+ * @note options 与全文格式化共用；NULL 表示四空格。文末不带 LF 的 \r 留在编辑之外。
  */
 TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrString *uri,
                                                 SZrLspRange range,
+                                                const SZrLspFormattingOptions *options,
                                                 SZrArray *result) {
     SZrFileVersionContentSnapshot snapshot;
+    SZrLspFormattingOptions resolvedOptions;
     TZrSize startOffset;
     TZrSize endOffset;
     TZrChar *formatted;
@@ -624,14 +671,27 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
 
     startOffset = lsp_editor_line_start_offset(snapshot.content, snapshot.contentLength, range.start.line);
     endOffset = lsp_editor_line_end_offset(snapshot.content, snapshot.contentLength, range.end.line);
-    if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\n') {
+    /* 只把成对的 CRLF 或单独的 LF 纳入替换；文末不带 LF 的 \r 留在编辑之外。 */
+    if (endOffset + 1 < snapshot.contentLength &&
+        snapshot.content[endOffset] == '\r' &&
+        snapshot.content[endOffset + 1] == '\n') {
+        endOffset += 2;
+    } else if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\n') {
         endOffset++;
+    } else {
+        endOffset = lsp_editor_trim_trailing_lone_cr(snapshot.content, startOffset, endOffset);
+    }
+    /* 起始行越过文末时行尾 helper 可能退到文末 \r 之前；空片段不能算成负长度。 */
+    if (endOffset < startOffset) {
+        endOffset = startOffset;
     }
 
+    resolvedOptions = lsp_editor_formatting_options_or_default(options);
     formatted = lsp_editor_format_segment(snapshot.content,
                                           snapshot.contentLength,
                                           startOffset,
                                           endOffset,
+                                          resolvedOptions,
                                           &formattedLength);
     if (formatted == ZR_NULL) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);

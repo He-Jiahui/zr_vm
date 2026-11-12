@@ -306,44 +306,53 @@ static TZrBool lsp_editor_resolve_missing_import_candidate(SZrState *state,
     return ZR_FALSE;
 }
 
-/* 把请求范围限制到当前行的 alias.member；stdio 与 WASM 均传入内部 UTF-16 列。
- * BUG: 下方将 UTF-16 列直接加在 UTF-8 字节行首，与别名的字节偏移比较；
- * 同行非 ASCII 文本位于别名前时，两条入口都可能漏掉缺失导入动作。
- */
-static TZrBool lsp_editor_requested_range_intersects_line_span(SZrLspRange range,
+/* 把内部 UTF-16 列换成当前行的字节偏移后再与 alias.member 相交。 */
+static TZrSize lsp_editor_clamp_offset_to_line(TZrSize offset, TZrSize lineStart, TZrSize lineEnd) {
+    if (offset < lineStart) {
+        return lineStart;
+    }
+    if (offset > lineEnd) {
+        return lineEnd;
+    }
+    return offset;
+}
+
+/* 请求范围来自 stdio 与 WASM 的内部 UTF-16 列；比较前先投影到同一份快照的字节。 */
+static TZrBool lsp_editor_requested_range_intersects_line_span(const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              SZrLspRange range,
                                                               TZrSize lineStart,
                                                               TZrSize lineEnd,
                                                               TZrSize spanStart,
                                                               TZrSize spanEnd) {
-    TZrSize lineLength;
-    TZrSize requestStart;
-    TZrSize requestEnd;
+    TZrInt32 startCharacter;
     TZrSize absoluteStart;
     TZrSize absoluteEnd;
 
-    if (spanStart >= spanEnd || spanEnd > lineEnd || lineEnd < lineStart) {
+    if (content == ZR_NULL || spanStart >= spanEnd || spanEnd > lineEnd || lineEnd < lineStart) {
         return ZR_FALSE;
     }
 
-    lineLength = lineEnd - lineStart;
-    requestStart = range.start.character > 0 ? (TZrSize)range.start.character : 0;
-    if (requestStart > lineLength) {
-        requestStart = lineLength;
-    }
+    startCharacter = range.start.character > 0 ? range.start.character : 0;
+    absoluteStart = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                       contentLength,
+                                                                       range.start.line,
+                                                                       startCharacter);
+    absoluteStart = lsp_editor_clamp_offset_to_line(absoluteStart, lineStart, lineEnd);
     if (range.end.line > range.start.line) {
-        requestEnd = lineLength;
+        absoluteEnd = lineEnd;
     } else {
-        requestEnd = range.end.character > 0 ? (TZrSize)range.end.character : requestStart;
-        if (requestEnd > lineLength) {
-            requestEnd = lineLength;
-        }
+        TZrInt32 endCharacter = range.end.character > 0 ? range.end.character : startCharacter;
+        absoluteEnd = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                         contentLength,
+                                                                         range.start.line,
+                                                                         endCharacter);
+        absoluteEnd = lsp_editor_clamp_offset_to_line(absoluteEnd, lineStart, lineEnd);
     }
-    if (requestEnd < requestStart) {
-        requestEnd = requestStart;
+    if (absoluteEnd < absoluteStart) {
+        absoluteEnd = absoluteStart;
     }
 
-    absoluteStart = lineStart + requestStart;
-    absoluteEnd = lineStart + requestEnd;
     if (absoluteStart == absoluteEnd) {
         return absoluteStart >= spanStart && absoluteStart <= spanEnd;
     }
@@ -401,7 +410,9 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
         while (memberEnd < lineEnd && lsp_editor_is_identifier_part(content[memberEnd])) {
             memberEnd++;
         }
-        if (!lsp_editor_requested_range_intersects_line_span(range,
+        if (!lsp_editor_requested_range_intersects_line_span(content,
+                                                            contentLength,
+                                                            range,
                                                             lineStart,
                                                             lineEnd,
                                                             aliasStart,
@@ -469,6 +480,25 @@ static TZrSize lsp_editor_missing_import_insert_offset(const TZrChar *content, T
     return insertOffset;
 }
 
+/* 插入的导入行沿用文档已有的换行：先看插入点上一行的行尾，文件开头则看其后第一处换行。
+ * 与整理导入保留 CRLF 的做法一致，避免在 CRLF 文档里留下单独的 LF。 */
+static TZrBool lsp_editor_missing_import_uses_crlf(const TZrChar *content,
+                                                   TZrSize contentLength,
+                                                   TZrSize insertOffset) {
+    if (content == ZR_NULL || insertOffset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (insertOffset >= 1 && content[insertOffset - 1] == '\n') {
+        return insertOffset >= 2 && content[insertOffset - 2] == '\r';
+    }
+    for (TZrSize index = insertOffset; index < contentLength; index++) {
+        if (content[index] == '\n') {
+            return index > 0 && content[index - 1] == '\r';
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* 解析成功才构造 quickfix；标题、插入文本只在此调用期间由 malloc 持有。 */
 static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
                                                        SZrLspContext *context,
@@ -483,6 +513,7 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     TZrChar *title;
     TZrChar *editText;
     TZrSize insertOffset;
+    const TZrChar *lineBreak;
     SZrLspRange editRange;
     SZrLspCodeAction *action;
 
@@ -496,9 +527,11 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         return ZR_TRUE;
     }
 
+    insertOffset = lsp_editor_missing_import_insert_offset(content, contentLength);
+    lineBreak = lsp_editor_missing_import_uses_crlf(content, contentLength, insertOffset) ? "\r\n" : "\n";
     titleLength = strlen("Import ") + strlen(candidate.moduleName) + strlen(" as ") + strlen(candidate.alias);
     editTextLength = strlen("let ") + strlen(candidate.alias) + strlen(" = import(\"") +
-                     strlen(candidate.moduleName) + strlen("\");\n");
+                     strlen(candidate.moduleName) + strlen("\");") + strlen(lineBreak);
     title = (TZrChar *)malloc(titleLength + 1);
     editText = (TZrChar *)malloc(editTextLength + 1);
     if (title == ZR_NULL || editText == ZR_NULL) {
@@ -507,7 +540,12 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         return ZR_FALSE;
     }
     snprintf(title, titleLength + 1, "Import %s as %s", candidate.moduleName, candidate.alias);
-    snprintf(editText, editTextLength + 1, "let %s = import(\"%s\");\n", candidate.alias, candidate.moduleName);
+    snprintf(editText,
+             editTextLength + 1,
+             "let %s = import(\"%s\");%s",
+             candidate.alias,
+             candidate.moduleName,
+             lineBreak);
 
     action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCodeAction));
     if (action == ZR_NULL) {
@@ -523,7 +561,6 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     action->isPreferred = ZR_FALSE;
     ZrCore_Array_Init(state, &action->edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
-    insertOffset = lsp_editor_missing_import_insert_offset(content, contentLength);
     editRange.start = lsp_editor_position_from_offset(content, contentLength, insertOffset);
     editRange.end = editRange.start;
     if (!lsp_editor_append_text_edit(state, &action->edits, editRange, editText, strlen(editText))) {

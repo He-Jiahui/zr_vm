@@ -1765,9 +1765,11 @@ const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
 EMSCRIPTEN_KEEPALIVE
 #endif
 /* 全文格式化结果转成文本编辑数组，并在退出前调用专门的释放函数。 */
-const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) {
+const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen,
+                               int tabSize, int insertSpaces) {
     SZrString *uriStr;
     SZrArray edits;
+    SZrLspFormattingOptions options;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1778,8 +1780,10 @@ const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) 
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to create URI string");
     }
 
+    options.tabSize = tabSize;
+    options.insertSpaces = insertSpaces != 0 ? ZR_TRUE : ZR_FALSE;
     ZrCore_Array_Init(g_wasm_state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    if (ZrLanguageServer_Lsp_GetFormatting(g_wasm_state, (SZrLspContext*)context, uriStr, &edits)) {
+    if (ZrLanguageServer_Lsp_GetFormatting(g_wasm_state, (SZrLspContext*)context, uriStr, &options, &edits)) {
         cJSON *data = serialize_text_edits(g_wasm_state, &edits);
         const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);
         ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
@@ -1800,10 +1804,13 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
                                     int startLine,
                                     int startCharacter,
                                     int endLine,
-                                    int endCharacter) {
+                                    int endCharacter,
+                                    int tabSize,
+                                    int insertSpaces) {
     SZrString *uriStr;
     SZrLspRange range;
     SZrArray edits;
+    SZrLspFormattingOptions options;
 
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1818,12 +1825,15 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
     range.start.character = startCharacter;
     range.end.line = endLine;
     range.end.character = endCharacter;
+    options.tabSize = tabSize;
+    options.insertSpaces = insertSpaces != 0 ? ZR_TRUE : ZR_FALSE;
 
     ZrCore_Array_Init(g_wasm_state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (ZrLanguageServer_Lsp_GetRangeFormatting(g_wasm_state,
                                                 (SZrLspContext*)context,
                                                 uriStr,
                                                 range,
+                                                &options,
                                                 &edits)) {
         cJSON *data = serialize_text_edits(g_wasm_state, &edits);
         const char *jsonStr = ZrLanguageServer_Wasm_SuccessResponse(data);

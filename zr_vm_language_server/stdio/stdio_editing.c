@@ -177,6 +177,35 @@ static cJSON *disable_stale_code_action(const cJSON *params) {
     return result;
 }
 
+/** 缺省与越界 tabSize 都回退到四空格；insertSpaces 缺省为真。 */
+static SZrLspFormattingOptions formatting_options_from_params(const cJSON *params) {
+    SZrLspFormattingOptions options;
+    const cJSON *optionsJson;
+    const cJSON *tabSizeJson;
+    const cJSON *insertSpacesJson;
+    double tabSize;
+
+    options.tabSize = 4;
+    options.insertSpaces = ZR_TRUE;
+    optionsJson = get_object_item(params, ZR_LSP_FIELD_OPTIONS);
+    if (!cJSON_IsObject((cJSON *)optionsJson)) {
+        return options;
+    }
+
+    tabSizeJson = get_object_item(optionsJson, ZR_LSP_FIELD_TAB_SIZE);
+    if (cJSON_IsNumber((cJSON *)tabSizeJson)) {
+        tabSize = tabSizeJson->valuedouble;
+        if (tabSize >= 1.0 && tabSize <= 32.0 && (double)(TZrInt32)tabSize == tabSize) {
+            options.tabSize = (TZrInt32)tabSize;
+        }
+    }
+    insertSpacesJson = get_object_item(optionsJson, ZR_LSP_FIELD_INSERT_SPACES);
+    if (cJSON_IsBool((cJSON *)insertSpacesJson)) {
+        options.insertSpaces = cJSON_IsTrue((cJSON *)insertSpacesJson) ? ZR_TRUE : ZR_FALSE;
+    }
+    return options;
+}
+
 /**
  * @brief 处理 textDocument/formatting，将接口层编辑结果交给统一响应编码路径。
  * @details 请求分发器取得活动语义快照后调用；接口层拥有 edits，序列化完成后统一释放。
@@ -184,6 +213,7 @@ static cJSON *disable_stale_code_action(const cJSON *params) {
  */
 SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
+    SZrLspFormattingOptions options;
     const char *uriText;
     SZrString *uri;
     cJSON *result;
@@ -192,8 +222,9 @@ SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSO
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
+    options = formatting_options_from_params(params);
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetFormatting(server->state, server->context, uri, &edits)) {
+    if (!ZrLanguageServer_Lsp_GetFormatting(server->state, server->context, uri, &options, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
@@ -211,6 +242,7 @@ SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSO
 SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     SZrLspRange range;
+    SZrLspFormattingOptions options;
     const char *uriText;
     SZrString *uri;
     cJSON *result;
@@ -222,8 +254,9 @@ SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, cons
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
+    options = formatting_options_from_params(params);
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &edits)) {
+    if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &options, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
@@ -234,10 +267,29 @@ SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, cons
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** 多区间格式化先按请求行合并；单区间接口会把结束行扩成整行。 */
+typedef struct SZrStdioFormattingLineSpan {
+    TZrInt32 startLine;
+    TZrInt32 endLine;
+} SZrStdioFormattingLineSpan;
+
+static int stdio_formatting_line_span_compare(const void *left, const void *right) {
+    const SZrStdioFormattingLineSpan *leftSpan = (const SZrStdioFormattingLineSpan *)left;
+    const SZrStdioFormattingLineSpan *rightSpan = (const SZrStdioFormattingLineSpan *)right;
+
+    if (leftSpan->startLine != rightSpan->startLine) {
+        return leftSpan->startLine < rightSpan->startLine ? -1 : 1;
+    }
+    if (leftSpan->endLine != rightSpan->endLine) {
+        return leftSpan->endLine < rightSpan->endLine ? -1 : 1;
+    }
+    return 0;
+}
+
 /**
- * @brief 处理多区间格式化，对每个请求区间调用单区间接口并汇总 TextEdit 数组。
- * @details 仅在客户端声明 rangesFormatting 能力时由分发器路由；每轮接口层 edits
- *          在进入下一轮前释放，最终 JSON 数组交由响应路径接管。
+ * @brief 处理多区间格式化，合并相交的整行区间后再各生成一段 TextEdit。
+ * @details 仅在客户端声明 rangesFormatting 能力时由分发器路由。单区间接口会把
+ *          每个请求扩到整行，因此先按起止行合并，保证响应里的编辑互不重叠。
  */
 SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *rangesJson;
@@ -245,6 +297,11 @@ SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, con
     const char *uriText;
     SZrString *uri;
     cJSON *result;
+    SZrLspFormattingOptions options;
+    SZrStdioFormattingLineSpan *spans = ZR_NULL;
+    TZrSize rangeCount;
+    TZrSize spanCount = 0;
+    TZrSize mergedCount = 0;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
@@ -259,23 +316,57 @@ SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, con
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
-    /* 每个区间独立转换位置并释放结果；输出仍是一个协议 TextEdit 数组。
-     * BUG: 相同或重叠的非空输入区间可生成重叠的整行替换编辑；这里不去重，
-     * 客户端收到违反 TextEdit[] 非重叠约束的数组，无法可靠一次性应用。
-     */
+    rangeCount = (TZrSize)cJSON_GetArraySize((cJSON *)rangesJson);
+    if (rangeCount > 0) {
+        spans = (SZrStdioFormattingLineSpan *)calloc(rangeCount, sizeof(*spans));
+        if (spans == ZR_NULL) {
+            cJSON_Delete(result);
+            return stdio_handler_result_from_json(server->context, ZR_NULL);
+        }
+    }
+
     cJSON_ArrayForEach(rangeJson, rangesJson) {
-        SZrArray edits = {0};
         SZrLspRange range;
 
         if (!parse_range_for_uri(server, uri, rangeJson, &range)) {
+            free(spans);
             cJSON_Delete(result);
             return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
         }
+        spans[spanCount].startLine = range.start.line;
+        spans[spanCount].endLine = range.end.line < range.start.line ? range.start.line : range.end.line;
+        spanCount++;
+    }
 
+    if (spanCount > 1) {
+        qsort(spans, spanCount, sizeof(*spans), stdio_formatting_line_span_compare);
+    }
+    for (TZrSize index = 0; index < spanCount; index++) {
+        if (mergedCount == 0 || spans[index].startLine > spans[mergedCount - 1].endLine) {
+            spans[mergedCount++] = spans[index];
+        } else if (spans[index].endLine > spans[mergedCount - 1].endLine) {
+            spans[mergedCount - 1].endLine = spans[index].endLine;
+        }
+    }
+
+    options = formatting_options_from_params(params);
+    for (TZrSize index = 0; index < mergedCount; index++) {
+        SZrArray edits = {0};
+        SZrLspRange range;
+
+        range.start.line = spans[index].startLine;
+        range.start.character = 0;
+        range.end.line = spans[index].endLine;
+        range.end.character = 0;
         ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-        if (ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &edits)) {
-            for (TZrSize index = 0; index < edits.length; index++) {
-                SZrLspTextEdit **editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(&edits, index);
+        if (ZrLanguageServer_Lsp_GetRangeFormatting(server->state,
+                                                    server->context,
+                                                    uri,
+                                                    range,
+                                                    &options,
+                                                    &edits)) {
+            for (TZrSize editIndex = 0; editIndex < edits.length; editIndex++) {
+                SZrLspTextEdit **editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(&edits, editIndex);
                 if (editPtr != ZR_NULL && *editPtr != ZR_NULL) {
                     cJSON_AddItemToArray(result, serialize_text_edit(*editPtr));
                 }
@@ -284,6 +375,7 @@ SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, con
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
     }
 
+    free(spans);
     ZR_UNUSED_PARAMETER(uriText);
     return stdio_handler_result_from_json(server->context, result);
 }
@@ -299,6 +391,7 @@ SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, co
     SZrString *uri;
     SZrLspPosition position;
     SZrLspRange range;
+    SZrLspFormattingOptions options;
     cJSON *result;
 
     chJson = get_object_item(params, ZR_LSP_FIELD_CH);
@@ -313,9 +406,10 @@ SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, co
     range.start = position;
     range.start.character = 0;
     range.end = position;
+    options = formatting_options_from_params(params);
 
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &edits)) {
+    if (!ZrLanguageServer_Lsp_GetRangeFormatting(server->state, server->context, uri, range, &options, &edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(server->state, &edits);
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }

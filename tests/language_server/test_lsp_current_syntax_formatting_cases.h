@@ -28,9 +28,9 @@ static void test_lsp_formatting_does_not_emit_removed_syntax(
             &uri);
     if (context == ZR_NULL ||
         !ZrLanguageServer_Lsp_GetFormatting(
-                state, context, uri, &documentEdits) ||
+                state, context, uri, ZR_NULL, &documentEdits) ||
         !ZrLanguageServer_Lsp_GetRangeFormatting(
-                state, context, uri, range, &rangeEdits)) {
+                state, context, uri, range, ZR_NULL, &rangeEdits)) {
         (*failures)++;
         TEST_FAIL(timer,
                   summary,
@@ -92,7 +92,7 @@ static void test_lsp_formatting_preserves_current_compile_tool_syntax(
             &uri);
     formatted = context != ZR_NULL &&
                         ZrLanguageServer_Lsp_GetFormatting(
-                                state, context, uri, &edits)
+                                state, context, uri, ZR_NULL, &edits)
                         ? first_text_edit_text(&edits)
                         : ZR_NULL;
     if (formatted == ZR_NULL || strcmp(formatted, expected) != 0 ||

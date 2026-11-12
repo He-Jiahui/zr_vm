@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
+#include "interface/lsp_position_codec.h"
 
 /** 语义引用可能跨文件，联动编辑只接受当前文档的范围。 */
 static int linked_editing_location_matches_uri(const SZrLspLocation *location, const char *uriText) {
@@ -138,65 +139,39 @@ static int linked_editing_offset_is_in_code(const char *content,
     return 0;
 }
 
-/** 文本兜底把语义位置投向快照字节索引，以便寻找光标所在 ASCII 词。
- * BUG: get_uri_and_position 返回内部 UTF-16 列，这里按 UTF-8 字节递增且只认 LF；
- * 非 ASCII 前缀后光标落到错误字节，CR-only 第二行也无法正确定位。 */
+/** 文本兜底把内部 UTF-16 位置投到快照字节；无法精确落地的列按未命中处理。 */
 static int linked_editing_offset_from_position(const char *content,
                                                size_t contentLength,
                                                SZrLspPosition position,
                                                size_t *outOffset) {
-    TZrInt32 line = 0;
-    TZrInt32 character = 0;
+    TZrSize offset;
+    SZrLspPosition roundTrip;
 
     if (content == NULL || outOffset == NULL || position.line < 0 || position.character < 0) {
         return 0;
     }
 
-    for (size_t offset = 0; offset < contentLength; offset++) {
-        if (line == position.line && character == position.character) {
-            *outOffset = offset;
-            return 1;
-        }
-        if (content[offset] == '\n') {
-            line++;
-            character = 0;
-        } else {
-            character++;
-        }
+    offset = ZrLanguageServer_LspPositionCodec_Utf16PositionToByteOffset(content,
+                                                                         (TZrSize)contentLength,
+                                                                         position);
+    roundTrip = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                            (TZrSize)contentLength,
+                                                                            offset);
+    if (roundTrip.line != position.line || roundTrip.character != position.character) {
+        return 0;
     }
 
-    if (line == position.line && character == position.character) {
-        *outOffset = contentLength;
-        return 1;
-    }
-
-    return 0;
+    *outOffset = offset;
+    return 1;
 }
 
-/** 把文本匹配偏移构成待发送的 LSP 范围；结果经通用响应编码器处理。
- * BUG: 此处把 UTF-8 字节数当内部 UTF-16 列且只认 LF；非 ASCII 前缀或 CR-only
- * 第二行的范围，再经响应编码会继续错位。 */
+/** 文本匹配偏移回到内部 UTF-16 位置；响应编码再按协商编码投影给客户端。 */
 static SZrLspPosition linked_editing_position_from_offset(const char *content,
                                                           size_t contentLength,
                                                           size_t targetOffset) {
-    SZrLspPosition position;
-    position.line = 0;
-    position.character = 0;
-
-    if (content == NULL) {
-        return position;
-    }
-
-    for (size_t offset = 0; offset < contentLength && offset < targetOffset; offset++) {
-        if (content[offset] == '\n') {
-            position.line++;
-            position.character = 0;
-        } else {
-            position.character++;
-        }
-    }
-
-    return position;
+    return ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                       (TZrSize)contentLength,
+                                                                       (TZrSize)targetOffset);
 }
 
 /** 语义引用不足时扫描当前版本的文本快照，避免因磁盘内容落后于编辑器而错配。

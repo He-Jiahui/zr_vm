@@ -36,8 +36,8 @@ SZrString *lsp_editor_create_string(SZrState *state, const TZrChar *text, TZrSiz
 /** @brief 从已打开文档取得版本句柄；读取内容时还须单独获取 owned snapshot。 */
 SZrFileVersion *lsp_editor_get_file_version(SZrLspContext *context, SZrString *uri);
 /**
- * @brief 将同一份 UTF-8 内容的字节偏移转成编辑器位置，供格式化、折叠与编辑范围使用。
- * @note BUG: 当前实现逐字节计列；非 ASCII 文本后的响应列与 LSP UTF-16 约定不符，需改用位置编解码器并覆盖上述调用链。
+ * @brief 将同一份 UTF-8 内容的字节偏移转成内部 UTF-16 位置，供格式化、折叠与编辑范围使用。
+ * @note 列数与诊断、inlay 共用位置编解码器；CRLF 的 CR 不单独占列。
  */
 SZrLspPosition lsp_editor_position_from_offset(const TZrChar *content,
                                                TZrSize contentLength,

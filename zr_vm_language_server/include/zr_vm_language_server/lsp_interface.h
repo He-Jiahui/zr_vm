@@ -156,6 +156,15 @@ typedef struct SZrLspTextEdit {
     SZrString *newText;
 } SZrLspTextEdit;
 
+/**
+ * @brief 客户端 FormattingOptions 的缩进契约。
+ * @note NULL 选项表示四空格。tabSize 只在 insertSpaces 为真时决定每级空格数，合法范围是 1 到 32。
+ */
+typedef struct SZrLspFormattingOptions {
+    TZrInt32 tabSize;
+    TZrBool insertSpaces;
+} SZrLspFormattingOptions;
+
 /** @brief 与诊断或重构建议关联的一组文本编辑；FreeCodeActions 释放嵌套 edits。 */
 typedef struct SZrLspCodeAction {
     SZrString *title;
@@ -483,6 +492,7 @@ ZR_LANGUAGE_SERVER_API const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
                                                                   SZrLspContext *context,
                                                                   SZrString *uri,
+                                                                  const SZrLspFormattingOptions *options,
                                                                   SZrArray *result);
 
 /** @brief 只为客户端选择的范围提出格式化编辑；结果仍按 FreeTextEdits 释放。 */
@@ -490,6 +500,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState 
                                                                        SZrLspContext *context,
                                                                        SZrString *uri,
                                                                        SZrLspRange range,
+                                                                       const SZrLspFormattingOptions *options,
                                                                        SZrArray *result);
 
 /**
