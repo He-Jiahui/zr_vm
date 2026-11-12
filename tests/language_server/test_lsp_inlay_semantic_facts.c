@@ -1047,6 +1047,7 @@ int main(void) {
     test_inlay_hint_nested_generic_inferred_return_uses_source_parameter_name(state);
     test_completion_does_not_materialize_missing_snapshot_facts(state);
     test_signature_does_not_materialize_missing_snapshot_facts(state);
+    test_inlay_hint_range_end_is_exclusive_for_adjacent_ranges(state);
 
     ZrCore_GlobalState_Free(global);
 

@@ -1,10 +1,15 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "unity.h"
 #include "runtime_support.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/global.h"
+#include "zr_vm_core/stack.h"
+#include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 
 /* 由 VM 的调试 hook 回调写入、Unity 断言读取；一次测试只驱动一个 state。 */
@@ -237,6 +242,141 @@ static void test_getstack_and_getinfo_resolve_nested_frames_and_respect_type_mas
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 只搬迁 VM 栈块的 allocator：扩栈必定换地址，旧块清零后保留到用例结束。
+ * 仍按扩栈前地址读取的代码因此稳定读到 null，而不是碰巧尚未被复用的旧内容。 */
+typedef struct SZrStackMovingAllocator {
+    TZrPtr retired[8];
+    TZrUInt32 retiredCount;
+} SZrStackMovingAllocator;
+
+static TZrPtr stack_moving_allocator(TZrPtr userData,
+                                     TZrPtr pointer,
+                                     TZrSize originalSize,
+                                     TZrSize newSize,
+                                     TZrInt64 flag) {
+    SZrStackMovingAllocator *allocator = (SZrStackMovingAllocator *)userData;
+    TZrPtr movedPointer;
+
+    /* 首次分配、释放以及非栈块沿用测试默认 allocator，只拦截栈的重分配。 */
+    if (flag != ZR_MEMORY_NATIVE_TYPE_STACK || pointer == ZR_NULL || newSize == 0u) {
+        return ZrTests_Runtime_Allocator_Default(ZR_NULL, pointer, originalSize, newSize, flag);
+    }
+    if (allocator->retiredCount >= ZR_ARRAY_COUNT(allocator->retired)) {
+        return ZR_NULL;
+    }
+
+    movedPointer = malloc(newSize);
+    if (movedPointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memcpy(movedPointer, pointer, originalSize < newSize ? originalSize : newSize);
+    memset(pointer, 0, originalSize);
+    allocator->retired[allocator->retiredCount++] = pointer;
+    return movedPointer;
+}
+
+/* 与常规运行时夹具保持相同 registry 初始化，但替换底层 allocator。 */
+static SZrState *create_state_with_stack_moving_allocator(SZrStackMovingAllocator *allocator) {
+    SZrCallbackGlobal callbacks = {0};
+    SZrGlobalState *global = ZrCore_GlobalState_New(stack_moving_allocator, allocator, 12345, &callbacks);
+    SZrState *state;
+
+    if (global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    state = global->mainThreadState;
+    if (state != ZR_NULL) {
+        ZrCore_GlobalState_InitRegistry(state, global);
+    }
+    return state;
+}
+
+/* VM 只认得搬迁后的栈块；保留下来的旧块由用例在 state 释放后归还。 */
+static void destroy_state_with_stack_moving_allocator(SZrState *state, SZrStackMovingAllocator *allocator) {
+    TZrUInt32 index;
+
+    if (state != ZR_NULL) {
+        ZrCore_GlobalState_Free(state->global);
+    }
+    for (index = 0u; index < allocator->retiredCount; index++) {
+        free(allocator->retired[index]);
+    }
+    allocator->retiredCount = 0u;
+}
+
+static void test_getinfo_push_function_rereads_callable_after_stack_relocation(void) {
+    /* PUSH_FUNCTION 在栈满时先扩栈再复制 callable。扩栈会搬迁整段栈，
+     * 复制源必须取自搬迁后的函数槽，否则压入的是旧块里的失效内容。 */
+    SZrStackMovingAllocator allocator;
+    SZrState *state;
+    SZrFunction *function;
+    SZrDebugActivation activation;
+    SZrDebugInfo info;
+    TZrStackValuePointer functionSlot;
+    TZrStackValuePointer slot;
+    TZrStackValuePointer stackBaseBefore;
+    TZrStackValuePointer relocatedTop;
+    TZrMemoryOffset stackTopOffset;
+    const SZrTypeValue *pushedValue;
+    const SZrTypeValue *frameValue;
+    TZrBool gotStack;
+    TZrBool resolvedFunction;
+    TZrBool gotInfo;
+    TZrBool stackMoved;
+    TZrBool pushedOneSlot;
+    TZrBool pushedCallable = ZR_FALSE;
+    TZrBool frameKeepsCallable;
+
+    memset(&allocator, 0, sizeof(allocator));
+    state = create_state_with_stack_moving_allocator(&allocator);
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
+    TEST_ASSERT_TRUE(state->stackTail.valuePointer - state->stackTop.valuePointer >= 1);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    /* 把入口帧改成贴着 stackTail 的调用窗口：函数槽是最后一个逻辑槽，
+     * 栈顶等于 stackTail，下一次压栈必须扩栈。 */
+    functionSlot = state->stackTail.valuePointer - 1;
+    for (slot = state->stackTop.valuePointer; slot < state->stackTail.valuePointer; slot++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+    }
+    ZrCore_Stack_SetRawObjectValue(state, functionSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    state->baseCallInfo.functionBase.valuePointer = functionSlot;
+    state->baseCallInfo.functionTop.valuePointer = state->stackTail.valuePointer;
+    state->stackTop.valuePointer = state->stackTail.valuePointer;
+    stackBaseBefore = state->stackBase.valuePointer;
+    stackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
+
+    memset(&activation, 0, sizeof(activation));
+    memset(&info, 0, sizeof(info));
+    gotStack = ZrCore_Debug_GetStack(state, 0u, &activation);
+    resolvedFunction = (TZrBool)(gotStack && activation.function == function);
+    gotInfo = (TZrBool)(gotStack &&
+                        ZrCore_Debug_GetInfo(state, &activation, ZR_DEBUG_INFO_PUSH_FUNCTION, &info));
+
+    stackMoved = (TZrBool)(state->stackBase.valuePointer != stackBaseBefore);
+    relocatedTop = ZrCore_Stack_LoadOffsetToPointer(state, stackTopOffset);
+    pushedOneSlot = (TZrBool)(state->stackTop.valuePointer == relocatedTop + 1);
+    if (pushedOneSlot) {
+        pushedValue = ZrCore_Stack_GetValueNoProfile(relocatedTop);
+        pushedCallable = (TZrBool)(pushedValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                                   pushedValue->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    }
+    frameValue = ZrCore_Stack_GetValueNoProfile(state->baseCallInfo.functionBase.valuePointer);
+    frameKeepsCallable = (TZrBool)(frameValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                                   frameValue->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    destroy_state_with_stack_moving_allocator(state, &allocator);
+
+    TEST_ASSERT_TRUE_MESSAGE(resolvedFunction, "level 0 must resolve the frame that holds the VM function");
+    TEST_ASSERT_TRUE_MESSAGE(gotInfo, "PUSH_FUNCTION must succeed when the push has to grow the stack");
+    TEST_ASSERT_TRUE_MESSAGE(stackMoved, "the push must have relocated the VM stack");
+    TEST_ASSERT_TRUE_MESSAGE(pushedOneSlot, "PUSH_FUNCTION must occupy exactly one slot above the old top");
+    TEST_ASSERT_TRUE_MESSAGE(pushedCallable, "the pushed value must be the callable from the relocated frame");
+    TEST_ASSERT_TRUE_MESSAGE(frameKeepsCallable, "the relocated function slot must still hold the callable");
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -246,5 +386,6 @@ int main(void) {
     RUN_TEST(test_count_hook_fires_for_each_instruction_period_and_can_be_disabled);
     RUN_TEST(test_line_and_count_hooks_are_independent_and_line_events_are_deduplicated);
     RUN_TEST(test_getstack_and_getinfo_resolve_nested_frames_and_respect_type_mask);
+    RUN_TEST(test_getinfo_push_function_rereads_callable_after_stack_relocation);
     return UNITY_END();
 }
