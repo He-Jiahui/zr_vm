@@ -97,7 +97,7 @@ doc_type: category-index
 | AOT LLVM 文本生成与 lowering | [244 项](coverage/zr_vm_aot_llvm.tsv) | 42 个 C/H 文件独立复核，1228 个调用与证据锚点有效，源码仅改注释且去注释 token 与原版一致；未运行完整构建。最终写入错误漏报、模块字符串未转义已标 BUG；主构建边界和整型溢出契约保留 TODO。 |
 | parser 诊断构建、复制与消息目录 | [78 项](coverage/zr_vm_parser_diagnostics.tsv) | 8 个 C 文件独立复核，195 个证据锚点有效，源码仅新增注释；GCC C11 语法检查通过。94 个描述符与 71 对消息的缺口、测试中固定的 71 项预期均按现行代码标 BUG；另有 2 个 TODO，未运行诊断测试。 |
 | parser 旧语法迁移与非 SSA writer | [112 项](coverage/zr_vm_parser_migration_writer.tsv) | 10 个 C/H 文件独立复核，284 个证据锚点有效，源码仅改注释；GCC/Clang 对 7 个实现文件的语法检查通过。迁移词法边界和三个 writer 关闭失败路径已标 BUG，其他疑点保留 TODO；未运行可执行测试。 |
-| AOT IR 适配、可达性与链接档位 | [258 项](coverage/zr_vm_aot_ir_adapter.tsv) | 28 个 C/H 文件独立复核，529 个本地证据锚点有效，27 个改动文件仅改注释；GCC/Clang 对 15 个实现文件语法检查通过。自引用函数常量预扫描递归与禁止桥接时清零 descriptorOnly 已标 BUG，另保留 2 个 TODO；未运行完整 AOT 测试。 |
+| AOT IR 适配、可达性与链接档位 | [258 项](coverage/zr_vm_aot_ir_adapter.tsv) | 28 个 C/H 文件独立复核，529 个本地证据锚点有效，27 个改动文件仅改注释；GCC/Clang 对 15 个实现文件语法检查通过。自引用函数常量预扫描递归已标 BUG；禁止桥接时清零 descriptorOnly 的缺陷已修复，台账两行改为 commented 并锚定回归断言。另保留 2 个 TODO；未运行完整 AOT 测试。 |
 | AOT C 写入器、帧与调用边界 | [579 项](coverage/zr_vm_aot_c_writer.tsv) | 29 个 C/H 文件独立复核，1378 个本地证据锚点有效，源码仅改注释；GCC 对 16 个实现文件语法检查通过。未转义的选项及 manifest 文本进入生成的 C 字符串/注释已标 BUG，短链 CFG 前驱等疑点保留 TODO；未运行完整 AOT 测试。 |
 | AOT C 标量、值布局与泛型共享 | [557 项](coverage/zr_vm_aot_c_scalar_layout.tsv) | 34 个 C/H 文件独立复核，1357 个证据锚点有效，22 个改动文件仅增注释；GCC/Clang 对 18 个实现文件语法检查通过。用户自定义值类型泛型实参的文本分类仍待核，已标 TODO；未运行完整 AOT 测试。 |
 | core 热更新与迭代器公开接口 | [84 项](coverage/zr_vm_core_hotpatch_iterator_api.tsv) | 9 个头文件独立复核，353 个证据锚点有效，83 个声明/类型/宏及兼容包含块均入账；GCC/Clang C11 语法检查通过。跨 manager 句柄、并发 Resolve、迭代器异常清理等已证实缺陷与受限状态枚举疑点均按契约标注；未运行完整测试。 |

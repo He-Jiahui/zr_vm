@@ -330,6 +330,9 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
                         diagnostic->instructionId = record->instructionId;
                         diagnostic->sourceId = record->sourceId;
                     }
+                    /* 策略拒绝同样是失败输出：丢弃已累计的计数与哈希，但须经
+                     * clear_facts 复位以保持 descriptorOnly 为真；下方禁用
+                     * 解释器回退的出口同此。 */
                     backend_aot_ir_adapter_clear_facts(outFacts);
                     return ZR_FALSE;
                 }
