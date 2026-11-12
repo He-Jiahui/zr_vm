@@ -4,7 +4,8 @@
 #include "path_support.h"
 #include "unity.h"
 
-/* 每个 Unity 用例独占 stdio 状态与临时项目，避免 didClose 的缓存和诊断目标跨用例残留。 */
+/* 每个 Unity 用例独占 stdio 状态与临时项目，避免 didClose/didSave 的缓存和诊断目标跨用例残留。
+ * 无 text 的 didSave 与 didClose 的参数同为 textDocument.uri，两类用例共用 g_closeParams。 */
 static SZrStdioServer *g_server;
 static SZrString *g_mainUri;
 static SZrString *g_peerUri;
@@ -65,6 +66,20 @@ static void assert_main_released(void) {
     collect_uris();
     TEST_ASSERT_FALSE_MESSAGE(has_uri(g_mainUri),
                              "A released document must not remain a workspace diagnostic target");
+}
+
+/* 以内容快照比较 main 的已提交文本，区分磁盘版本与编辑器 overlay。 */
+static void assert_main_content(const char *expected) {
+    SZrFileVersion *fileVersion = get_file_version_for_uri(g_server, g_mainUri);
+    SZrFileVersionContentSnapshot snapshot;
+    TZrBool matches;
+
+    TEST_ASSERT_NOT_NULL(fileVersion);
+    TEST_ASSERT_TRUE(ZrLanguageServer_FileVersionContentSnapshot_Acquire(g_server->state, fileVersion, &snapshot));
+    matches = snapshot.contentLength == strlen(expected) &&
+              memcmp(snapshot.content, expected, strlen(expected)) == 0;
+    ZrLanguageServer_FileVersionContentSnapshot_Free(g_server->state, &snapshot);
+    TEST_ASSERT_TRUE(matches);
 }
 
 /* 各用例共享可写的项目/源文件布局，但 server 与 JSON 请求在用例间重建。 */
@@ -172,12 +187,94 @@ static void test_close_missing_disk_file_releases_project_diagnostic_target(void
     assert_main_released();
 }
 
-/* CMake 为 document_close 建立单独目标，该进程内逐一运行四种 didClose 场景。 */
+/* 无工作区根时，未打开文档的 didSave 与 didClose 走同一门禁：不读盘，也不登记文件版本或诊断目标。 */
+static void test_save_closed_outside_workspace_does_not_reload_disk(void) {
+    TEST_ASSERT_EQUAL_INT(0, handle_did_save(g_server, g_closeParams));
+    assert_main_released();
+}
+
+/* 根已登记时，借 `..` 离开根的未打开 URI 同样被拒绝：文件按该 URI 读得到，但 didSave 不读盘、不登记版本。 */
+static void test_save_closed_dotdot_escape_does_not_reload_disk(void) {
+    char outsidePath[ZR_TESTS_PATH_MAX];
+    char escapeUriText[ZR_TESTS_PATH_MAX * 4];
+    cJSON *params;
+    cJSON *textDocument;
+    SZrString *escapeUri;
+    char *reachableText;
+    size_t reachableLength = 0;
+    int saved;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "stdio_document_close", "outside", "secret", ".zr", outsidePath, sizeof(outsidePath)));
+    write_source(outsidePath, "module secret;\npub fn outsideValue(): int { return 6; }\n");
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspWorkspace_AddFolder(g_server->state, g_server->context, g_rootUri));
+    TEST_ASSERT_TRUE(snprintf(escapeUriText, sizeof(escapeUriText), "%s/../outside/secret.zr",
+                              ZrCore_String_GetNativeString(g_rootUri)) < (int)sizeof(escapeUriText));
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    textDocument = cJSON_AddObjectToObject(params, "textDocument");
+    TEST_ASSERT_NOT_NULL(textDocument);
+    TEST_ASSERT_NOT_NULL(cJSON_AddStringToObject(textDocument, "uri", escapeUriText));
+
+    saved = handle_did_save(g_server, params);
+    escapeUri = server_get_cached_uri(g_server, escapeUriText);
+    /* 先确认夹具有效：若该 URI 本就读不到文件，下面的"未读盘"断言就不说明门禁起了作用。 */
+    reachableText = escapeUri != ZR_NULL ? read_document_text_from_uri(escapeUri, &reachableLength) : NULL;
+    cJSON_Delete(params);
+    remove(outsidePath);
+    free(reachableText);
+    TEST_ASSERT_NOT_NULL(escapeUri);
+    TEST_ASSERT_NOT_NULL_MESSAGE(reachableText, "The escape URI must name a readable file outside the root");
+    TEST_ASSERT_EQUAL_INT(0, saved);
+    TEST_ASSERT_NULL(get_file_version_for_uri(g_server, escapeUri));
+}
+
+/* 根内未打开的文档由 didSave 重新读盘；磁盘内容变化后再次保存取得下一代版本。 */
+static void test_save_closed_inside_workspace_reloads_disk(void) {
+    const char *savedSource = "module main;\npub fn savedValue(): int { return 5; }\n";
+    SZrFileVersion *fileVersion;
+    TZrSize firstVersion;
+
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspWorkspace_AddFolder(g_server->state, g_server->context, g_rootUri));
+    TEST_ASSERT_EQUAL_INT(1, handle_did_save(g_server, g_closeParams));
+    fileVersion = get_file_version_for_uri(g_server, g_mainUri);
+    TEST_ASSERT_NOT_NULL(fileVersion);
+    TEST_ASSERT_FALSE(fileVersion->isOpenDocument);
+    firstVersion = fileVersion->version;
+    assert_main_content(g_diskSource);
+
+    write_source(g_mainPath, savedSource);
+    TEST_ASSERT_EQUAL_INT(1, handle_did_save(g_server, g_closeParams));
+    fileVersion = get_file_version_for_uri(g_server, g_mainUri);
+    TEST_ASSERT_NOT_NULL(fileVersion);
+    TEST_ASSERT_FALSE(fileVersion->isOpenDocument);
+    TEST_ASSERT_EQUAL_UINT(firstVersion + 1, fileVersion->version);
+    assert_main_content(savedSource);
+}
+
+/* 已打开的根外文档收到 didSave 只刷新诊断：保留 overlay 与客户端版本，不以磁盘内容替换。 */
+static void test_save_open_outside_workspace_keeps_overlay(void) {
+    SZrFileVersion *fileVersion;
+
+    open_document(g_mainUri, g_overlaySource, 7);
+    TEST_ASSERT_EQUAL_INT(1, handle_did_save(g_server, g_closeParams));
+    fileVersion = get_file_version_for_uri(g_server, g_mainUri);
+    TEST_ASSERT_NOT_NULL(fileVersion);
+    TEST_ASSERT_TRUE(fileVersion->isOpenDocument);
+    TEST_ASSERT_EQUAL_UINT(7, fileVersion->version);
+    assert_main_content(g_overlaySource);
+}
+
+/* CMake 为 document_close 建立单独目标，该进程内逐一运行四种 didClose 场景和四种 didSave 场景。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_close_outside_workspace_releases_project_diagnostic_target);
     RUN_TEST(test_close_preserves_other_open_project_document);
     RUN_TEST(test_close_inside_workspace_restores_disk_diagnostic_target);
     RUN_TEST(test_close_missing_disk_file_releases_project_diagnostic_target);
+    RUN_TEST(test_save_closed_outside_workspace_does_not_reload_disk);
+    RUN_TEST(test_save_closed_dotdot_escape_does_not_reload_disk);
+    RUN_TEST(test_save_closed_inside_workspace_reloads_disk);
+    RUN_TEST(test_save_open_outside_workspace_keeps_overlay);
     return UNITY_END();
 }

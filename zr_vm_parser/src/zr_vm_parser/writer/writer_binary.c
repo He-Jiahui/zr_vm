@@ -83,15 +83,15 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
     writer_binary_write_native_string_with_length(file, moduleHash);
     fwrite(&importsLength, sizeof(TZrUInt64), 1, file);
     fwrite(&declaresLength, sizeof(TZrUInt64), 1, file);
-
-    if (!ZrParser_Writer_WriteIoFunction(state, file, function, "__entry", options)) {
+    /* fwrite 的结果未逐次检查；缓冲区写满时的刷新失败只置流错误标志，此后若无待写数据 fclose 仍返回 0。 */
+    if (!ZrParser_Writer_WriteIoFunction(state, file, function, "__entry", options) || ferror(file) != 0) {
         fclose(file);
         return ZR_FALSE;
     }
 
-    /* BUG: /dev/full 等缓冲写入目标可在 fclose 才报告错误，此处忽略失败并返回真，
-     * CLI 编译路径因此可能把未落盘的 .zro 视为成功；见编译器调用点及本函数 fopen/fclose。 */
-    fclose(file);
+    if (fclose(file) != 0) {
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }
 

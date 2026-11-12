@@ -135,6 +135,12 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
 void report_error(SZrParserState *ps, const TZrChar *msg);
 
+/** @brief 解析入口在拒绝已出错的状态前调用：首 token 就是带词法错误的 EOS 时（整份源码只剩
+ *        未闭合块注释），把这条错误送入诊断通道。
+ * @note State_Init 预读首 token 时回调与 suppressErrorOutput 尚未配置，这条错误此前只留在
+ *       errorMessage 里。其他首 token 错误和 lexer 初始化失败保持原有的静默返回。 */
+void parser_report_first_token_lex_error(SZrParserState *ps);
+
 TZrBool parser_enter_recursion(SZrParserState *ps);
 void parser_report_nesting_error(SZrParserState *ps);
 
