@@ -32,6 +32,10 @@ typedef struct SZrPropertyMigrationDiagnosticCapture {
     EZrStructuredDiagnosticSeverity severity[PROPERTY_MIGRATION_CAPTURE_LIMIT];
     SZrFileRange location[PROPERTY_MIGRATION_CAPTURE_LIMIT];
     TZrUInt32 relatedCount[PROPERTY_MIGRATION_CAPTURE_LIMIT];
+    TZrBool hasNameRange[PROPERTY_MIGRATION_CAPTURE_LIMIT];
+    SZrFileRange nameRange[PROPERTY_MIGRATION_CAPTURE_LIMIT];
+    TZrBool hasTypeRange[PROPERTY_MIGRATION_CAPTURE_LIMIT];
+    SZrFileRange typeRange[PROPERTY_MIGRATION_CAPTURE_LIMIT];
     TZrUInt32 fixCount[PROPERTY_MIGRATION_CAPTURE_LIMIT];
     SZrFileRange editRange[PROPERTY_MIGRATION_CAPTURE_LIMIT];
     EZrDiagnosticFixApplicability applicability[PROPERTY_MIGRATION_CAPTURE_LIMIT];
@@ -88,6 +92,30 @@ static void property_consumer_capture_migration_diagnostic(
     capture->severity[index] = diagnostic->severity;
     capture->location[index] = diagnostic->location;
     capture->relatedCount[index] = (TZrUInt32)diagnostic->relatedInformation.length;
+    for (TZrSize relatedIndex = 0U;
+         relatedIndex < diagnostic->relatedInformation.length;
+         relatedIndex++) {
+        const SZrStructuredDiagnosticRelatedInformation *related =
+                (const SZrStructuredDiagnosticRelatedInformation *)
+                        ZrCore_Array_Get(
+                                (SZrArray *)&diagnostic->relatedInformation,
+                                relatedIndex);
+        const TZrChar *relatedMessage =
+                related != ZR_NULL && related->message != ZR_NULL
+                        ? ZrCore_String_GetNativeString(related->message)
+                        : ZR_NULL;
+
+        if (relatedMessage == ZR_NULL) {
+            continue;
+        }
+        if (strcmp(relatedMessage, "Legacy property name") == 0) {
+            capture->hasNameRange[index] = ZR_TRUE;
+            capture->nameRange[index] = related->location;
+        } else if (strcmp(relatedMessage, "Legacy property type") == 0) {
+            capture->hasTypeRange[index] = ZR_TRUE;
+            capture->typeRange[index] = related->location;
+        }
+    }
     capture->fixCount[index] = (TZrUInt32)diagnostic->fixes.length;
     if (diagnostic->fixes.length == 1U) {
         const SZrStructuredDiagnosticFix *fix =
@@ -1061,6 +1089,195 @@ static void test_legacy_property_migration_rejects_ambiguous_pairs(void) {
     }
 }
 
+/* 一条 interface 旧签名的迁移期望；source 里的签名统一写成 `<前缀> name: int;`。 */
+typedef struct SZrInterfacePropertyMigrationCase {
+    const TZrChar *source;
+    const TZrChar *declarationStart; /* 旧签名首个 token 起的唯一片段 */
+    const TZrChar *nameAnchor;       /* 以真实属性名结尾的唯一片段 */
+    const TZrChar *name;
+    const TZrChar *replacement;
+} SZrInterfacePropertyMigrationCase;
+
+/* 诊断位置同时带字节偏移和 1-based 行列；三者都按 source 文本独立推算后比对。 */
+static void property_consumer_assert_source_position(
+        const TZrChar *source,
+        TZrSize expectedOffset,
+        SZrFilePosition actual,
+        const TZrChar *message) {
+    TZrInt32 expectedLine = 1;
+    TZrSize lineStart = 0U;
+
+    for (TZrSize index = 0U; index < expectedOffset; index++) {
+        if (source[index] == '\n') {
+            expectedLine++;
+            lineStart = index + 1U;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(expectedOffset, actual.offset, message);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(expectedLine, actual.line, message);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            (TZrInt32)(expectedOffset - lineStart + 1U),
+            actual.column,
+            message);
+}
+
+static void property_consumer_assert_interface_migration_case(
+        const SZrInterfacePropertyMigrationCase *testCase) {
+    const TZrChar *source = testCase->source;
+    const TZrChar *declarationStart = strstr(source, testCase->declarationStart);
+    const TZrChar *nameAnchor = strstr(source, testCase->nameAnchor);
+    TZrSize nameLength = strlen(testCase->name);
+    TZrSize nameStart;
+    TZrSize typeStart;
+    SZrPropertyMigrationDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL_MESSAGE(declarationStart, source);
+    TEST_ASSERT_NOT_NULL_MESSAGE(nameAnchor, source);
+    nameStart = (TZrSize)(nameAnchor - source) +
+                strlen(testCase->nameAnchor) - nameLength;
+    typeStart = nameStart + nameLength + strlen(": ");
+
+    ast = property_consumer_parse_with_migration_capture(
+            source,
+            "property_migration_interface_name.zr",
+            &capture,
+            &parserState);
+    TEST_ASSERT_NOT_NULL_MESSAGE(ast, source);
+    TEST_ASSERT_TRUE_MESSAGE(parserState.hasError, source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1U, capture.count, source);
+
+    TEST_ASSERT_TRUE_MESSAGE(capture.hasNameRange[0], source);
+    property_consumer_assert_source_position(
+            source, nameStart, capture.nameRange[0].start, source);
+    property_consumer_assert_source_position(
+            source, nameStart + nameLength, capture.nameRange[0].end, source);
+    TEST_ASSERT_TRUE_MESSAGE(capture.hasTypeRange[0], source);
+    property_consumer_assert_source_position(
+            source, typeStart, capture.typeRange[0].start, source);
+    property_consumer_assert_source_position(
+            source,
+            typeStart + strlen("int"),
+            capture.typeRange[0].end,
+            source);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1U, capture.fixCount[0], source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE,
+            capture.applicability[0],
+            source);
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+            (TZrSize)(declarationStart - source),
+            capture.editRange[0].start.offset,
+            source);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+            testCase->replacement,
+            capture.editText[0],
+            source);
+    property_consumer_assert_replacement_parses(
+            capture.editText[0],
+            "interface Metric {\n  ",
+            "\n}\n");
+    ZrParser_Ast_Free(g_state, ast);
+    ZrParser_State_Free(&parserState);
+}
+
+/* 属性名是其前面关键字的子串时，名称与类型范围、替换文本都必须落在真实名称上。 */
+static void test_legacy_interface_property_migration_matches_names_on_identifier_boundaries(void) {
+    static const SZrInterfacePropertyMigrationCase cases[] = {
+        {
+            "interface Metric {\n"
+            "  pub get b: int;\n"
+            "}\n",
+            "pub get", "get b", "b",
+            "pub property b: int {\n    get;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pub get ub: int;\n"
+            "}\n",
+            "pub get", "get ub", "ub",
+            "pub property ub: int {\n    get;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pub get pu: int;\n"
+            "}\n",
+            "pub get", "get pu", "pu",
+            "pub property pu: int {\n    get;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pri get set i: int;\n"
+            "}\n",
+            "pri get", "set i", "i",
+            "pri property i: int {\n    get;\n    set;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pro set o: int;\n"
+            "}\n",
+            "pro set", "set o", "o",
+            "pro property o: int {\n    set;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pub get ge: int;\n"
+            "}\n",
+            "pub get", "get ge", "ge",
+            "pub property ge: int {\n    get;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pub set t: int;\n"
+            "}\n",
+            "pub set", "set t", "t",
+            "pub property t: int {\n    set;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  get e: int;\n"
+            "}\n",
+            "get e", "get e", "e",
+            "property e: int {\n    get;\n}"
+        }
+    };
+
+    for (TZrSize caseIndex = 0U;
+         caseIndex < sizeof(cases) / sizeof(cases[0]);
+         caseIndex++) {
+        property_consumer_assert_interface_migration_case(&cases[caseIndex]);
+    }
+}
+
+/* 名称之前的注释不是声明的一部分；其中的同名词不能被当成属性名或类型起点。 */
+static void test_legacy_interface_property_migration_ignores_names_inside_comments(void) {
+    static const SZrInterfacePropertyMigrationCase cases[] = {
+        {
+            "interface Metric {\n"
+            "  pub get /* b */ b: int;\n"
+            "}\n",
+            "pub get", "*/ b", "b",
+            "pub property b: int {\n    get;\n}"
+        },
+        {
+            "interface Metric {\n"
+            "  pub get // b: legacy alias\n"
+            "      b: int;\n"
+            "}\n",
+            "pub get", "      b", "b",
+            "pub property b: int {\n    get;\n}"
+        }
+    };
+
+    for (TZrSize caseIndex = 0U;
+         caseIndex < sizeof(cases) / sizeof(cases[0]);
+         caseIndex++) {
+        property_consumer_assert_interface_migration_case(&cases[caseIndex]);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_property_query_public_shape_is_available);
@@ -1076,5 +1293,7 @@ int main(void) {
     RUN_TEST(test_aot_stripping_preserves_structured_property_dispatch_roots);
     RUN_TEST(test_legacy_property_migrations_publish_exact_structured_edits);
     RUN_TEST(test_legacy_property_migration_rejects_ambiguous_pairs);
+    RUN_TEST(test_legacy_interface_property_migration_matches_names_on_identifier_boundaries);
+    RUN_TEST(test_legacy_interface_property_migration_ignores_names_inside_comments);
     return UNITY_END();
 }

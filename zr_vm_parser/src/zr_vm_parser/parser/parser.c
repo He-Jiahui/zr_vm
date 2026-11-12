@@ -317,18 +317,44 @@ SZrAstNode *parse_script(SZrParserState *ps) {
     return node;
 }
 
+// 源码只剩未闭合块注释时，首 token 就是带词法错误的 EOS；State_Init 把它记入 hasError，但那时
+// 调用方还没有安装回调。只认 Init 留下的同一条消息和有效 span，初始化失败的 lexer 不在此列。
+void parser_report_first_token_lex_error(SZrParserState *ps) {
+    const SZrToken *token = &ps->lexer->t;
+
+    if (ps->lexer->hasSourceEvidenceError || token->token != ZR_TK_EOS || !token->hasLexError ||
+        token->lexErrorMessage == ZR_NULL || ps->errorMessage != token->lexErrorMessage ||
+        !ZrParser_TokenSpan_IsValid(token->span)) {
+        return;
+    }
+    report_error(ps, token->lexErrorMessage);
+}
+
 SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps) {
     SZrAstNode *ast;
+    TZrBool eosLexError;
 
-    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL || ps->hasError ||
-        ps->lexer->hasSourceEvidenceError) {
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (ps->hasError || ps->lexer->hasSourceEvidenceError) {
+        parser_report_first_token_lex_error(ps);
         return ZR_NULL;
     }
 
     // 旧语法禁用时，fatal 标志使整棵可恢复 AST 无效；普通错误仍按历史策略返回节点。
     ast = parse_script(ps);
     parser_report_nesting_error(ps);
-    if (ps->hasNestingError || ps->lexer->hasSourceEvidenceError ||
+    // EOS 上的词法错误（未闭合块注释）没有可恢复的 AST 节点承载，整份脚本按失败处理。
+    // 先于其余失败出口报告：被注释吞掉的语句引出的语法错误（含 fatal）不能盖住真正的原因。
+    eosLexError = !ps->lexer->hasSourceEvidenceError &&
+                  ps->lexer->t.token == ZR_TK_EOS && ps->lexer->t.hasLexError;
+    if (eosLexError) {
+        report_error(ps, ps->lexer->t.lexErrorMessage != ZR_NULL
+                                 ? ps->lexer->t.lexErrorMessage
+                                 : "Lexical error at end of input");
+    }
+    if (eosLexError || ps->hasNestingError || ps->lexer->hasSourceEvidenceError ||
         (ps->hasFatalError && !ps->enableLegacyMigrationParsing) ||
         ZrParser_Ownership_Budget(ps->lexer->ownership)->exceededResource !=
                 ZR_PARSER_COMPTIME_BUDGET_NONE) {

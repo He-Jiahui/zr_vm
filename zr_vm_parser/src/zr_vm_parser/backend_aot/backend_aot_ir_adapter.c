@@ -330,11 +330,10 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
                         diagnostic->instructionId = record->instructionId;
                         diagnostic->sourceId = record->sourceId;
                     }
-                    /* BUG: 含 runtime bridge 且 allowRuntimeBridge=false 时，此清零
-                     * 使 descriptorOnly=false，违反本适配层失败输出契约。现有
-                     * test_ssa_aot_backend_adapters.c 的三指令 lowering 含桥接位点；
-                     * 用该 fixture 调本入口即可观察，解释器禁用分支亦同。 */
-                    (void)memset(outFacts, 0, sizeof(*outFacts));
+                    /* 策略拒绝同样是失败输出：丢弃已累计的计数与哈希，但须经
+                     * clear_facts 复位以保持 descriptorOnly 为真；下方禁用
+                     * 解释器回退的出口同此。 */
+                    backend_aot_ir_adapter_clear_facts(outFacts);
                     return ZR_FALSE;
                 }
                 outFacts->runtimeBridgeCount++;
@@ -349,7 +348,7 @@ TZrBool backend_aot_ir_adapter_facts_from_lowering(
                         diagnostic->instructionId = record->instructionId;
                         diagnostic->sourceId = record->sourceId;
                     }
-                    (void)memset(outFacts, 0, sizeof(*outFacts));
+                    backend_aot_ir_adapter_clear_facts(outFacts);
                     return ZR_FALSE;
                 }
                 outFacts->interpreterFallbackCount++;

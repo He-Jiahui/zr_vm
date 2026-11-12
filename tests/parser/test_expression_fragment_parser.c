@@ -15,11 +15,12 @@
 /* Unity 用例各自持有 VM state；正常路径先清理 parser/compiler 子对象，tearDown 再销毁 state。 */
 static SZrState *g_state;
 
-/* 同时收集结构化错误数和旧回调的首条文本，供两条失败路径断言。 */
+/* 同时收集结构化错误数和旧回调的首条、末条文本，供各条失败路径断言。 */
 typedef struct SExpressionFragmentDiagnosticCapture {
     TZrUInt32 structuredErrorCount;
     TZrUInt32 legacyErrorCount;
     char firstLegacyMessage[192];
+    char lastLegacyMessage[192];
 } SExpressionFragmentDiagnosticCapture;
 
 void setUp(void) {
@@ -63,6 +64,12 @@ static void capture_legacy_error(TZrPtr userData,
     if (capture->legacyErrorCount == 0u && message != ZR_NULL) {
         snprintf(capture->firstLegacyMessage,
                  sizeof(capture->firstLegacyMessage),
+                 "%s",
+                 message);
+    }
+    if (message != ZR_NULL) {
+        snprintf(capture->lastLegacyMessage,
+                 sizeof(capture->lastLegacyMessage),
                  "%s",
                  message);
     }
@@ -136,6 +143,61 @@ static void test_expression_fragment_rejects_trailing_tokens(void) {
     TEST_ASSERT_NOT_NULL(strstr(capture.firstLegacyMessage,
                                 "Unexpected token after expression"));
 
+    ZrParser_State_Free(&parserState);
+}
+
+/* 表达式后的未闭合块注释只在 EOS 上留下词法错误；恰好在末尾闭合的注释仍合法。 */
+static void test_expression_fragment_rejects_trailing_unclosed_block_comment(void) {
+    static const TZrChar *const unclosedSources[] = {
+            "value /* unfinished",
+            "value /*/",
+            "value /* closed */ /* unfinished",
+    };
+    static const TZrChar *const closedSources[] = {
+            "value /* closed */",
+            "value /**/",
+            "/* lead */ value /* tail\n */",
+    };
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression;
+    TZrSize index;
+
+    for (index = 0; index < sizeof(unclosedSources) / sizeof(unclosedSources[0]); index++) {
+        expression = parse_fragment(unclosedSources[index], &capture, &parserState);
+        TEST_ASSERT_NULL(expression);
+        TEST_ASSERT_TRUE(parserState.hasError);
+        TEST_ASSERT_EQUAL_UINT32(1u, capture.legacyErrorCount);
+        TEST_ASSERT_NOT_NULL(strstr(capture.firstLegacyMessage,
+                                    "unfinished block comment"));
+        ZrParser_State_Free(&parserState);
+    }
+
+    for (index = 0; index < sizeof(closedSources) / sizeof(closedSources[0]); index++) {
+        expression = parse_fragment(closedSources[index], &capture, &parserState);
+        TEST_ASSERT_NOT_NULL(expression);
+        TEST_ASSERT_FALSE(parserState.hasError);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expression->type);
+        TEST_ASSERT_EQUAL_UINT32(0u, capture.structuredErrorCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, capture.legacyErrorCount);
+        ZrParser_Ast_Free(g_state, expression);
+        ZrParser_State_Free(&parserState);
+    }
+
+    /* 片段只有未闭合块注释：State_Init 预读时回调尚未安装，入口须把这条错误补报出来。 */
+    expression = parse_fragment("/* unfinished", &capture, &parserState);
+    TEST_ASSERT_NULL(expression);
+    TEST_ASSERT_TRUE(parserState.hasError);
+    TEST_ASSERT_EQUAL_UINT32(1u, capture.legacyErrorCount);
+    TEST_ASSERT_EQUAL_STRING("unfinished block comment", capture.firstLegacyMessage);
+    ZrParser_State_Free(&parserState);
+
+    /* 注释吞掉右操作数：缺操作数的结构化诊断之外，仍要指出未闭合的注释。 */
+    expression = parse_fragment("value + /* unfinished", &capture, &parserState);
+    TEST_ASSERT_NULL(expression);
+    TEST_ASSERT_TRUE(parserState.hasError);
+    TEST_ASSERT_EQUAL_UINT32(1u, capture.structuredErrorCount);
+    TEST_ASSERT_EQUAL_STRING("unfinished block comment", capture.lastLegacyMessage);
     ZrParser_State_Free(&parserState);
 }
 
@@ -518,6 +580,190 @@ static void test_script_releases_destructuring_and_partial_declarations(void) {
     ZrParser_State_Free(&parserState);
 }
 
+/* 有效语句之后的未闭合块注释不能留下前缀 AST；恰好在末尾闭合的注释仍合法。 */
+static void test_script_rejects_unclosed_block_comment_after_statements(void) {
+    static const TZrChar *const unclosedSources[] = {
+            "var a: int = 1; /* unfinished",
+            "var a: int = 1;\n/* unfinished\nvar b: int = 2;\n",
+            "var a: int = 1; /*/",
+    };
+    static const TZrChar *const closedSources[] = {
+            "var a: int = 1; /* closed */",
+            "var a: int = 1; /**/",
+            "var a: int = 1;\n/* closed\n */",
+    };
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+    TZrSize index;
+
+    for (index = 0; index < sizeof(unclosedSources) / sizeof(unclosedSources[0]); index++) {
+        memset(&capture, 0, sizeof(capture));
+        sourceName = ZrCore_String_CreateFromNative(g_state, "unclosed_block_comment.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ZrParser_State_Init(&parserState,
+                            g_state,
+                            unclosedSources[index],
+                            strlen(unclosedSources[index]),
+                            sourceName);
+        parserState.errorCallback = capture_legacy_error;
+        parserState.errorUserData = &capture;
+        parserState.suppressErrorOutput = ZR_TRUE;
+        script = ZrParser_ParseWithState(&parserState);
+
+        TEST_ASSERT_NULL(script);
+        TEST_ASSERT_TRUE(parserState.hasError);
+        TEST_ASSERT_EQUAL_UINT32(1u, capture.legacyErrorCount);
+        TEST_ASSERT_NOT_NULL(strstr(capture.firstLegacyMessage,
+                                    "unfinished block comment"));
+        ZrParser_State_Free(&parserState);
+    }
+
+    for (index = 0; index < sizeof(closedSources) / sizeof(closedSources[0]); index++) {
+        memset(&capture, 0, sizeof(capture));
+        sourceName = ZrCore_String_CreateFromNative(g_state, "closed_block_comment.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ZrParser_State_Init(&parserState,
+                            g_state,
+                            closedSources[index],
+                            strlen(closedSources[index]),
+                            sourceName);
+        parserState.errorCallback = capture_legacy_error;
+        parserState.errorUserData = &capture;
+        parserState.suppressErrorOutput = ZR_TRUE;
+        script = ZrParser_ParseWithState(&parserState);
+
+        TEST_ASSERT_NOT_NULL(script);
+        TEST_ASSERT_FALSE(parserState.hasError);
+        TEST_ASSERT_EQUAL_UINT32(0u, capture.legacyErrorCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
+        TEST_ASSERT_NOT_NULL(script->data.script.statements);
+        TEST_ASSERT_EQUAL_UINT64(1, script->data.script.statements->count);
+        ZrParser_Ast_Free(g_state, script);
+        ZrParser_State_Free(&parserState);
+    }
+}
+
+/* 整份源码只剩未闭合块注释时不能再当成空脚本；首 token 的词法错误由 State_Init 记入 parser state。 */
+static void test_script_rejects_source_that_is_only_an_unclosed_block_comment(void) {
+    static const TZrChar *const unclosedSources[] = {
+            "/* unfinished",
+            "/*",
+            "/*/",
+            "// line\n/* unfinished\nvar a: int = 1;\n",
+    };
+    static const TZrChar *const closedSources[] = {
+            "/* closed */",
+            "/**/",
+            "// line\n/* closed */\n",
+    };
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+    TZrSize index;
+
+    for (index = 0; index < sizeof(unclosedSources) / sizeof(unclosedSources[0]); index++) {
+        memset(&capture, 0, sizeof(capture));
+        sourceName = ZrCore_String_CreateFromNative(g_state, "unclosed_comment_only.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ZrParser_State_Init(&parserState,
+                            g_state,
+                            unclosedSources[index],
+                            strlen(unclosedSources[index]),
+                            sourceName);
+        TEST_ASSERT_TRUE(parserState.hasError);
+        TEST_ASSERT_NOT_NULL(parserState.errorMessage);
+        TEST_ASSERT_EQUAL_STRING("unfinished block comment", parserState.errorMessage);
+        /* 回调只能在 Init 之后安装；入口须把预读时记下的错误补报给它，否则调用方只见到静默失败。 */
+        parserState.errorCallback = capture_legacy_error;
+        parserState.errorUserData = &capture;
+        parserState.suppressErrorOutput = ZR_TRUE;
+        script = ZrParser_ParseWithState(&parserState);
+        TEST_ASSERT_NULL(script);
+        TEST_ASSERT_TRUE(parserState.hasError);
+        TEST_ASSERT_EQUAL_STRING("unfinished block comment", parserState.errorMessage);
+        TEST_ASSERT_EQUAL_UINT32(1u, capture.legacyErrorCount);
+        TEST_ASSERT_EQUAL_STRING("unfinished block comment", capture.firstLegacyMessage);
+        ZrParser_State_Free(&parserState);
+    }
+
+    for (index = 0; index < sizeof(closedSources) / sizeof(closedSources[0]); index++) {
+        sourceName = ZrCore_String_CreateFromNative(g_state, "closed_comment_only.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ZrParser_State_Init(&parserState,
+                            g_state,
+                            closedSources[index],
+                            strlen(closedSources[index]),
+                            sourceName);
+        parserState.suppressErrorOutput = ZR_TRUE;
+        TEST_ASSERT_FALSE(parserState.hasError);
+        script = ZrParser_ParseWithState(&parserState);
+        TEST_ASSERT_NOT_NULL(script);
+        TEST_ASSERT_FALSE(parserState.hasError);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
+        TEST_ASSERT_NOT_NULL(script->data.script.statements);
+        TEST_ASSERT_EQUAL_UINT64(0, script->data.script.statements->count);
+        ZrParser_Ast_Free(g_state, script);
+        ZrParser_State_Free(&parserState);
+    }
+}
+
+/* 未闭合块注释吞掉语句余下部分时，语法错误之外仍须报告该词法错误，且不返回可用脚本。 */
+static void test_script_rejects_unclosed_block_comment_inside_statement(void) {
+    static const TZrChar *const sources[] = {
+            "var a: int = /* unfinished",
+            "var a: int = 1 /* unfinished",
+            "var a: int = 1 + /* unfinished\nvar b: int = 2;\n",
+            "var a: int = (1 /* unfinished",
+            "var a: int = [1, /* unfinished",
+            "fn f(): void { /* unfinished }",
+            "fn f(): void { var a: int = 1; /* unfinished }",
+            "fn f( /* unfinished",
+            "class A { /* unfinished }",
+            "if (true) { /* unfinished }",
+            "var a: int = 1;\nvar b: int = /* unfinished",
+            /* 错误恢复会在 EOS 上继续读 token；带错误的 EOS 不能因此被换成干净的。 */
+            "class A { pub /* unfinished",
+            "var a: int = 1;\nclass A {\n    pub var x: int = 0;\n    pub /* unfinished\n}\n",
+            /* 注释引出的 fatal 语法错误让入口提前失败，未闭合的注释仍须先报告。 */
+            "var e = import /* unfinished",
+    };
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+    TZrSize index;
+
+    for (index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        memset(&capture, 0, sizeof(capture));
+        sourceName = ZrCore_String_CreateFromNative(g_state, "unclosed_inside_statement.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ZrParser_State_Init(&parserState,
+                            g_state,
+                            sources[index],
+                            strlen(sources[index]),
+                            sourceName);
+        parserState.errorCallback = capture_legacy_error;
+        parserState.errorUserData = &capture;
+        parserState.suppressErrorOutput = ZR_TRUE;
+        script = ZrParser_ParseWithState(&parserState);
+
+        if (script != ZR_NULL) {
+            ZrParser_Ast_Free(g_state, script);
+            ZrParser_State_Free(&parserState);
+            TEST_FAIL_MESSAGE(sources[index]);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(parserState.hasError, sources[index]);
+        TEST_ASSERT_TRUE_MESSAGE(capture.legacyErrorCount >= 1u, sources[index]);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("unfinished block comment",
+                                         capture.lastLegacyMessage,
+                                         sources[index]);
+        ZrParser_State_Free(&parserState);
+    }
+}
+
 /* 插值里的注释含括号或引号时仍应保留完整加法表达式。 */
 static void assert_template_comment_preserves_addition(const char *source) {
     SExpressionFragmentDiagnosticCapture capture;
@@ -559,6 +805,19 @@ static void test_template_interpolation_skips_line_comment_delimiters(void) {
     assert_template_comment_preserves_addition("`${1 // }\r\n + 2}`");
 }
 
+/* 插值里的未闭合块注释会吞掉右花括号：按未终止的插值拒绝，不能把注释当成已闭合。 */
+static void test_template_interpolation_rejects_unclosed_block_comment(void) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression = parse_fragment("`${1 + /* }`", &capture, &parserState);
+
+    TEST_ASSERT_NULL(expression);
+    TEST_ASSERT_TRUE(parserState.hasError);
+    TEST_ASSERT_NOT_NULL(strstr(capture.firstLegacyMessage,
+                                "Unterminated template string interpolation"));
+    ZrParser_State_Free(&parserState);
+}
+
 static void test_compiler_state_releases_child_function_name_map(void) {
     SZrCompilerState compilerState;
 
@@ -576,6 +835,7 @@ int main(void) {
     RUN_TEST(test_expression_fragment_parses_the_full_formal_expression);
     RUN_TEST(test_expression_fragment_reports_structured_parser_errors);
     RUN_TEST(test_expression_fragment_rejects_trailing_tokens);
+    RUN_TEST(test_expression_fragment_rejects_trailing_unclosed_block_comment);
     RUN_TEST(test_expression_fragment_preserves_external_canonical_binding_identity);
     RUN_TEST(test_expression_fragment_marks_ordinary_binding_place_unavailable);
     RUN_TEST(test_expression_fragment_preserves_runtime_root_origin);
@@ -585,8 +845,12 @@ int main(void) {
     RUN_TEST(test_script_releases_module_declaration_subtree);
     RUN_TEST(test_script_releases_decorator_lookahead_subtree);
     RUN_TEST(test_script_releases_destructuring_and_partial_declarations);
+    RUN_TEST(test_script_rejects_unclosed_block_comment_after_statements);
+    RUN_TEST(test_script_rejects_source_that_is_only_an_unclosed_block_comment);
+    RUN_TEST(test_script_rejects_unclosed_block_comment_inside_statement);
     RUN_TEST(test_template_interpolation_skips_block_comment_delimiters);
     RUN_TEST(test_template_interpolation_skips_line_comment_delimiters);
+    RUN_TEST(test_template_interpolation_rejects_unclosed_block_comment);
     RUN_TEST(test_compiler_state_releases_child_function_name_map);
     return UNITY_END();
 }
