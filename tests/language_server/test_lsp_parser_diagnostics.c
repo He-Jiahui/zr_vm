@@ -10,9 +10,11 @@
 
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
+#include "zr_vm_parser/parser.h"
 
 typedef struct SZrTestTimer {
     clock_t startTime;
@@ -21,8 +23,7 @@ typedef struct SZrTestTimer {
 
 static int g_failures = 0;
 
-/* Arm only at State_Init's lexer allocation, after document setup allocations.
- * Fail once so later diagnostic allocations can succeed and expose false success. */
+/* 只在 State_Init 分配词法器之后计数，失败一次，让随后的诊断分配仍能成功。 */
 static struct {
     TZrBool armed;
     TZrBool sawLexer;
@@ -73,6 +74,7 @@ static TZrPtr test_allocator(TZrPtr userData,
                              TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
+
     if (newSize == 0) {
         free(pointer);
         return ZR_NULL;
@@ -185,7 +187,7 @@ static TZrBool run_parser_diagnostic_case(SZrState *state,
     return ZR_TRUE;
 }
 
-/* Match all fields on the same diagnostic, and release each query's owned results. */
+/* 同一条诊断的字段必须同时匹配，并释放每次查询持有的结果。 */
 static TZrBool first_token_diagnostics_match(SZrState *state,
                                              SZrLspContext *context,
                                              SZrString *uri,
@@ -228,7 +230,6 @@ static void test_lsp_first_token_resource_failures(SZrState *state) {
     const TZrChar *failure = ZR_NULL;
 
     TEST_START(summary);
-    /* A valid first-token string requires both buffer growth and a new owned string. */
     content[0] = '"';
     memset(content + 1, 'a', sizeof(content) - 4);
     content[sizeof(content) - 3] = '"';
@@ -257,20 +258,17 @@ static void test_lsp_first_token_resource_failures(SZrState *state) {
         SZrFileVersion *fileVersion;
         TZrBool parsed;
 
-        /* Independently confirm that this allocation fails during the first token,
-         * before installing the same one-shot fault at the public LSP parse entry. */
         arm_first_token_fault(ordinal);
         ZrParser_State_Init(&probe, state, content, strlen(content), uri);
         g_firstTokenFault.armed = ZR_FALSE;
         resourceError = probe.hasError && g_firstTokenFault.failures == 1;
-        if (resourceError) {
-            printf("First-token allocation %zu: %s\n", (size_t)ordinal, probe.errorMessage);
-        }
         if (resourceError && probe.lexer != ZR_NULL && probe.lexer->buffer != ZR_NULL &&
             probe.lexer->t.hasLexError && !probe.lexer->hasSourceEvidenceError) {
-            if (strcmp(probe.errorMessage, "Lexer buffer allocation budget exceeded") == 0) {
+            if (probe.errorMessage != ZR_NULL &&
+                strcmp(probe.errorMessage, "Lexer buffer allocation budget exceeded") == 0) {
                 checkedBufferGrowth = ZR_TRUE;
-            } else if (strcmp(probe.errorMessage, "Parser string allocation budget exceeded") == 0) {
+            } else if (probe.errorMessage != ZR_NULL &&
+                       strcmp(probe.errorMessage, "Parser string allocation budget exceeded") == 0) {
                 checkedStringOwnership = ZR_TRUE;
             } else {
                 failure = "unexpected first-token fault classification";
@@ -452,7 +450,6 @@ static void test_lsp_first_token_lex_diagnostic_and_repair(SZrState *state) {
         goto cleanup;
     }
 
-    /* A retained analyzer must not publish diagnostics from the previous text. */
     if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, semanticError, strlen(semanticError), 4) ||
         !ZrLanguageServer_Lsp_GetDiagnostics(state, context, editUri, &diagnostics) ||
         diagnostics.length == 0 || fileVersion->usesFallbackAst || fileVersion->parserDiagnostics.length != 0) {
@@ -482,7 +479,6 @@ cleanup:
     }
 }
 
-/* 首 token 跨行时，诊断范围要覆盖整个 token，并按 CRLF 文本投影成 LSP 行列。 */
 static void test_lsp_first_token_multiline_lex_range(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP First Token Multiline Lex Diagnostic Range";
@@ -522,6 +518,7 @@ static void test_lsp_first_token_multiline_lex_range(SZrState *state) {
         TEST_PASS(timer, summary);
     }
 }
+
 
 static void test_lsp_missing_index_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
@@ -1258,7 +1255,7 @@ int main(void) {
     test_lsp_first_token_user_text_errors(state);
     TEST_DIVIDER();
     test_lsp_first_token_multiline_lex_range(state);
-    TEST_DIVIDER();
+      TEST_DIVIDER();
     test_lsp_missing_index_close_parser_diagnostic(state);
     TEST_DIVIDER();
     test_lsp_missing_member_name_parser_diagnostic(state);
