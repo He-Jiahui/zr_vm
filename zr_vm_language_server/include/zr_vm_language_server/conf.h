@@ -277,6 +277,7 @@
 #define ZR_LSP_FIELD_VARIABLE_NAME "variableName"
 #define ZR_LSP_FIELD_CASE_SENSITIVE_LOOKUP "caseSensitiveLookup"
 #define ZR_LSP_FIELD_TEXT_EDIT "textEdit"
+#define ZR_LSP_FIELD_TEXT_EDITS "textEdits"
 #define ZR_LSP_FIELD_INTER_FILE_DEPENDENCIES "interFileDependencies"
 #define ZR_LSP_FIELD_START_LINE "startLine"
 #define ZR_LSP_FIELD_START_CHARACTER "startCharacter"

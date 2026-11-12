@@ -176,6 +176,200 @@ TZrBool lsp_text_builder_append_char(SZrLspTextBuilder *builder, TZrChar value) 
     return lsp_text_builder_append_range(builder, &value, 1);
 }
 
+/* 未转义的反引号结束整个模板 token。插值里尚未闭合的代码花括号在此补发闭合事件，
+ * 使未写完的 `${` 不会让后续真实代码的括号配对错位。 */
+static TZrBool lsp_editor_scan_end_template(SZrLspEditorScanState *state,
+                                            TZrSize offset,
+                                            TZrLspEditorStructuralCharCallback callback,
+                                            void *userData) {
+    TZrBool ok = ZR_TRUE;
+
+    while (state->interpolationDepth > 0) {
+        TZrSize level = state->interpolationDepth - 1;
+        while (state->interpolationBraceDepth[level] > 0) {
+            state->interpolationBraceDepth[level]--;
+            if (ok && callback != ZR_NULL && !callback('}', offset, userData)) {
+                ok = ZR_FALSE;
+            }
+        }
+        state->interpolationNested[level] = ZR_FALSE;
+        state->interpolationDepth--;
+    }
+    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+    state->escaped = ZR_FALSE;
+    state->templateNested = ZR_FALSE;
+    return ok;
+}
+
+/* 消费一个词法步进。代码态花括号才回调；模板 `${` 重新进入代码，其定界符不回调。 */
+static TZrBool lsp_editor_scan_consume(const TZrChar *content,
+                                       TZrSize endOffset,
+                                       TZrSize *cursor,
+                                       SZrLspEditorScanState *state,
+                                       TZrLspEditorStructuralCharCallback callback,
+                                       void *userData,
+                                       TZrBool *outCodeByte) {
+    TZrSize index;
+    TZrChar current;
+
+    if (content == ZR_NULL || cursor == ZR_NULL || state == ZR_NULL || *cursor >= endOffset) {
+        return ZR_FALSE;
+    }
+
+    index = *cursor;
+    current = content[index];
+    if (outCodeByte != ZR_NULL) {
+        *outCodeByte = state->mode == ZR_LSP_EDITOR_SCAN_CODE ? ZR_TRUE : ZR_FALSE;
+    }
+
+    /* 插值里的代码、字符串和注释仍在同一个模板 token 内，反引号规则先于各自的词法。 */
+    if (state->interpolationDepth > 0 && state->mode != ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING) {
+        TZrBool inQuoted = state->mode == ZR_LSP_EDITOR_SCAN_STRING ||
+                           state->mode == ZR_LSP_EDITOR_SCAN_CHAR;
+        if (current == '`' && !(inQuoted && state->escaped)) {
+            if (outCodeByte != ZR_NULL) {
+                *outCodeByte = ZR_FALSE;
+            }
+            *cursor = index + 1;
+            return lsp_editor_scan_end_template(state, index, callback, userData);
+        }
+        if (!inQuoted && current == '\\' && index + 1 < endOffset && content[index + 1] == '`') {
+            /* 转义反引号在插值代码里打开嵌套模板；注释里的只是被跳过的文本。 */
+            if (outCodeByte != ZR_NULL) {
+                *outCodeByte = ZR_FALSE;
+            }
+            if (state->mode == ZR_LSP_EDITOR_SCAN_CODE) {
+                state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                state->templateNested = ZR_TRUE;
+                state->escaped = ZR_FALSE;
+            }
+            *cursor = index + 2;
+            return ZR_TRUE;
+        }
+    }
+
+    switch (state->mode) {
+        case ZR_LSP_EDITOR_SCAN_CODE:
+            if (current == '/' && index + 1 < endOffset && content[index + 1] == '/') {
+                state->mode = ZR_LSP_EDITOR_SCAN_LINE_COMMENT;
+                *cursor = index + 2;
+                return ZR_TRUE;
+            }
+            if (current == '/' && index + 1 < endOffset && content[index + 1] == '*') {
+                state->mode = ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT;
+                *cursor = index + 2;
+                return ZR_TRUE;
+            }
+            if (current == '"') {
+                state->mode = ZR_LSP_EDITOR_SCAN_STRING;
+                state->escaped = ZR_FALSE;
+            } else if (current == '\'') {
+                state->mode = ZR_LSP_EDITOR_SCAN_CHAR;
+                state->escaped = ZR_FALSE;
+            } else if (current == '`') {
+                state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                state->escaped = ZR_FALSE;
+            } else if (current == '{') {
+                if (state->interpolationDepth > 0) {
+                    state->interpolationBraceDepth[state->interpolationDepth - 1]++;
+                }
+                if (callback != ZR_NULL && !callback(current, index, userData)) {
+                    return ZR_FALSE;
+                }
+            } else if (current == '}') {
+                if (state->interpolationDepth > 0 &&
+                    state->interpolationBraceDepth[state->interpolationDepth - 1] == 0) {
+                    state->interpolationDepth--;
+                    state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                    state->templateNested = state->interpolationNested[state->interpolationDepth];
+                    state->escaped = ZR_FALSE;
+                } else {
+                    if (state->interpolationDepth > 0) {
+                        state->interpolationBraceDepth[state->interpolationDepth - 1]--;
+                    }
+                    if (callback != ZR_NULL && !callback(current, index, userData)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+
+        case ZR_LSP_EDITOR_SCAN_LINE_COMMENT:
+            if (current == '\n') {
+                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                state->escaped = ZR_FALSE;
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+
+        case ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT:
+            if (current == '*' && index + 1 < endOffset && content[index + 1] == '/') {
+                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                state->escaped = ZR_FALSE;
+                *cursor = index + 2;
+                return ZR_TRUE;
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+
+        case ZR_LSP_EDITOR_SCAN_STRING:
+            if (state->escaped) {
+                state->escaped = ZR_FALSE;
+            } else if (current == '\\') {
+                state->escaped = ZR_TRUE;
+            } else if (current == '"' || current == '\n' || current == '\r') {
+                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+
+        case ZR_LSP_EDITOR_SCAN_CHAR:
+            if (state->escaped) {
+                state->escaped = ZR_FALSE;
+            } else if (current == '\\') {
+                state->escaped = ZR_TRUE;
+            } else if (current == '\'' || current == '\n' || current == '\r') {
+                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+
+        case ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING:
+            if (state->escaped) {
+                state->escaped = ZR_FALSE;
+            } else if (current == '\\') {
+                if (state->templateNested && index + 1 < endOffset && content[index + 1] == '`') {
+                    /* 转义反引号关闭插值里的嵌套模板，回到外层插值代码。 */
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                    state->templateNested = ZR_FALSE;
+                    *cursor = index + 2;
+                    return ZR_TRUE;
+                }
+                state->escaped = ZR_TRUE;
+            } else if (current == '`') {
+                *cursor = index + 1;
+                return lsp_editor_scan_end_template(state, index, callback, userData);
+            } else if (current == '$' &&
+                       index + 1 < endOffset &&
+                       content[index + 1] == '{' &&
+                       state->interpolationDepth < ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH) {
+                state->interpolationBraceDepth[state->interpolationDepth] = 0;
+                state->interpolationNested[state->interpolationDepth] = state->templateNested;
+                state->templateNested = ZR_FALSE;
+                state->interpolationDepth++;
+                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                state->escaped = ZR_FALSE;
+                *cursor = index + 2;
+                return ZR_TRUE;
+            }
+            *cursor = index + 1;
+            return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 /* 将花括号作为仅在代码区有效的事件，供缩进和折叠调用者共享。 */
 TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
                                          TZrSize contentLength,
@@ -184,7 +378,7 @@ TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
                                          SZrLspEditorScanState *scanState,
                                          TZrLspEditorStructuralCharCallback callback,
                                          void *userData) {
-    SZrLspEditorScanState localState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+    SZrLspEditorScanState localState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
     SZrLspEditorScanState *state = scanState != ZR_NULL ? scanState : &localState;
 
     if (content == ZR_NULL || startOffset > contentLength) {
@@ -197,77 +391,56 @@ TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
         endOffset = startOffset;
     }
 
-    for (TZrSize index = startOffset; index < endOffset; index++) {
-        TZrChar current = content[index];
+    for (TZrSize index = startOffset; index < endOffset;) {
+        if (!lsp_editor_scan_consume(content,
+                                     endOffset,
+                                     &index,
+                                     state,
+                                     callback,
+                                     userData,
+                                     ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
 
-        switch (state->mode) {
-            case ZR_LSP_EDITOR_SCAN_CODE:
-                if (current == '/' && index + 1 < endOffset && content[index + 1] == '/') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_LINE_COMMENT;
-                    index++;
-                } else if (current == '/' && index + 1 < endOffset && content[index + 1] == '*') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT;
-                    index++;
-                } else if (current == '"') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_STRING;
-                    state->escaped = ZR_FALSE;
-                } else if (current == '\'') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CHAR;
-                    state->escaped = ZR_FALSE;
-                } else if (current == '`') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
-                    state->escaped = ZR_FALSE;
-                } else if ((current == '{' || current == '}') && callback != ZR_NULL) {
-                    if (!callback(current, index, userData)) {
-                        return ZR_FALSE;
-                    }
-                }
-                break;
+    return ZR_TRUE;
+}
 
-            case ZR_LSP_EDITOR_SCAN_LINE_COMMENT:
-                if (current == '\n') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
-                    state->escaped = ZR_FALSE;
-                }
-                break;
+/* 与结构扫描共用词法步进，只把仍处于代码态的字节交给调用方。 */
+TZrBool lsp_editor_visit_code_bytes(const TZrChar *content,
+                                    TZrSize contentLength,
+                                    TZrSize startOffset,
+                                    TZrSize endOffset,
+                                    SZrLspEditorScanState *scanState,
+                                    TZrLspEditorCodeByteCallback callback,
+                                    void *userData) {
+    SZrLspEditorScanState localState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
+    SZrLspEditorScanState *state = scanState != ZR_NULL ? scanState : &localState;
 
-            case ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT:
-                if (current == '*' && index + 1 < endOffset && content[index + 1] == '/') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
-                    state->escaped = ZR_FALSE;
-                    index++;
-                }
-                break;
+    if (content == ZR_NULL || startOffset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (endOffset > contentLength) {
+        endOffset = contentLength;
+    }
+    if (endOffset < startOffset) {
+        endOffset = startOffset;
+    }
 
-            case ZR_LSP_EDITOR_SCAN_STRING:
-                if (state->escaped) {
-                    state->escaped = ZR_FALSE;
-                } else if (current == '\\') {
-                    state->escaped = ZR_TRUE;
-                } else if (current == '"' || current == '\n' || current == '\r') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
-                }
-                break;
-
-            case ZR_LSP_EDITOR_SCAN_CHAR:
-                if (state->escaped) {
-                    state->escaped = ZR_FALSE;
-                } else if (current == '\\') {
-                    state->escaped = ZR_TRUE;
-                } else if (current == '\'' || current == '\n' || current == '\r') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
-                }
-                break;
-
-            case ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING:
-                if (state->escaped) {
-                    state->escaped = ZR_FALSE;
-                } else if (current == '\\') {
-                    state->escaped = ZR_TRUE;
-                } else if (current == '`') {
-                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
-                }
-                break;
+    for (TZrSize index = startOffset; index < endOffset;) {
+        TZrSize at = index;
+        TZrBool codeByte = ZR_FALSE;
+        if (!lsp_editor_scan_consume(content,
+                                     endOffset,
+                                     &index,
+                                     state,
+                                     ZR_NULL,
+                                     ZR_NULL,
+                                     &codeByte)) {
+            return ZR_FALSE;
+        }
+        if (codeByte && callback != ZR_NULL && !callback(at, userData)) {
+            return ZR_FALSE;
         }
     }
 
@@ -278,7 +451,7 @@ TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
 TZrBool lsp_editor_offset_is_code(const TZrChar *content,
                                   TZrSize contentLength,
                                   TZrSize offset) {
-    SZrLspEditorScanState scanState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
 
     if (content == ZR_NULL || offset > contentLength) {
         return ZR_FALSE;
@@ -399,8 +572,8 @@ static TZrInt32 lsp_editor_indent_before_offset(const TZrChar *content,
     SZrLspIndentScanData data;
 
     if (scanState != ZR_NULL) {
+        memset(scanState, 0, sizeof(*scanState));
         scanState->mode = ZR_LSP_EDITOR_SCAN_CODE;
-        scanState->escaped = ZR_FALSE;
     }
     if (content == ZR_NULL) {
         return indent;
@@ -484,12 +657,20 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
             TZrSize scanStart = trimStart;
             SZrLspIndentScanData data;
 
-            /* 闭合块须先降低该行缩进，再让剩余结构字符更新后续行的状态。 */
+            /* 闭合块须先降低该行缩进，再让剩余结构字符更新后续行的状态。
+             * 插值结束的 `}` 不是代码块，必须留给扫描器切回模板，不能提前吞掉。 */
             if (scanState.mode == ZR_LSP_EDITOR_SCAN_CODE && content[trimStart] == '}') {
-                if (indent > 0) {
-                    indent--;
+                TZrBool closesInterpolation = scanState.interpolationDepth > 0 &&
+                                              scanState.interpolationBraceDepth[scanState.interpolationDepth - 1] == 0;
+                if (!closesInterpolation) {
+                    if (indent > 0) {
+                        indent--;
+                    }
+                    if (scanState.interpolationDepth > 0) {
+                        scanState.interpolationBraceDepth[scanState.interpolationDepth - 1]--;
+                    }
+                    scanStart++;
                 }
-                scanStart++;
             }
 
             if (!lsp_text_builder_append_indent(&builder, indent, options) ||
@@ -516,7 +697,10 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
             free(builder.data);
             return ZR_NULL;
         }
-        if (newlineLength > 0 && scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+          if (newlineLength > 0 &&
+              (scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT ||
+               scanState.mode == ZR_LSP_EDITOR_SCAN_STRING ||
+               scanState.mode == ZR_LSP_EDITOR_SCAN_CHAR)) {
             scanState.mode = ZR_LSP_EDITOR_SCAN_CODE;
             scanState.escaped = ZR_FALSE;
         }
@@ -729,57 +913,111 @@ static TZrBool lsp_editor_is_word_char(TZrChar value) {
            value == '_';
 }
 
-/* 祖父层试图筛掉与整行相同的选择范围，避免给客户端重复层级。 */
-/* BUG: 仅任一端向外扩展就被接受；`fn main() {\n}\n` 的 main 选择会把从行中 `{` 开始的块放在整行 parent 上方，grandParent 不包含 parent。 */
-static TZrBool lsp_editor_range_extends(SZrLspRange outer, SZrLspRange inner) {
-    if (outer.start.line < inner.start.line || outer.end.line > inner.end.line) {
+/* 选择范围的祖先必须包含后代；相等范围不另开一层。比较使用与响应相同的列坐标。 */
+static int lsp_editor_compare_position(SZrLspPosition left, SZrLspPosition right) {
+    if (left.line != right.line) {
+        return left.line < right.line ? -1 : 1;
+    }
+    if (left.character != right.character) {
+        return left.character < right.character ? -1 : 1;
+    }
+    return 0;
+}
+
+static TZrBool lsp_editor_range_contains(SZrLspRange outer, SZrLspRange inner) {
+    return lsp_editor_compare_position(outer.start, inner.start) <= 0 &&
+           lsp_editor_compare_position(outer.end, inner.end) >= 0;
+}
+
+static TZrBool lsp_editor_range_strictly_contains(SZrLspRange outer, SZrLspRange inner) {
+    return lsp_editor_range_contains(outer, inner) &&
+           (lsp_editor_compare_position(outer.start, inner.start) != 0 ||
+            lsp_editor_compare_position(outer.end, inner.end) != 0);
+}
+
+/* 选择范围的块候选只接受代码态花括号。超出深度的开括号与对应闭括号成对丢弃。 */
+typedef struct SZrLspSelectionBlockScan {
+    TZrSize stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
+    TZrSize stackLength;
+    TZrSize discarded;
+    TZrSize offset;
+    TZrSize lineStart;
+    TZrSize lineEnd;
+    TZrSize bestStart;
+    TZrSize bestEnd;
+    TZrBool found;
+} SZrLspSelectionBlockScan;
+
+static TZrBool lsp_editor_selection_block_callback(TZrChar value, TZrSize braceOffset, void *userData) {
+    SZrLspSelectionBlockScan *data = (SZrLspSelectionBlockScan *)userData;
+
+    if (data == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (value == '{') {
+        if (data->stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
+            data->stack[data->stackLength++] = braceOffset;
+        } else {
+            data->discarded++;
+        }
         return ZR_TRUE;
     }
-    if (outer.start.line == inner.start.line && outer.start.character < inner.start.character) {
+    if (value != '}') {
         return ZR_TRUE;
     }
-    return outer.end.line == inner.end.line && outer.end.character > inner.end.character;
+    if (data->discarded > 0) {
+        data->discarded--;
+        return ZR_TRUE;
+    }
+    if (data->stackLength == 0) {
+        return ZR_TRUE;
+    }
+
+    {
+        TZrSize openOffset = data->stack[--data->stackLength];
+        TZrBool containsOffset = openOffset <= data->offset && data->offset <= braceOffset;
+        TZrBool opensOnLine = openOffset >= data->lineStart &&
+                              openOffset <= data->lineEnd &&
+                              braceOffset >= data->offset;
+        if ((containsOffset || opensOnLine) && (!data->found || openOffset > data->bestStart)) {
+            data->bestStart = openOffset;
+            data->bestEnd = braceOffset + 1;
+            data->found = ZR_TRUE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 /* 为选择范围找最近的花括号块，调用结果会成为整行范围的上层候选。 */
-/* BUG: 此处直接扫描原始字节；字符串或注释里的“{”会与后续真实“}”配对，使光标得到不存在的块选择范围。见同文件的结构字符扫描器。 */
 static TZrBool lsp_editor_find_selection_block_range(const TZrChar *content,
                                                      TZrSize contentLength,
                                                      TZrSize offset,
                                                      TZrSize lineStart,
                                                      TZrSize lineEnd,
                                                      SZrLspRange *outRange) {
-    TZrSize stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
-    TZrSize stackLength = 0;
-    TZrSize bestStart = 0;
-    TZrSize bestEnd = 0;
-    TZrBool found = ZR_FALSE;
+    SZrLspEditorScanState scanState = ZR_LSP_EDITOR_SCAN_STATE_CODE_INIT;
+    SZrLspSelectionBlockScan data;
 
     if (content == ZR_NULL || outRange == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (TZrSize index = 0; index < contentLength; index++) {
-        TZrChar current = content[index];
-        if (current == '{' && stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
-            stack[stackLength++] = index;
-        } else if (current == '}' && stackLength > 0) {
-            TZrSize openOffset = stack[--stackLength];
-            TZrBool containsOffset = openOffset <= offset && offset <= index;
-            TZrBool opensOnLine = openOffset >= lineStart && openOffset <= lineEnd && index >= offset;
-            if ((containsOffset || opensOnLine) && (!found || openOffset > bestStart)) {
-                bestStart = openOffset;
-                bestEnd = index + 1;
-                found = ZR_TRUE;
-            }
-        }
-    }
-
-    if (!found) {
+    memset(&data, 0, sizeof(data));
+    data.offset = offset;
+    data.lineStart = lineStart;
+    data.lineEnd = lineEnd;
+    if (!lsp_editor_scan_structural_chars(content,
+                                          contentLength,
+                                          0,
+                                          contentLength,
+                                          &scanState,
+                                          lsp_editor_selection_block_callback,
+                                          &data) ||
+        !data.found) {
         return ZR_FALSE;
     }
 
-    *outRange = lsp_editor_range_from_offsets(content, contentLength, bestStart, bestEnd);
+    *outRange = lsp_editor_range_from_offsets(content, contentLength, data.bestStart, data.bestEnd);
     return ZR_TRUE;
 }
 
@@ -836,18 +1074,13 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
             wordEnd++;
         }
 
-        /* BUG: 光标在行首缩进内时，词范围仍在缩进里，但父范围起点被推进到正文；返回的 parent 不包含 child。 */
-        while (lineStart < lineEnd &&
-               (snapshot.content[lineStart] == ' ' || snapshot.content[lineStart] == '\t')) {
-            lineStart++;
-        }
-
         selection = (SZrLspSelectionRange *)ZrCore_Memory_RawMalloc(state->global,
                                                                     sizeof(SZrLspSelectionRange));
         if (selection == ZR_NULL) {
             ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
+        /* 行层保留行首空白，使落在缩进里的词层仍被父范围包含。 */
         selection->range = lsp_editor_range_from_offsets(snapshot.content,
                                                          snapshot.contentLength,
                                                          wordStart,
@@ -856,18 +1089,25 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
                                                                snapshot.contentLength,
                                                                lineStart,
                                                                lineEnd);
-        selection->hasParent = selection->parentRange.start.line != selection->range.start.line ||
-                               selection->parentRange.start.character < selection->range.start.character ||
-                               selection->parentRange.end.character > selection->range.end.character;
+        selection->hasParent = lsp_editor_range_strictly_contains(selection->parentRange, selection->range);
         hasBlockRange = lsp_editor_find_selection_block_range(snapshot.content,
                                                               snapshot.contentLength,
                                                               offset,
                                                               blockSearchLineStart,
                                                               blockSearchLineEnd,
                                                               &blockRange);
+        /* 声明头所在行的块从行中的 `{` 开始；把块层起点扩到行首，
+         * 保留“词、行、块”三层，同时让块层包含行层。 */
+        if (hasBlockRange &&
+            !lsp_editor_range_contains(blockRange, selection->parentRange) &&
+            lsp_editor_compare_position(blockRange.start, selection->parentRange.start) >= 0 &&
+            lsp_editor_compare_position(blockRange.start, selection->parentRange.end) <= 0 &&
+            lsp_editor_compare_position(blockRange.end, selection->parentRange.end) > 0) {
+            blockRange.start = selection->parentRange.start;
+        }
         selection->hasGrandParent = selection->hasParent &&
                                     hasBlockRange &&
-                                    lsp_editor_range_extends(blockRange, selection->parentRange);
+                                    lsp_editor_range_strictly_contains(blockRange, selection->parentRange);
         selection->grandParentRange = selection->hasGrandParent ? blockRange : selection->parentRange;
         ZrCore_Array_Push(state, result, &selection);
     }

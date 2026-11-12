@@ -135,13 +135,17 @@ typedef struct SZrLspProjectModuleSummary {
     SZrLspRange range;
 } SZrLspProjectModuleSummary;
 
-/** @brief 文档内联提示；生成时以请求范围筛选，返回数组由 FreeInlayHints 释放。 */
+/** @brief 文档内联提示；生成时以请求范围筛选，返回数组由 FreeInlayHints 释放。
+ * textEdits 仅在单独接受后仍是合法源码时填充：类型的每个组成部分都能按展示拼写写回，
+ * 形参名只给最后一个位置实参。其余提示只有标签。
+ * 不能推断出精确类型的声明不生成提示，也不生成编辑。 */
 typedef struct SZrLspInlayHint {
     SZrLspPosition position;
     SZrString *label;
     TZrInt32 kind;
     TZrBool paddingLeft;
     TZrBool paddingRight;
+    SZrArray textEdits;               // SZrLspTextEdit*，可为空
 } SZrLspInlayHint;
 
 /** @brief 当前文档内同一语义目标的局部高亮位置。 */
