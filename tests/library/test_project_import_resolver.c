@@ -1056,6 +1056,87 @@ static void test_project_dependency_parser_handles_manifest_cycles(void) {
     destroy_test_project(state, project);
 }
 
+/* `.` 与 `..` 整段拼到 source 根后会折叠到根外，模块键、import 和文件定位都必须拒绝；点分名不受影响。 */
+static void test_project_import_resolver_rejects_dot_and_parent_segments_in_module_keys(void) {
+    SZrState *state = ZR_NULL;
+    SZrLibrary_Project *project = create_test_project(&state);
+    TZrChar resolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar error[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("foo/../../secret", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("foo/./bar", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("foo/..", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("foo\\..\\bar", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("..", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_NormalizeModuleKey("./foo.zr", resolved, sizeof(resolved)));
+
+    TEST_ASSERT_TRUE(ZrLibrary_Project_NormalizeModuleKey("foo.bar", resolved, sizeof(resolved)));
+    TEST_ASSERT_EQUAL_STRING("foo.bar", resolved);
+    TEST_ASSERT_TRUE(ZrLibrary_Project_NormalizeModuleKey("foo/.hidden/bar..baz.zr", resolved, sizeof(resolved)));
+    TEST_ASSERT_EQUAL_STRING("foo/.hidden/bar..baz", resolved);
+
+    assert_import_rejected(project, "feature/app/main", "foo/../../secret");
+    assert_import_rejected(project, "feature/app/main", "foo/./bar");
+    assert_import_rejected(project, "feature/app/main", "foo\\..\\..\\secret");
+    TEST_ASSERT_FALSE(ZrLibrary_Project_ResolveSourcePath(project, "foo/../../secret", resolved, sizeof(resolved)));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_ResolveBinaryPath(project, "foo/../../secret", resolved, sizeof(resolved)));
+
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_DeriveCurrentModuleKey(project,
+                                                              ZR_NULL,
+                                                              "feature/../secret",
+                                                              resolved,
+                                                              sizeof(resolved),
+                                                              error,
+                                                              sizeof(error)));
+    TEST_ASSERT_NOT_EQUAL('\0', error[0]);
+
+    destroy_test_project(state, project);
+}
+
+/* 无项目时源文件名只是磁盘路径写法，`./mod.zr` 这类脚本目标折叠后仍能得到不含点段的键。 */
+static void test_project_import_resolver_folds_path_segments_for_projectless_source_names(void) {
+    static const TZrChar *const sourceNames[] = {"./mod.zr", ".\\mod.zr", "sub/../mod.zr", "../work/mod.zr",
+                                                 "../../work/./mod.zr"};
+    static const TZrChar *const expectedKeys[] = {"mod", "mod", "mod", "work/mod", "work/mod"};
+    TZrChar resolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar error[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    for (TZrSize index = 0; index < sizeof(sourceNames) / sizeof(sourceNames[0]); index++) {
+        memset(resolved, 0, sizeof(resolved));
+        memset(error, 0, sizeof(error));
+        TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_DeriveCurrentModuleKey(ZR_NULL,
+                                                                         sourceNames[index],
+                                                                         ZR_NULL,
+                                                                         resolved,
+                                                                         sizeof(resolved),
+                                                                         error,
+                                                                         sizeof(error)),
+                                 sourceNames[index]);
+        TEST_ASSERT_EQUAL_STRING(expectedKeys[index], resolved);
+    }
+
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_DeriveCurrentModuleKey(ZR_NULL,
+                                                              "sub/..",
+                                                              ZR_NULL,
+                                                              resolved,
+                                                              sizeof(resolved),
+                                                              error,
+                                                              sizeof(error)));
+    TEST_ASSERT_NOT_EQUAL('\0', error[0]);
+
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_DeriveCurrentModuleKey(ZR_NULL,
+                                                              "./zr/system/custom.zr",
+                                                              ZR_NULL,
+                                                              resolved,
+                                                              sizeof(resolved),
+                                                              error,
+                                                              sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "reserved official module root"));
+}
+
 /* BUG: 顶层 CMake 只创建此可执行目标而未 add_test，普通 CTest 不运行这些断言。 */
 int main(void) {
     UNITY_BEGIN();
@@ -1070,6 +1151,8 @@ int main(void) {
     RUN_TEST(test_project_references_accept_zrm_assembly_container);
     RUN_TEST(test_project_dependency_manifest_validation_rejects_invalid_declarations);
     RUN_TEST(test_project_dependency_parser_handles_manifest_cycles);
+    RUN_TEST(test_project_import_resolver_rejects_dot_and_parent_segments_in_module_keys);
+    RUN_TEST(test_project_import_resolver_folds_path_segments_for_projectless_source_names);
 
     return UNITY_END();
 }

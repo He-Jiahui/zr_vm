@@ -669,6 +669,10 @@ TZrBool ZrParser_SemanticDaAst_VisitCfgRoots(
             root = node;
         } else if (node->type == ZR_AST_LAMBDA_EXPRESSION) {
             root = node->data.lambdaExpression.block;
+        } else if (node->type == ZR_AST_CLASS_METHOD) {
+            root = node->data.classMethod.body;
+        } else if (node->type == ZR_AST_STRUCT_METHOD) {
+            root = node->data.structMethod.body;
         }
         if (root != ZR_NULL && !visitor(root, userData)) {
             return ZR_FALSE;

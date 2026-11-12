@@ -219,11 +219,20 @@ static void test_from_text_rejects_mismatch_and_invalid_lexical_input(void) {
     static const TZrChar mismatched[] = "(value";
     static const TZrChar unterminated[] = "\"unterminated";
     static const TZrChar trailingInvalid[] = "value \"unterminated";
+    static const TZrChar unclosedComment[] = "/* unterminated";
+    static const TZrChar trailingUnclosedComment[] = "value /* unterminated";
+    static const TZrChar halfClosedComment[] = "value /*/";
 
     assert_rejected_without_output(mismatched, sizeof(mismatched) - 1U);
     assert_rejected_without_output(unterminated, sizeof(unterminated) - 1U);
     assert_rejected_without_output(trailingInvalid,
                                    sizeof(trailingInvalid) - 1U);
+    assert_rejected_without_output(unclosedComment,
+                                   sizeof(unclosedComment) - 1U);
+    assert_rejected_without_output(trailingUnclosedComment,
+                                   sizeof(trailingUnclosedComment) - 1U);
+    assert_rejected_without_output(halfClosedComment,
+                                   sizeof(halfClosedComment) - 1U);
 }
 
 /* A failed append is atomic: existing trees and committed usage remain unchanged. */

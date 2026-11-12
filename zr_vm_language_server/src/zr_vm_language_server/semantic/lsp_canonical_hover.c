@@ -281,6 +281,36 @@ static void canonical_hover_append_documentation_fact(
     }
 }
 
+/* 已驻留的类型排不出来，不等于推断失败。表达式悬停对这个缺口写 unknown。
+ * 没有 canonical 节点时才保留 cannot infer exact type。诊断 2020 不在这里产生。 */
+static const TZrChar *canonical_hover_unavailable_type_text(
+        const SZrSemanticContext *semanticContext,
+        TZrTypeId typeId) {
+    if (typeId != ZR_SEMANTIC_ID_INVALID &&
+        ZrParser_CanonicalType_Find(semanticContext, typeId) != ZR_NULL) {
+        return "unknown";
+    }
+    return "cannot infer exact type";
+}
+
+/* 只接受完整写入的一行。截断的类型文本会被当成另一种类型，因此视为排版失败。 */
+static TZrBool canonical_hover_write_detail(
+        TZrChar *content,
+        TZrSize contentSize,
+        const TZrChar *format,
+        const TZrChar *kindText,
+        const TZrChar *name,
+        const TZrChar *detail) {
+    int written;
+
+    if (content == ZR_NULL || contentSize == 0U || format == ZR_NULL ||
+        kindText == ZR_NULL || name == ZR_NULL || detail == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    written = snprintf(content, contentSize, format, kindText, name, detail);
+    return written >= 0 && (TZrSize)written < contentSize;
+}
+
 /* 查询入口传入同一快照的 canonical 身份；只在旧符号表 ID 一致时合并源侧附加事实。 */
 TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
         SZrState *state,
@@ -292,11 +322,10 @@ TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
         SZrAstNode *documentAst,
         SZrSymbol *sourceSymbol,
         SZrLspHover **result) {
-    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+    TZrChar typeBuffer[ZR_LSP_HOVER_BUFFER_LENGTH];
     TZrChar content[ZR_LSP_HOVER_BUFFER_LENGTH];
     const TZrChar *name;
     const TZrChar *signature;
-    const TZrChar *typeText;
     const TZrChar *kindText;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
@@ -312,6 +341,7 @@ TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
         return ZR_FALSE;
     }
     kindText = canonical_hover_kind_text(symbol->kind, symbol->declarationNode);
+    typeBuffer[0] = '\0';
     signature = canonical_hover_string_text(symbol->signatureDisplay);
     if (signature != ZR_NULL && signature[0] != '\0') {
         snprintf(content,
@@ -320,24 +350,27 @@ TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
                  kindText,
                  name,
                  signature);
-    } else if (ZrParser_CanonicalType_Format(
+    } else if (!ZrParser_CanonicalType_Format(
                        semanticContext,
                        symbol->typeId,
                        typeBuffer,
-                       sizeof(typeBuffer))) {
-        typeText = typeBuffer;
+                       sizeof(typeBuffer)) ||
+               typeBuffer[0] == '\0' ||
+               !canonical_hover_write_detail(
+                       content,
+                       sizeof(content),
+                       "**%s**: %s\n\nResolved Type: %s",
+                       kindText,
+                       name,
+                       typeBuffer)) {
+        /* 排版失败或整行写不下。有类型节点时写 unknown，没有类型身份时才写 cannot infer。 */
         snprintf(content,
                  sizeof(content),
-                 "**%s**: %s\n\nResolved Type: %s",
+                 "**%s**: %s\n\nType: %s",
                  kindText,
                  name,
-                 typeText);
-    } else {
-        snprintf(content,
-                 sizeof(content),
-                 "**%s**: %s\n\nType: cannot infer exact type",
-                 kindText,
-                 name);
+                 canonical_hover_unavailable_type_text(
+                         semanticContext, symbol->typeId));
     }
 
     if (!canonical_hover_create(

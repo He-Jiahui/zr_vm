@@ -63,6 +63,20 @@
     )
     zr_vm_link_parser_core(zr_vm_union_test)
 
+    # union switch 覆盖校验的 bindings 所有权回归；直接调用校验入口，私有头目录由公共测试设置提供。
+    zr_vm_add_unity_test_target(
+            zr_vm_union_switch_binding_lifetime_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_union_switch_binding_lifetime.c
+    )
+    target_include_directories(zr_vm_union_switch_binding_lifetime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_union_switch_binding_lifetime_test)
+    add_test(NAME union_switch_binding_lifetime
+            COMMAND $<TARGET_FILE:zr_vm_union_switch_binding_lifetime_test>)
+    set_tests_properties(union_switch_binding_lifetime PROPERTIES TIMEOUT 30)
+
     zr_vm_add_unity_test_target(
             zr_vm_instruction_execution_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_instruction_execution.c
