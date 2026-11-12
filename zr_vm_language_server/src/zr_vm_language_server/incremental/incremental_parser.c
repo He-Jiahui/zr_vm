@@ -121,7 +121,8 @@ static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
         "invalid hex escape sequence",
         "unfinished string",
         "unfinished template string",
-        "unfinished character literal"
+        "unfinished character literal",
+        "unfinished block comment"
     };
 
     if (token == ZR_NULL || !token->hasLexError || token->lexErrorMessage == ZR_NULL) {
