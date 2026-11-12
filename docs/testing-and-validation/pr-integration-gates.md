@@ -10,6 +10,8 @@ implementation_files:
 plan_sources:
   - user: 2026-11-13 review GitHub PRs and merge eligible changes
 tests:
+  - zr_vm_language_server_extension/test/dapSessionBreakpoints.test.js
+  - zr_vm_language_server_extension/test/nativeAssets.test.js
   - tests/language_server/test_incremental_parser.c
   - zr_vm_rust_binding/rust/zr_vm_rust_binding/tests/native_registration.rs
   - tests/language_server/test_lsp_parser_diagnostics.c
@@ -81,3 +83,8 @@ Primitive type names are not protocol or nominal prototype constraints.
 Native fixture modules set an explicit version of 1.0.0 so compile-time import
 metadata and runtime callable metadata agree. The generic registration test
 checks generic inference and execution independently of omitted-version defaults.
+
+Extension fixtures follow host path semantics. Breakpoint replay preserves
+case-sensitive POSIX matching and Windows case folding. Asset-layout candidates
+are compared as absolute host filesystem paths; a Windows bundle target controls
+asset names and bundle directories independently of the build host's path syntax.

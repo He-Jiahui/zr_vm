@@ -258,11 +258,11 @@ test('createArtifactLayout exposes a single relative bundle layout for native an
     assert.equal(layout.native.bundledRelativeDir.replace(/\\/g, '/'), 'server/native/win32-x64');
     assert.equal(layout.wasm.bundledRelativeDir.replace(/\\/g, '/'), 'out/web');
     assert.deepEqual(layout.native.buildOutputCandidates.slice(0, 2), [
-        path.join(nativeBuildDir, 'bin', 'Release'),
-        path.join(nativeBuildDir, 'bin'),
+        path.resolve(nativeBuildDir, 'bin', 'Release'),
+        path.resolve(nativeBuildDir, 'bin'),
     ]);
     assert.deepEqual(layout.wasm.sourceCandidates.slice(0, 2), [
-        path.join(wasmBuildDir, 'wasm'),
-        wasmBuildDir,
+        path.resolve(wasmBuildDir, 'wasm'),
+        path.resolve(wasmBuildDir),
     ]);
 });
