@@ -109,6 +109,7 @@ v1 明确不覆盖：
 ### Scaffold and open
 
 - `Project_Scaffold` 生成 `{name}.zrp`、`src/main.zr` 和 `bin/`
+- `{root}/src`、`{root}/bin`、`{root}/src/main.zr`、`{root}/{name}.zrp` 中任一条放不进 `ZR_LIBRARY_MAX_PATH_LENGTH`（即 `ZR_VM_PATH_LENGTH_MAX`）字节的路径缓冲区时，`Project_Scaffold` 返回 `IO_ERROR`（`scaffold path is too long`），并且不创建任何目录或文件
 - 默认项目约定保持与 fixture 体系一致：
   - `source = "src"`
   - `binary = "bin"`
@@ -342,6 +343,7 @@ declares exactly one shared/static link-kind marker.
 `tests/rust_binding/test_rust_binding_api.c` 当前覆盖：
 
 - scaffold / open / compile / run roundtrip
+- scaffold 拒绝放不进路径缓冲区的入口源文件路径、项目文件路径和项目名，且不创建目录
 - manifest/artifact 查询
 - scalar value kind / ownership metadata
 - owned array / object accessor

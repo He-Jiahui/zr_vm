@@ -208,6 +208,7 @@ tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_decorator_fallback_ast_cases.h
   - tests/language_server/test_lsp_native_construct_receiver_fact_cases.h
   - tests/language_server/test_lsp_property_contract_cases.h
   - tests/language_server/test_lsp_property_incremental_cases.h
@@ -411,6 +412,7 @@ extern function 的 signature help 之前还有两个独立缺口：
 - goto definition 会默认跳到被修饰的 class / method / field / property / function 声明。
 - hover 会展示 decorator 名称、类别以及目标声明，例如 `Target: class SingletonClass`。
 - 若 decorator 未来具备额外注册元信息，可以继续叠加到 hover 上，但“被修饰声明”仍然是主定义目标。
+- 语法错误让增量解析保留上一棵 AST（`usesFallbackAst`）期间，decorator definition / hover 两个专用入口直接返回 false，不把旧树上的目标或文案投影到当前文本；文本恢复合法并重新解析后按新声明继续导航。回归见 `tests/language_server/test_lsp_decorator_fallback_ast_cases.h`。
 
 这轮实现里还修了一个更底层的 parser 缺陷：顶层 `#decorator# class Foo {}` 之前会在 statement lookahead 时吃掉 decorator，导致 AST 上类声明没有保留 decorators。`parser_statements.c` 现在会在 decorator lookahead 前后保存并恢复 parser cursor，因此：
 
