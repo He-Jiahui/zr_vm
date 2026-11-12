@@ -11,6 +11,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_parser/writer.h"
 #endif
 
@@ -492,10 +493,109 @@ static void test_aot_fused_iterator_false_branch_uses_verifier_step(void) {
 #endif
 }
 
+#if defined(ZR_PLATFORM_UNIX)
+/* 融合指令把 move-next 结果写进帧槽；残留 JUMP_IF 不得再读之前写入同一槽的标量局部。 */
+static void assert_fused_iterator_write_clears_scalar_local(EZrInstructionCode fusedOpcode,
+                                                            TZrBool boolConstant,
+                                                            const char *moduleName) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TZrInstruction instructions[5];
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    TZrChar libraryName[128];
+    char *generatedText;
+    char *jumpIfStart;
+    char *jumpIfEnd;
+
+    TEST_ASSERT_NOT_NULL(state);
+    /* r1 先被常量写成标量局部，再被融合指令覆盖。目标是 1 + 1 + 2 = 4。 */
+    instructions[0] = create_operand2_jump(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1u, 0);
+    instructions[1] = create_iterator_instruction(fusedOpcode, 1u, 0u, 1u);
+    instructions[2] = create_operand2_jump(ZR_INSTRUCTION_ENUM(JUMP_IF), 1u, 1);
+    instructions[3] = create_iterator_instruction(ZR_INSTRUCTION_ENUM(ITER_CURRENT), 2u, 0u, 0u);
+    instructions[4] = create_return_instruction(1u, 2u);
+    function = create_function_from_instructions(state, instructions, 5u, 3u);
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    function->constantValueLength = 1u;
+    if (boolConstant) {
+        ZrCore_Value_InitAsBool(state, &function->constantValueList[0], ZR_FALSE);
+    } else {
+        ZrCore_Value_InitAsInt(state, &function->constantValueList[0], 0);
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    options.sourceHash = moduleName;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = moduleName;
+    options.requireExecutableLowering = ZR_TRUE;
+    snprintf(libraryName, sizeof(libraryName), "lib%s", moduleName);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       moduleName,
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "lib",
+                                                       libraryName,
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 1, 0, &zr_aot_branch_taken)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedText,
+                                "        if (zr_aot_branch_taken) {\n"
+                                "            goto zr_aot_fn_0_ins_4;\n"));
+    jumpIfStart = strstr(generatedText, "zr_aot_fn_0_ins_2:\n");
+    TEST_ASSERT_NOT_NULL(jumpIfStart);
+    jumpIfEnd = strstr(jumpIfStart, "zr_aot_fn_0_ins_3:\n");
+    TEST_ASSERT_NOT_NULL(jumpIfEnd);
+    *jumpIfEnd = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(jumpIfStart, "zr_aot_generic_jump_if"));
+    TEST_ASSERT_NOT_NULL(strstr(jumpIfStart,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, 1, &zr_aot_truthy)"));
+    TEST_ASSERT_NULL(strstr(jumpIfStart, "_scalar_local"));
+    TEST_ASSERT_NULL(strstr(jumpIfStart, "zr_aot_b1"));
+    TEST_ASSERT_NULL(strstr(jumpIfStart, "zr_aot_s1"));
+    free(generatedText);
+    compile_shared_library_or_fail(generatedCPath, sharedLibraryPath);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+#endif
+
+static void test_aot_fused_iterator_result_write_invalidates_scalar_local(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");
+#else
+    assert_fused_iterator_write_clears_scalar_local(ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE),
+                                                    ZR_TRUE,
+                                                    "aot_fused_typed_iterator_stale_bool");
+    assert_fused_iterator_write_clears_scalar_local(ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE),
+                                                    ZR_FALSE,
+                                                    "aot_fused_typed_iterator_stale_int");
+    assert_fused_iterator_write_clears_scalar_local(ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE),
+                                                    ZR_TRUE,
+                                                    "aot_fused_dynamic_iterator_stale_bool");
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering);
     RUN_TEST(test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge);
     RUN_TEST(test_aot_fused_iterator_false_branch_uses_verifier_step);
+    RUN_TEST(test_aot_fused_iterator_result_write_invalidates_scalar_local);
     return UNITY_END();
 }
