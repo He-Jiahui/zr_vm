@@ -1673,7 +1673,8 @@ TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
     return appended || result->length > 0;
 }
 
-/* 高亮复用引用收集，只保留 queryUri 对应文档并分别标出声明与引用。 */
+/* 引用收集器为每个命中单独 RawMalloc 一个 SZrLspLocation，Array_Free 只归还指针缓冲区；
+ * 仅供本次请求投影的临时位置数组须先逐项释放外壳。URI 由 VM 管理，不在此回收。 */
 static void free_collected_locations(SZrState *state, SZrArray *locations) {
     if (state == ZR_NULL || locations == ZR_NULL) {
         return;
@@ -1687,6 +1688,7 @@ static void free_collected_locations(SZrState *state, SZrArray *locations) {
     ZrCore_Array_Free(state, locations);
 }
 
+/* 高亮复用引用收集，只保留 queryUri 对应文档并分别标出声明与引用。 */
 TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
     SZrState *state,
     SZrLspContext *context,
