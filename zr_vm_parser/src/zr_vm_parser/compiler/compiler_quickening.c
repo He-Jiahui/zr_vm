@@ -8547,6 +8547,13 @@ static TZrBool compiler_quickening_try_fuse_materialized_stack_load_const_signed
         return ZR_FALSE;
     }
 
+    /* operand0[2] overlaps the already encoded constant index in operand1[1].
+     * Fuse only when both the constant slot and index survive that shared byte;
+     * otherwise retain GET_STACK plus ADD_SIGNED_LOAD_CONST unchanged. */
+    if (instruction->instruction.operand.operand0[2] != materializedConstantSlot) {
+        return ZR_FALSE;
+    }
+
     instruction->instruction.operationCode = (TZrUInt16)fusedOpcode;
     instruction->instruction.operand.operand0[0] = (TZrUInt8)sourceSlot;
     instruction->instruction.operand.operand0[1] = (TZrUInt8)materializedStackSlot;
