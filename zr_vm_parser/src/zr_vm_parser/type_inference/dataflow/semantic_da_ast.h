@@ -33,7 +33,7 @@ EZrSemanticDaAstMatch ZrParser_SemanticDaAst_Match(
         const SZrAstNode *subtree,
         const SZrAstNode *factNode);
 
-/* Visits script/function roots, a standalone block root, and actual lambda bodies. */
+/* Visits script/function roots, a standalone block root, lambda bodies, and class/struct method bodies. */
 TZrBool ZrParser_SemanticDaAst_VisitCfgRoots(
         const SZrSemanticDaAstIndex *index,
         TZrSemanticDaAstRootVisitor visitor,
