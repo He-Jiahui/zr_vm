@@ -11,6 +11,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_language_server/incremental_parser.h"
 #include "zr_vm_language_server/reference_tracker.h"
 #include "zr_vm_language_server/symbol_table.h"
 #include "zr_vm_language_server/lsp_interface.h"
@@ -27,6 +28,10 @@ typedef struct SLspArrayOomAllocator {
     TZrSize watchedRecordFrees;
     TZrBool captureNextArrayAllocation;
     TZrBool failNextMatchingAllocation;
+    /* URI map buckets use the non-throwing HashSet_Rehash path, so one rejection is observable. */
+    TZrPtr failBucketResizePointer;
+    TZrSize failedBucketAllocationCount;
+    TZrBool failNextBucketAllocation;
 } SLspArrayOomAllocator;
 
 static int g_failures;
@@ -41,12 +46,22 @@ static TZrBool lsp_array_oom_is_watched_record(const SLspArrayOomAllocator *allo
 }
 
 /* Failure injection is attached to the real VM allocator used by production arrays. */
+/* Failure injection is attached to the real VM allocator used by production arrays and URI maps. */
 static TZrPtr lsp_array_oom_allocator(TZrPtr userData,
                                       TZrPtr pointer,
                                       TZrSize originalSize,
                                       TZrSize newSize,
                                       TZrInt64 flag) {
     SLspArrayOomAllocator *allocator = (SLspArrayOomAllocator *)userData;
+
+    if (newSize != 0U && flag == ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET &&
+        ((pointer == ZR_NULL && allocator->failNextBucketAllocation) ||
+         (pointer != ZR_NULL && pointer == allocator->failBucketResizePointer))) {
+        allocator->failNextBucketAllocation = ZR_FALSE;
+        allocator->failBucketResizePointer = ZR_NULL;
+        allocator->failedBucketAllocationCount++;
+        return ZR_NULL;
+    }
 
     if (newSize != 0U && flag == ZR_MEMORY_NATIVE_TYPE_ARRAY) {
         TZrBool shouldFail = ZR_FALSE;
@@ -134,6 +149,7 @@ typedef struct SLspArrayOomConstructCall {
     SZrReferenceTracker *tracker;
     SZrString *name;
     SZrSymbol *symbol;
+    SZrIncrementalParser *parser;
 } SLspArrayOomConstructCall;
 
 static void call_cache_new(SZrState *state, TZrPtr userData) {
@@ -181,6 +197,42 @@ typedef struct SLspArrayOomUpdateDocumentCall {
 typedef struct SLspArrayOomSnapshotCount {
     TZrSize count;
 } SLspArrayOomSnapshotCount;
+
+typedef struct SLspArrayOomParserUpdateCall {
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    const char *content;
+    TZrSize version;
+    TZrBool openDocument;
+    TZrBool result;
+} SLspArrayOomParserUpdateCall;
+
+static void call_incremental_parser_new(SZrState *state, TZrPtr userData) {
+    SLspArrayOomConstructCall *call = (SLspArrayOomConstructCall *)userData;
+    call->parser = ZrLanguageServer_IncrementalParser_New(state);
+}
+
+/* Disk and open-document updates share the first-seen URI insert that has to fail closed. */
+static void call_parser_update(SZrState *state, TZrPtr userData) {
+    SLspArrayOomParserUpdateCall *call = (SLspArrayOomParserUpdateCall *)userData;
+    call->result = call->openDocument
+                           ? ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+                                     state, call->parser, call->uri, call->content,
+                                     strlen(call->content), call->version)
+                           : ZrLanguageServer_IncrementalParser_UpdateFile(
+                                     state, call->parser, call->uri, call->content,
+                                     strlen(call->content), call->version);
+}
+
+static SZrString *parser_oom_uri(SZrState *state, TZrSize index) {
+    char uriText[64];
+    int uriLength = snprintf(uriText, sizeof(uriText), "file:///uri-map-oom-%u.zr", (unsigned)index);
+
+    if (uriLength <= 0 || (TZrSize)uriLength >= sizeof(uriText)) {
+        return ZR_NULL;
+    }
+    return ZrCore_String_Create(state, (TZrNativeString)uriText, (TZrSize)uriLength);
+}
 
 static void call_add_reference(SZrState *state, TZrPtr userData) {
     SLspArrayOomAddReferenceCall *call = (SLspArrayOomAddReferenceCall *)userData;
@@ -545,7 +597,100 @@ static void test_external_highlights_release_collected_locations(SZrState *state
         ZrLanguageServer_LspContext_Free(state, context);
     }
 }
+/* A parser whose URI map never got buckets could not store any document, so none is handed out. */
+static void test_incremental_parser_new_fails_when_uri_map_cannot_initialize(SZrState *state) {
+    SLspArrayOomAllocator *allocator =
+            (SLspArrayOomAllocator *)state->global->upstreamAllocationArguments;
+    TZrSize before = live_bytes(state->global);
+    SLspArrayOomConstructCall call = {0};
 
+    allocator->failNextBucketAllocation = ZR_TRUE;
+    check(ZrCore_Exception_TryRun(state, call_incremental_parser_new, &call) == ZR_THREAD_STATUS_FINE &&
+                  call.parser == ZR_NULL,
+          "incremental parser construction returns null when its URI map buckets cannot initialize");
+    check(allocator->failedBucketAllocationCount == 1U,
+          "incremental parser construction reaches the injected URI map bucket failure");
+    check(live_bytes(state->global) == before,
+          "incremental parser construction releases its native object after URI map initialization fails");
+    if (call.parser != ZR_NULL) {
+        ZrLanguageServer_IncrementalParser_Free(state, call.parser);
+    }
+}
+
+/* The first URI past the load threshold must grow the buckets; a rejected growth may not publish it. */
+static void test_parser_insert_fails_when_uri_map_cannot_grow(SZrState *state, TZrBool openDocument) {
+    const char *content = "var value: int = 1;";
+    SLspArrayOomAllocator *allocator =
+            (SLspArrayOomAllocator *)state->global->upstreamAllocationArguments;
+    SZrIncrementalParser *parser = ZrLanguageServer_IncrementalParser_New(state);
+    SZrString *storedUri = ZR_NULL;
+    SZrString *rejectedUri;
+    SLspArrayOomParserUpdateCall call;
+
+    check(parser != ZR_NULL, "URI map growth OOM test creates a real incremental parser");
+    if (parser == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0U;
+         parser->uriToFileMap.elementCount < parser->uriToFileMap.resizeThreshold && index < 64U;
+         index++) {
+        SZrString *uri = parser_oom_uri(state, index);
+
+        if (uri == ZR_NULL ||
+            !ZrLanguageServer_IncrementalParser_UpdateFile(
+                    state, parser, uri, content, strlen(content), 1U)) {
+            break;
+        }
+        storedUri = uri;
+    }
+    rejectedUri = parser_oom_uri(state, 64U);
+    check(storedUri != ZR_NULL && rejectedUri != ZR_NULL &&
+                  parser->uriToFileMap.elementCount == parser->uriToFileMap.resizeThreshold,
+          "document inserts fill the URI map to its growth threshold without injected failure");
+    if (storedUri == ZR_NULL || rejectedUri == ZR_NULL ||
+        parser->uriToFileMap.elementCount != parser->uriToFileMap.resizeThreshold) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        return;
+    }
+
+    call = (SLspArrayOomParserUpdateCall){parser, rejectedUri, content, 1U, openDocument, ZR_TRUE};
+    {
+        TZrSize before = live_bytes(state->global);
+        TZrSize elementCount = parser->uriToFileMap.elementCount;
+        TZrSize capacity = parser->uriToFileMap.capacity;
+
+        allocator->failBucketResizePointer = parser->uriToFileMap.buckets;
+        check(ZrCore_Exception_TryRun(state, call_parser_update, &call) == ZR_THREAD_STATUS_FINE &&
+                      !call.result,
+              "first-seen document update reports the injected URI map growth failure");
+        check(allocator->failedBucketAllocationCount == 1U,
+              "first-seen document update reaches the injected URI map bucket failure");
+        check(live_bytes(state->global) == before,
+              "rejected document insert releases the file version it could not store");
+        check(ZrLanguageServer_IncrementalParser_GetFileVersion(parser, rejectedUri) == ZR_NULL &&
+                      parser->uriToFileMap.elementCount == elementCount &&
+                      parser->uriToFileMap.capacity == capacity,
+              "rejected document insert leaves no untracked document in the URI map");
+        check(ZrLanguageServer_IncrementalParser_GetFileVersion(parser, storedUri) != ZR_NULL,
+              "rejected document insert keeps previously stored documents reachable");
+    }
+
+    {
+        SZrFileVersion *fileVersion;
+
+        call.result = ZR_FALSE;
+        check(ZrCore_Exception_TryRun(state, call_parser_update, &call) == ZR_THREAD_STATUS_FINE &&
+                      call.result,
+              "the same document insert succeeds once the URI map can grow");
+        fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, rejectedUri);
+        check(fileVersion != ZR_NULL && fileVersion->version == 1U &&
+                      fileVersion->isOpenDocument == openDocument,
+              "retried document insert publishes the version with its update provenance");
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+}
 int main(int argc, char **argv) {
     SLspArrayOomAllocator allocator = {0};
     SZrCallbackGlobal callbacks = {0};
@@ -589,6 +734,12 @@ int main(int argc, char **argv) {
         test_snapshot_capture_preserves_cache_when_growth_fails(state);
     } else if (strcmp(argv[1], "external_highlight_locations") == 0) {
         test_external_highlights_release_collected_locations(state);
+    } else if (strcmp(argv[1], "incremental_parser_new") == 0) {
+        test_incremental_parser_new_fails_when_uri_map_cannot_initialize(state);
+    } else if (strcmp(argv[1], "incremental_parser_insert") == 0) {
+        test_parser_insert_fails_when_uri_map_cannot_grow(state, ZR_FALSE);
+    } else if (strcmp(argv[1], "incremental_parser_insert_open") == 0) {
+        test_parser_insert_fails_when_uri_map_cannot_grow(state, ZR_TRUE);
     } else {
         fprintf(stderr, "unknown LSP array OOM case: %s\n", argv[1]);
         ZrCore_GlobalState_Free(global);
