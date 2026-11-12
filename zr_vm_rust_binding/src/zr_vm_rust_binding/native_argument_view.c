@@ -151,7 +151,6 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadBoo
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
-/* BUG: UINT64 大于 INT64_MAX 时直接转为 TZrInt64，Rust read_int 可得到负值而非拒绝或无损值。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadInt(
         const ZrRustBindingNativeArgumentView *argument,
         TZrInt64 *outIntValue) {
@@ -168,6 +167,10 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeArgumentView_ReadInt
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
         *outIntValue = value->value.nativeObject.nativeInt64;
     } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        if (value->value.nativeObject.nativeUInt64 > (TZrUInt64)INT64_MAX) {
+            return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                             "uint64 value does not fit in int64");
+        }
         *outIntValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
     } else {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
