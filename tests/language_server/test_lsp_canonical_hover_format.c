@@ -1,6 +1,7 @@
 //
 // 符号悬停在 canonical 类型存在但无法排版时的文案。
 // 排版失败不得写成诊断 2020 的 “cannot infer exact type”；没有类型身份时仍保留该句。
+// 另沿公开悬停入口确认：文本超过旧 128 字节类型缓冲的声明类型照常显示完整的 Resolved Type。
 //
 
 #include <stdio.h>
@@ -41,6 +42,11 @@ static void check(TZrBool condition, const TZrChar *message) {
         printf("FAIL: %s\n", message);
         g_failures++;
     }
+}
+
+/* 长度取自文本本身，避免手写字节数把结尾的 NUL 也算进字符串。 */
+static SZrString *test_string(SZrState *state, const TZrChar *text) {
+    return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
 static const TZrChar *string_text(SZrString *value) {
@@ -144,7 +150,28 @@ static void expect_hover(SZrState *state,
     free_hover(state, hover);
 }
 
-/* 继续包裹数组，直到当前悬停缓冲也无法排版。返回的类型节点必须仍然存在。 */
+/* 驻留一个没有模块前缀、名字恰为 length 字节的具名类型；名字留在 nameBuffer 里供比对。 */
+static TZrTypeId intern_named_type(SZrState *state,
+                                   SZrSemanticContext *context,
+                                   TZrSize length,
+                                   TZrChar *nameBuffer,
+                                   TZrSize nameBufferSize) {
+    SZrString *name;
+
+    if (length == 0U || length >= nameBufferSize) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    memset(nameBuffer, 'w', length);
+    nameBuffer[length] = '\0';
+    name = ZrCore_String_Create(state, nameBuffer, length);
+    if (name == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    return ZrParser_CanonicalType_InternNominal(context, ZR_NULL, name, 0U);
+}
+
+/* 继续包裹数组，直到悬停缓冲也排不出来。先撞到的是排版的嵌套深度上限，
+ * 那时文本还远短于缓冲。返回的类型节点必须仍然存在。 */
 static TZrTypeId nest_until_format_fails(SZrSemanticContext *context,
                                          TZrTypeId elementTypeId) {
     TZrChar probe[ZR_LSP_HOVER_BUFFER_LENGTH];
@@ -174,9 +201,9 @@ static TZrTypeId nest_until_format_fails(SZrSemanticContext *context,
 static void test_symbol_hover_format_failure_wording(SZrState *state) {
     SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     SZrSemanticContext *semanticContext = ZrParser_SemanticContext_New(state);
-    SZrString *uri = ZrCore_String_Create(state, "file:///hover-format.zr", 24);
-    SZrString *name = ZrCore_String_Create(state, "value", 5);
-    SZrString *signature = ZrCore_String_Create(state, "fn(int) -> int", 14);
+    SZrString *uri = test_string(state, "file:///hover-format.zr");
+    SZrString *name = test_string(state, "value");
+    SZrString *signature = test_string(state, "fn(int) -> int");
     TZrChar moduleBytes[100];
     TZrChar nominalBytes[40];
     TZrChar expectedNominal[141];
@@ -186,6 +213,8 @@ static void test_symbol_hover_format_failure_wording(SZrState *state) {
     TZrTypeId unknownPrimitive;
     TZrTypeId longType;
     TZrTypeId unformattable;
+    /* 类型 ID 单调分配，这个夹具只驻留几百个节点，远到不了这个值。 */
+    const TZrTypeId danglingType = (TZrTypeId)0x7FFFFFFFU;
     TZrChar small[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrChar hoverSized[ZR_LSP_HOVER_BUFFER_LENGTH];
 
@@ -239,6 +268,19 @@ static void test_symbol_hover_format_failure_wording(SZrState *state) {
                  "\n\nType: cannot infer exact type",
                  "\n\nType: unknown",
                  "missing type identity keeps the inference wording");
+    /* TypeId 非零但类型图里没有这个节点：同样没有类型身份，不能写成 unknown。 */
+    check(ZrParser_CanonicalType_Find(semanticContext, danglingType) == ZR_NULL,
+          "the dangling type id has no stored node");
+    expect_hover(state,
+                 context,
+                 uri,
+                 semanticContext,
+                 name,
+                 danglingType,
+                 ZR_NULL,
+                 "\n\nType: cannot infer exact type",
+                 "\n\nType: unknown",
+                 "a type id without a stored node keeps the inference wording");
     expect_hover(state,
                  context,
                  uri,
@@ -278,6 +320,83 @@ static void test_symbol_hover_format_failure_wording(SZrState *state) {
         free_hover(state, hover);
     }
 
+    /* 整行的容量边界：刚好写得下时原样显示；多一个字节就按排版失败处理，不显示截断的名字。 */
+    {
+        static const TZrChar heading[] = "**variable**: value\n\nResolved Type: ";
+        const TZrSize longestFit = ZR_LSP_HOVER_BUFFER_LENGTH - sizeof(heading);
+        TZrChar typeName[ZR_LSP_HOVER_BUFFER_LENGTH + 1U];
+        TZrChar expectedLine[ZR_LSP_HOVER_BUFFER_LENGTH];
+        TZrChar probe[ZR_LSP_HOVER_BUFFER_LENGTH];
+        TZrTypeId fitType;
+        TZrTypeId lineOverflowType;
+        TZrTypeId bufferOverflowType;
+        SZrLspHover *hover;
+        const TZrChar *text;
+
+        fitType = intern_named_type(
+                state, semanticContext, longestFit, typeName, sizeof(typeName));
+        memcpy(expectedLine, heading, sizeof(heading) - 1U);
+        memcpy(expectedLine + sizeof(heading) - 1U, typeName, longestFit + 1U);
+        hover = build_hover(
+                state, context, uri, semanticContext, name, fitType, ZR_NULL);
+        text = hover_text(hover);
+        check(fitType != ZR_SEMANTIC_ID_INVALID && text != ZR_NULL &&
+                      strcmp(text, expectedLine) == 0,
+              "the longest type that fits the hover line is shown in full");
+        free_hover(state, hover);
+
+        lineOverflowType = intern_named_type(
+                state, semanticContext, longestFit + 1U, typeName, sizeof(typeName));
+        check(lineOverflowType != ZR_SEMANTIC_ID_INVALID &&
+                      ZrParser_CanonicalType_Format(
+                              semanticContext, lineOverflowType, probe, sizeof(probe)) &&
+                      strlen(probe) == longestFit + 1U,
+              "one byte more still formats on its own");
+        expect_hover(state,
+                     context,
+                     uri,
+                     semanticContext,
+                     name,
+                     lineOverflowType,
+                     ZR_NULL,
+                     "\n\nType: unknown",
+                     "cannot infer exact type",
+                     "a type that overflows the hover line is not inference failure");
+        expect_hover(state,
+                     context,
+                     uri,
+                     semanticContext,
+                     name,
+                     lineOverflowType,
+                     ZR_NULL,
+                     ZR_NULL,
+                     "www",
+                     "a type that overflows the hover line is not shown truncated");
+
+        bufferOverflowType = intern_named_type(
+                state,
+                semanticContext,
+                ZR_LSP_HOVER_BUFFER_LENGTH,
+                typeName,
+                sizeof(typeName));
+        check(bufferOverflowType != ZR_SEMANTIC_ID_INVALID &&
+                      ZrParser_CanonicalType_Find(semanticContext, bufferOverflowType) !=
+                              ZR_NULL &&
+                      !ZrParser_CanonicalType_Format(
+                              semanticContext, bufferOverflowType, probe, sizeof(probe)),
+              "a stored type longer than the hover buffer cannot be formatted");
+        expect_hover(state,
+                     context,
+                     uri,
+                     semanticContext,
+                     name,
+                     bufferOverflowType,
+                     ZR_NULL,
+                     "\n\nType: unknown",
+                     "cannot infer exact type",
+                     "a type longer than the hover buffer is not inference failure");
+    }
+
     unformattable = nest_until_format_fails(semanticContext, intType);
     check(unformattable != ZR_SEMANTIC_ID_INVALID &&
                   ZrParser_CanonicalType_Find(semanticContext, unformattable) !=
@@ -313,6 +432,74 @@ static void test_symbol_hover_format_failure_wording(SZrState *state) {
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+/* 沿 UpdateDocument 和 GetHover 走真实的符号悬停：声明类型的名字比旧的类型缓冲长。 */
+static void test_public_hover_keeps_long_declared_type(SZrState *state) {
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = test_string(state, "file:///hover-long-type.zr");
+    TZrChar typeName[ZR_LSP_TYPE_BUFFER_LENGTH + 17U];
+    TZrChar source[ZR_LSP_HOVER_BUFFER_LENGTH];
+    TZrChar expected[ZR_LSP_HOVER_BUFFER_LENGTH];
+    SZrLspPosition usage;
+    SZrLspHover *hover = ZR_NULL;
+    const TZrChar *text;
+    int sourceLength;
+    int expectedLength;
+
+    memset(typeName, 'e', sizeof(typeName) - 1U);
+    typeName[0] = 'L';
+    typeName[sizeof(typeName) - 1U] = '\0';
+    sourceLength = snprintf(source,
+                            sizeof(source),
+                            "class %s { }\n"
+                            "fn use(): void {\n"
+                            "    var value: %s = null;\n"
+                            "    value;\n"
+                            "}\n",
+                            typeName,
+                            typeName);
+    expectedLength = snprintf(expected,
+                              sizeof(expected),
+                              "**variable**: value\n\nResolved Type: %s",
+                              typeName);
+    /* 第 4 行的 value 是使用点；夹具只有 ASCII，字节列就是协议列。 */
+    usage.line = 3;
+    usage.character = 4;
+
+    check(context != ZR_NULL && uri != ZR_NULL &&
+                  strlen(typeName) >= ZR_LSP_TYPE_BUFFER_LENGTH &&
+                  sourceLength > 0 && (TZrSize)sourceLength < sizeof(source) &&
+                  expectedLength > 0 && (TZrSize)expectedLength < sizeof(expected),
+          "public hover fixture is prepared");
+    if (context == ZR_NULL || uri == ZR_NULL || sourceLength <= 0 ||
+        (TZrSize)sourceLength >= sizeof(source)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        return;
+    }
+
+    check(ZrLanguageServer_Lsp_UpdateDocument(
+                  state, context, uri, source, (TZrSize)sourceLength, 1U),
+          "public hover fixture opens");
+    check(ZrLanguageServer_Lsp_GetHover(state, context, uri, usage, &hover) &&
+                  hover != ZR_NULL,
+          "public hover answers at the variable use");
+    text = hover_text(hover);
+    if (text == ZR_NULL) {
+        check(ZR_FALSE, "public hover has text");
+    } else {
+        if (strstr(text, expected) == ZR_NULL) {
+            printf("  missing \"%s\" in:\n%s\n", expected, text);
+            check(ZR_FALSE, "public hover shows the whole declared type");
+        }
+        if (strstr(text, "cannot infer exact type") != ZR_NULL ||
+            strstr(text, "Type: unknown") != ZR_NULL) {
+            printf("  unexpected unavailable-type wording in:\n%s\n", text);
+            check(ZR_FALSE, "public hover does not report an unavailable type");
+        }
+    }
+    free_hover(state, hover);
+    ZrLanguageServer_LspContext_Free(state, context);
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
@@ -325,6 +512,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
     test_symbol_hover_format_failure_wording(state);
+    test_public_hover_keeps_long_declared_type(state);
     ZrCore_GlobalState_Free(global);
     printf("canonical hover format wording: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
