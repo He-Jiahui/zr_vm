@@ -221,6 +221,58 @@ static TZrBool project_resolver_normalize_module_key_text(const TZrChar *moduleP
     return ZR_TRUE;
 }
 
+/* 无项目的源文件名只是磁盘路径写法，没有可越过的 source 根；按词法折掉 `.` 与 `..` 段再取键。
+ * 回退不了的前导 `..` 没有逻辑位置，直接丢弃，产出的键因此不含点段。 */
+static TZrBool project_resolver_fold_source_name_segments(const TZrChar *sourceName,
+                                                          TZrChar *buffer,
+                                                          TZrSize bufferSize) {
+    TZrSize readIndex = 0;
+    TZrSize writeIndex = 0;
+
+    if (sourceName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    while (sourceName[readIndex] != '\0') {
+        TZrSize segmentStart;
+        TZrSize segmentLength;
+
+        while (project_resolver_is_path_separator(sourceName[readIndex])) {
+            readIndex++;
+        }
+        segmentStart = readIndex;
+        while (sourceName[readIndex] != '\0' && !project_resolver_is_path_separator(sourceName[readIndex])) {
+            readIndex++;
+        }
+        segmentLength = readIndex - segmentStart;
+        if (segmentLength == 0 || (segmentLength == 1 && sourceName[segmentStart] == '.')) {
+            continue;
+        }
+        if (segmentLength == 2 && sourceName[segmentStart] == '.' && sourceName[segmentStart + 1] == '.') {
+            while (writeIndex > 0 && buffer[writeIndex - 1] != '/') {
+                writeIndex--;
+            }
+            if (writeIndex > 0) {
+                writeIndex--;
+            }
+            continue;
+        }
+
+        if (writeIndex + (writeIndex > 0 ? 1 : 0) + segmentLength + 1 > bufferSize) {
+            return ZR_FALSE;
+        }
+        if (writeIndex > 0) {
+            buffer[writeIndex++] = '/';
+        }
+        memcpy(buffer + writeIndex, sourceName + segmentStart, segmentLength);
+        writeIndex += segmentLength;
+    }
+
+    buffer[writeIndex] = '\0';
+    return writeIndex > 0;
+}
+
 /* 显式模块名与物理源码推导的键允许点和斜杠写法等价，避免重复模块身份。 */
 static TZrBool project_resolver_module_path_equals(const TZrChar *left, const TZrChar *right) {
     TZrSize index = 0;
@@ -772,7 +824,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
     }
 
     if (!hasDerived && sourceName != ZR_NULL && sourceName[0] != '\0') {
-        if (!ZrLibrary_Project_NormalizeModuleKey(sourceName, derivedFromPath, sizeof(derivedFromPath))) {
+        TZrChar foldedSourceName[ZR_LIBRARY_MAX_PATH_LENGTH];
+        const TZrChar *keySource = sourceName;
+
+        /* 有项目时落不进任何 source 根的名字只能是逻辑模块名，点段照常拒绝；
+         * 无项目时 `./mod.zr` 这类脚本目标仍须可编译，先折叠路径写法。 */
+        if (project == ZR_NULL &&
+            project_resolver_fold_source_name_segments(sourceName, foldedSourceName, sizeof(foldedSourceName))) {
+            keySource = foldedSourceName;
+        }
+        if (!ZrLibrary_Project_NormalizeModuleKey(keySource, derivedFromPath, sizeof(derivedFromPath))) {
             project_resolver_set_error(errorBuffer,
                                        errorBufferSize,
                                        "failed to derive a current module key from '%s'",
