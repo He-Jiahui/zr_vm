@@ -81,7 +81,7 @@ static TZrBool diagnostic_push_cache_store(SZrStdioServer *server,
 }
 
 /** @brief 文档更新尝试后按 parser 当前诊断与版本发送 publishDiagnostics，并缓存已发送快照。
- * BUG: URI 文本转换失败时仍以空 URI 发出诊断，客户端会把结果归到错误文档。
+ * URI 文本转换失败时丢弃本次通知，去重缓存保持不变，后续发布不受抑制。
  * BUG: Array_Init 分配失败仍标记有效，后续 GetDiagnostics 可向空缓冲 Push。 */
 void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     SZrArray diagnostics;
@@ -145,7 +145,8 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     free_diagnostics_array(server->state, &diagnostics);
 }
 
-/** @brief 关闭或移除文档时推送空诊断，使客户端清除先前发布的结果。 */
+/** @brief 关闭或移除文档时推送空诊断，使客户端清除先前发布的结果。
+ * URI 文本转换失败时丢弃本次通知，去重缓存保持不变；不以空 URI 代发。 */
 void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     cJSON *params;
     cJSON *diagnostics;
