@@ -437,6 +437,146 @@ static void test_conditional_disabled_call_still_type_checks_arguments(void) {
     destroy_test_state(state);
 }
 
+static SZrFunction *find_child_function_by_name(
+        SZrFunction *mainFunction,
+        const TZrChar *expectedName) {
+    if (mainFunction == ZR_NULL || mainFunction->childFunctionList == ZR_NULL ||
+        expectedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrUInt32 index = 0; index < mainFunction->childFunctionLength; index++) {
+        SZrFunction *child = &mainFunction->childFunctionList[index];
+        TZrNativeString name;
+
+        if (child->functionName == ZR_NULL) {
+            continue;
+        }
+        name = ZrCore_String_GetNativeStringShort(child->functionName);
+        if (name != ZR_NULL && strcmp(name, expectedName) == 0) {
+            return child;
+        }
+    }
+    return ZR_NULL;
+}
+
+/* 用户 schema 属性只填 boundSchema；conditional 扫描必须跳过它而不是解引用空的内建 schema。 */
+static void test_user_attribute_on_ordinary_function_is_not_conditional_metadata(void) {
+    static const TZrChar *source =
+            "#zr.reflection.attributeUsage(\n"
+            "    targets: zr.reflection.AttributeTargets.function,\n"
+            "    retention: zr.reflection.AttributeRetention.runtime,\n"
+            "    repeatable: false, inherited: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "#Label(value: 7)#\n"
+            "fn tagged(): int { return 42; }\n"
+            "#Label(value: 9)#\n"
+            "fn note(value: int): void { }\n"
+            "fn __fixture(): int { note(1); return 42; }\n"
+            "tagged();\n"
+            "return __fixture();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+    SZrFunction *fixture;
+    SZrFunction *tagged;
+    SZrFunction *note;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "user_attribute_function.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    /* 声明校验与调用点省略检查都会扫描 decorators；两条路径都不得把用户属性当作 conditional。 */
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    tagged = find_child_function_by_name(function, "tagged");
+    note = find_child_function_by_name(function, "note");
+    TEST_ASSERT_NOT_NULL(tagged);
+    TEST_ASSERT_NOT_NULL(note);
+    TEST_ASSERT_TRUE(tagged->hasDecoratorMetadata);
+    TEST_ASSERT_EQUAL_UINT32(1, tagged->decoratorCount);
+    TEST_ASSERT_TRUE(note->hasDecoratorMetadata);
+    TEST_ASSERT_EQUAL_UINT32(1, note->decoratorCount);
+
+    /* 没有 conditional 属性的 void 调用不得被省略：note(1) 仍须留下调用指令。 */
+    fixture = find_fixture_function(function);
+    TEST_ASSERT_NOT_NULL(fixture);
+    TEST_ASSERT_TRUE(count_call_instructions(fixture) > 0U);
+    TEST_ASSERT_TRUE(execute_test_function(
+            state, function, 42, "user attribute on ordinary function"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+/* 用户属性与 conditional 并存时，只有内建 conditional 计入唯一性并决定调用省略。 */
+static void test_user_attribute_composes_with_conditional_in_either_order(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"conditional-user-attribute\",\"source\":\"src\",\"binary\":\"bin\","
+            "\"entry\":\"main.zr\",\"features\":{\"trace\":false}}";
+    static const TZrChar *sources[] = {
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.function, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "fn expensive(): int { return 99; }\n"
+            "#Label(value: 7)#\n"
+            "#zr.compile.conditional(\"trace\")#\n"
+            "fn trace(value: int): void { }\n"
+            "fn __fixture(): int { trace(expensive()); return 42; }\n"
+            "return __fixture();\n",
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.function, "
+            "retention: zr.reflection.AttributeRetention.runtime, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct Label { pub let value: int; }\n"
+            "fn expensive(): int { return 99; }\n"
+            "#zr.compile.conditional(\"trace\")#\n"
+            "#Label(value: 7)#\n"
+            "fn trace(value: int): void { }\n"
+            "fn __fixture(): int { trace(expensive()); return 42; }\n"
+            "return __fixture();\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrLibrary_Project *project;
+        TZrPtr previousUserData;
+        SZrString *sourceName;
+        SZrFunction *function;
+        SZrFunction *fixture;
+        SZrFunction *trace;
+
+        TEST_ASSERT_NOT_NULL(state);
+        project = ZrLibrary_Project_New(
+                state, (TZrNativeString)projectJson, "E:/tmp/conditional-user-attribute.zrp");
+        TEST_ASSERT_NOT_NULL(project);
+        previousUserData = state->global->userData;
+        state->global->userData = project;
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "conditional_user_attribute.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(function);
+
+        trace = find_child_function_by_name(function, "trace");
+        TEST_ASSERT_NOT_NULL(trace);
+        TEST_ASSERT_TRUE(trace->hasDecoratorMetadata);
+        TEST_ASSERT_EQUAL_UINT32(1, trace->decoratorCount);
+        fixture = find_fixture_function(function);
+        TEST_ASSERT_NOT_NULL(fixture);
+        TEST_ASSERT_EQUAL_UINT64(0, count_call_instructions(fixture));
+        TEST_ASSERT_TRUE(execute_test_function(
+                state, function, 42, "conditional with user attribute"));
+
+        ZrCore_Function_Free(state, function);
+        state->global->userData = previousUserData;
+        ZrLibrary_Project_Free(state, project);
+        destroy_test_state(state);
+    }
+}
+
 static void test_readonly_struct_attribute_schema_binds_typed_field_metadata(void) {
     static const TZrChar *source =
             "#zr.reflection.attributeUsage(\n"
@@ -2584,6 +2724,8 @@ int main(void) {
     RUN_TEST(test_comptime_if_reads_declared_project_feature_and_prunes_branch);
     RUN_TEST(test_conditional_disabled_direct_void_call_elides_argument_lowering);
     RUN_TEST(test_conditional_disabled_call_still_type_checks_arguments);
+    RUN_TEST(test_user_attribute_on_ordinary_function_is_not_conditional_metadata);
+    RUN_TEST(test_user_attribute_composes_with_conditional_in_either_order);
     RUN_TEST(test_readonly_struct_attribute_schema_binds_typed_field_metadata);
     RUN_TEST(test_attribute_schema_rejects_invalid_shape_and_application);
     RUN_TEST(test_declaration_transform_accepts_typed_empty_patch_once);
