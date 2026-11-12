@@ -161,13 +161,13 @@ fn native_function_with_multiple_generic_parameters_registers_and_runs(
             .return_type("int")
             .generic_parameter(
                 GenericParameterDescriptor::new("T")
-                    .constraint("int")
+                    .constraint("zr.builtin.IEquatable<T>")
                     .documentation("The input type."),
             )
             .generic_parameter(
                 GenericParameterDescriptor::new("U")
-                    .constraint("string")
-                    .documentation("The output type."),
+                    .constraint("zr.builtin.IEquatable<U>")
+                    .documentation("The tag type."),
             ),
         )
         .build()?;
