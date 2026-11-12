@@ -3461,24 +3461,6 @@ static void test_lsp_missing_import_insert_preserves_crlf(SZrState *state, int *
         }
     }
     TEST_PASS(timer, summary);
-
-
-    context = test_open_document(state, "file:///tmp/zr_lsp_unused_template_text.zr", unused, &uri);
-    if (context != ZR_NULL &&
-        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
-        removedText = test_remove_unused_deletes_line(&actions, 0);
-    }
-    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
-    if (context != ZR_NULL) {
-        ZrLanguageServer_LspContext_Free(state, context);
-    }
-
-    if (!keptUse || !removedText) {
-        (*failures)++;
-        TEST_FAIL(timer, summary, "template interpolation was not treated as a real alias use");
-    } else {
-        TEST_PASS(timer, summary);
-    }
 }
 
 static void test_lsp_missing_import_is_scoped_and_sees_interpolation(SZrState *state, int *failures) {
