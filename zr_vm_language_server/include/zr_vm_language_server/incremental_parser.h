@@ -195,7 +195,7 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_FileVersion_Free(SZrState *state, S
 
 /** @brief 用已计算的变更事实替换文本并保留有限历史，供后续解析选择复用路径。
  * @pre changeInfo 描述同一次旧/新文本变更；调用方负责版本单调性。
- * @return 成功时新内容生效并标记解析状态；失败时保留旧版本。 */
+ * @return 成功时新内容生效并标记解析状态，更新前尚未解析的文件保持 isDirty 并清除 hasIncrementalInfo，后续解析须完整重解析；失败时保留旧版本。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                                          SZrFileVersion *fileVersion,
                                                          const TZrChar *content,
