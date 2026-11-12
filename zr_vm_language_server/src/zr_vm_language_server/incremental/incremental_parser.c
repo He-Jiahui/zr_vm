@@ -353,6 +353,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
     fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
+    fileVersion->previousContentHasCurrentAst = ZR_FALSE;
     ZrCore_Array_Init(state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
@@ -500,6 +501,12 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 声明级局部替换以旧文本和 AST 一一对应为前提：旧文本未解析、处于回退或带语法错误时都不成立。
+     * 必须在标脏和清诊断之前记录。 */
+    fileVersion->previousContentHasCurrentAst =
+            fileVersion->ast != ZR_NULL && !fileVersion->isDirty &&
+            !fileVersion->usesFallbackAst &&
+            !parser_diagnostics_have_errors(fileVersion);
     file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
@@ -824,10 +831,12 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     }
 
     /* 只有声明级重解析证明未触及节点位置稳定，才能原位替换并保留其余 AST。
-     * 回退 AST 属于上一份合法文本，不能作为当前文本的局部替换基准。 */
+     * 回退 AST 属于上一份合法文本，不能作为当前文本的局部替换基准；
+     * 带语法错误的恢复树、或落后于上一份文本的树同样不能。 */
     if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
         fileVersion->ast != ZR_NULL &&
         !fileVersion->usesFallbackAst &&
+        fileVersion->previousContentHasCurrentAst &&
         fileVersion->hasIncrementalInfo) {
         SZrFileVersionContentSnapshot previousSnapshot = {0};
 

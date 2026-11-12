@@ -658,6 +658,140 @@ static void test_incremental_parser_does_not_reparse_declaration_over_fallback_a
     TEST_PASS(timer, summary);
 }
 
+/* 读取第 index 个顶层函数 `return <整数>;` 的字面量，用来确认 AST 对应的是哪一份文本。 */
+static TZrBool top_level_function_returns_integer(SZrAstNode *root, TZrSize index, TZrInt64 expected) {
+    SZrAstNode *function;
+    SZrAstNode *body;
+    SZrAstNode *statement;
+    SZrAstNode *expression;
+
+    if (root == ZR_NULL || root->type != ZR_AST_SCRIPT || root->data.script.statements == ZR_NULL ||
+        root->data.script.statements->count <= index) {
+        return ZR_FALSE;
+    }
+    function = root->data.script.statements->nodes[index];
+    body = function != ZR_NULL && function->type == ZR_AST_FUNCTION_DECLARATION
+                   ? function->data.functionDeclaration.body : ZR_NULL;
+    statement = body != ZR_NULL && body->type == ZR_AST_BLOCK && body->data.block.body != ZR_NULL &&
+                        body->data.block.body->count > 0U
+                        ? body->data.block.body->nodes[0] : ZR_NULL;
+    expression = statement != ZR_NULL && statement->type == ZR_AST_RETURN_STATEMENT
+                         ? statement->data.returnStatement.expr : ZR_NULL;
+    return expression != ZR_NULL && expression->type == ZR_AST_INTEGER_LITERAL &&
+           expression->data.integerLiteral.value == expected;
+}
+
+/* 首次解析就带语法错误时采用的是恢复树而非回退树。等长修改另一个声明不能局部成功并清掉语法诊断。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_error_recovery_ast(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Error Recovery AST";
+    const TZrChar *broken =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2  }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 9; }\n"
+            "fn second(): int { return 2  }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-recovery-ast.zr",
+            strlen("file:///declaration-reparse-recovery-ast.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL || strlen(broken) != strlen(edited) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, broken, strlen(broken), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the fresh document with a syntax error");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Fresh broken document must publish a syntax diagnostic");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 2U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE ||
+        fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "Editing another declaration must full-reparse and keep the unrepaired syntax diagnostic");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* 上一份文本没有解析过时，AST 落后一版。再等长改另一个声明，不能在这棵旧树上局部替换。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_unparsed_content(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Unparsed Content";
+    const TZrChar *initial =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *unparsed =
+            "fn first(): int { return 7; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 7; }\n"
+            "fn second(): int { return 8; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-unparsed.zr",
+            strlen("file:///declaration-reparse-unparsed.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, initial, strlen(initial), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, unparsed, strlen(unparsed), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 3U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to apply two updates with a single parse");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->isDirty || fileVersion->usesFallbackAst ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !top_level_function_returns_integer(fileVersion->ast, 0U, 7) ||
+        !top_level_function_returns_integer(fileVersion->ast, 1U, 8)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "An AST that lags the previous text must be rebuilt from the current text");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
 /* 编辑改变声明范围时应完整重建，避免复用节点携带过期源码偏移。 */
 static void test_incremental_parser_falls_back_for_unstable_declaration_range(
         SZrState *state) {
@@ -994,6 +1128,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_incremental_parser_does_not_reparse_declaration_over_fallback_ast(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reparse_declaration_over_error_recovery_ast(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reparse_declaration_over_unparsed_content(state);
     TEST_DIVIDER();
 
     test_incremental_parser_falls_back_for_unstable_declaration_range(state);
