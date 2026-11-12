@@ -2676,6 +2676,8 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
     SZrObjectModule *projectModule = ZrCore_Module_Create(state);
     zr_library_project_trace("project module=%p", (void *)projectModule);
+    /* 模块对象未建立时不得执行入口：execute_function 会先把线程状态重置为 FINE，创建失败会被吞掉。
+     * 入口函数的 ignore 与 host root 在此归还，与正常返回路径一致。 */
     if (projectModule == ZR_NULL) {
         if (ignoredFunction) {
             ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
