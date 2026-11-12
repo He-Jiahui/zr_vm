@@ -71,7 +71,9 @@ ZR_PARSER_API void ZrParser_State_Free(SZrParserState *ps);
 
 /** @brief 从当前 token 解析脚本，供编译器、LSP 与迁移入口复用已配置的状态。
  * @return AST 由调用方用 ZrParser_Ast_Free 释放；失败或禁止的旧语法返回空。
- * @note 普通语法错误可能被恢复并仍返回 AST，调用方还应检查诊断回调及错误状态。 */
+ * @note 普通语法错误可能被恢复并仍返回 AST，调用方还应检查诊断回调及错误状态。
+ *       留在 EOS 上的词法错误（未闭合块注释）没有可恢复的节点，报告后返回空；
+ *       State_Init 已记下的首 token 词法错误也在这里补报一次再返回空。 */
 ZR_PARSER_API SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps);
 
 /** @brief 将已初始化解析器向前推进到原源文本中的精确 token 起点。
@@ -85,7 +87,8 @@ ZR_PARSER_API TZrBool ZrParser_State_SeekToTokenStart(
 ZR_PARSER_API SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps);
 
 /** @brief 从当前状态解析单个完整表达式，供片段解析使用。
- * @return 成功的节点归调用方，用 ZrParser_Ast_Free 释放；错误时返回空。 */
+ * @return 成功的节点归调用方，用 ZrParser_Ast_Free 释放；错误时返回空。
+ * @note 表达式后的多余 token 与未闭合块注释都算错误；恰好在末尾闭合的注释合法。 */
 ZR_PARSER_API SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps);
 
 /** @brief 初始化临时状态、解析完整脚本并释放游标。
