@@ -148,15 +148,16 @@ fn native_function_with_multiple_generic_parameters_registers_and_runs(
     let workspace = ProjectWorkspace::scaffold(&root, "native_generic_parameters_project")?;
     fs::write(
         workspace.project_root()?.join("src").join("main.zr"),
-        "let host = import(\"host_generics\"); return host.echo(23);\n",
+        "let host = import(\"host_generics\"); return host.echo(23, \"tag\");\n",
     )?;
 
     let module = ModuleBuilder::new("host_generics")
         .add_function(
-            FunctionBuilder::new("echo", 1, 1, |context| {
+            FunctionBuilder::new("echo", 2, 2, |context| {
                 Value::new_int(context.with_argument(0, |argument| argument.read_int())?)
             })
-            .parameter("value", "int", "value")
+            .parameter("value", "T", "value")
+            .parameter("tag", "U", "tag")
             .return_type("int")
             .generic_parameter(
                 GenericParameterDescriptor::new("T")
