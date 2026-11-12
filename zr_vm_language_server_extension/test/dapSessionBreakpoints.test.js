@@ -22,8 +22,19 @@ test('PendingSourceBreakpointStore replays pre-launch editor breakpoints after r
         [],
     );
 
+    if (process.platform !== 'win32') {
+        assert.deepEqual(
+            store.replayBindingsForResolvedSource('src/main.zr', 'c:/repo/src/main.zr'),
+            [],
+            'POSIX source matching remains case-sensitive',
+        );
+    }
+
+    const resolvedEditorPath = process.platform === 'win32'
+        ? 'c:/repo/src/main.zr'
+        : 'C:/Repo/src/main.zr';
     assert.deepEqual(
-        store.replayBindingsForResolvedSource('src/main.zr', 'c:/repo/src/main.zr'),
+        store.replayBindingsForResolvedSource('src/main.zr', resolvedEditorPath),
         [
             {
                 sourcePath: 'C:/Repo/src/main.zr',
