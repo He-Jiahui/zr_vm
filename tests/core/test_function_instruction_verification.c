@@ -14,7 +14,40 @@ static TZrInstruction op(EZrInstructionCode code, TZrUInt16 e, TZrUInt16 a, TZrU
     i.instruction.operand.operand1[1] = b;
     return i;
 }
+static void check_load_stack_load_const_packing(void) {
+    TZrInstruction probe = {0};
+    TZrInstruction encoded = {0};
+    SZrFunction function = {0};
+    SZrTypeValue constants[4] = {0};
+    TZrInstruction code[2] = {0};
+    TZrUInt8 storedSlot;
+
+    probe.instruction.operand.operand0[2] = 9;
+    probe.instruction.operand.operand1[1] = 2;
+    storedSlot = probe.instruction.operand.operand0[2];
+    CHECK(storedSlot != 9 || ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(9, 2));
+    CHECK(!ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS((TZrUInt8)(storedSlot ^ 0xFFu), 2));
+    encoded.instruction.operand.operand1[1] = 2;
+    storedSlot = encoded.instruction.operand.operand0[2];
+    CHECK(ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(storedSlot, 2));
+
+    code[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST);
+    code[0].instruction.operandExtra = 0;
+    code[0].instruction.operand.operand1[1] = 2;
+    code[1].instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    function.instructionsList = code;
+    function.instructionsLength = 2;
+    function.constantValueList = constants;
+    function.constantValueLength = 4;
+    function.stackSize = (TZrUInt32)storedSlot + 1u;
+    CHECK(code[0].instruction.operand.operand0[2] == storedSlot);
+    CHECK(ZrCore_Function_VerifyInstructions(&function));
+    function.stackSize = storedSlot;
+    CHECK(!ZrCore_Function_VerifyInstructions(&function));
+}
+
 int main(void) {
+    check_load_stack_load_const_packing();
     SZrFunction f = {0};
     TZrInstruction code[4] = {0};
     CHECK(!ZrCore_Function_VerifyInstructions(NULL));

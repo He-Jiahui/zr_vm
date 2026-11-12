@@ -5,7 +5,8 @@
 typedef struct SZrOptimizerInstructionInfo {
     TZrUInt16 readSlots[4];
     TZrUInt8 readCount;
-    TZrUInt16 writeSlots[2];
+    /* ADD_SIGNED_LOAD_STACK_LOAD_CONST writes the result, the stack copy, and the constant slot. */
+    TZrUInt16 writeSlots[4];
     TZrUInt8 writeCount;
     TZrUInt16 rangeReadStart;
     TZrUInt16 rangeReadCount;
@@ -1521,8 +1522,16 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             if ((EZrInstructionCode)instruction->instruction.operationCode ==
                         ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST) &&
                 (TZrSize)instruction->instruction.operand.operand0[2] < slotCount) {
-                instruction->instruction.operand.operand0[2] =
-                        (TZrUInt8)slotMap[(TZrSize)instruction->instruction.operand.operand0[2]];
+                TZrUInt16 constantIndex = instruction->instruction.operand.operand1[1];
+                TZrUInt16 mappedSlot = slotMap[(TZrSize)instruction->instruction.operand.operand0[2]];
+                /*
+                 * operand0[2] shares its storage with operand1[1]. A mapped slot
+                 * may be stored only when that byte still encodes the constant index.
+                 */
+                if (mappedSlot <= 0xFFu &&
+                    ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS((TZrUInt8)mappedSlot, constantIndex)) {
+                    instruction->instruction.operand.operand0[2] = (TZrUInt8)mappedSlot;
+                }
             }
             return;
         default:
@@ -1679,6 +1688,35 @@ static void optimizer_remap_compiler_metadata_slots(SZrCompilerState *cs,
     }
 }
 
+static TZrBool optimizer_slot_map_moves_fused_constant_slot(const TZrInstruction *instructions,
+                                                            TZrSize begin,
+                                                            TZrSize end,
+                                                            const TZrUInt16 *slotMap,
+                                                            TZrSize slotCount) {
+    TZrSize instructionIndex;
+
+    if (instructions == ZR_NULL || slotMap == ZR_NULL || end < begin) {
+        return ZR_FALSE;
+    }
+
+    for (instructionIndex = begin; instructionIndex < end; instructionIndex++) {
+        const TZrInstruction *instruction = &instructions[instructionIndex];
+        TZrSize constantSlot;
+
+        if ((EZrInstructionCode)instruction->instruction.operationCode !=
+            ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST)) {
+            continue;
+        }
+
+        constantSlot = instruction->instruction.operand.operand0[2];
+        if (constantSlot < slotCount && slotMap[constantSlot] != (TZrUInt16)constantSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static void optimizer_dense_compact_slots(SZrCompilerState *cs,
                                           TZrInstruction *instructions,
                                           TZrSize instructionCount,
@@ -1755,6 +1793,17 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     }
 
     if (!changed) {
+        free(isLocalSlot);
+        free(isMappedSlot);
+        free(slotMap);
+        return;
+    }
+
+    /*
+     * Moving the fused constant slot rewrites the constant index, because those
+     * fields share one operand byte. Keep the original numbering instead.
+     */
+    if (optimizer_slot_map_moves_fused_constant_slot(instructions, 0, instructionCount, slotMap, slotCount)) {
         free(isLocalSlot);
         free(isMappedSlot);
         free(slotMap);
@@ -1895,6 +1944,24 @@ static void optimizer_build_block_intervals(const SZrFunction *function,
         intervals[intervalCount].fixed = slotLiveIn || slotLiveOut || defCount[slot] != 1;
         intervals[intervalCount].valid = ZR_TRUE;
         intervalCount++;
+    }
+
+    for (instructionIndex = block->start; instructionIndex < block->end; instructionIndex++) {
+        const TZrInstruction *constantInstruction = &instructions[instructionIndex];
+        TZrUInt8 constantSlot;
+        TZrSize intervalIndex;
+
+        if ((EZrInstructionCode)constantInstruction->instruction.operationCode !=
+            ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST)) {
+            continue;
+        }
+
+        constantSlot = constantInstruction->instruction.operand.operand0[2];
+        for (intervalIndex = 0; intervalIndex < intervalCount; intervalIndex++) {
+            if (intervals[intervalIndex].originalSlot == constantSlot) {
+                intervals[intervalIndex].fixed = ZR_TRUE;
+            }
+        }
     }
 
     for (slot = 0; slot < intervalCount; slot++) {
@@ -2224,6 +2291,16 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
                                         slotCount,
                                         localSlots,
                                         slotMap);
+
+        if (optimizer_slot_map_moves_fused_constant_slot(instructions,
+                                                         blocks[blockIndex].start,
+                                                         blocks[blockIndex].end,
+                                                         slotMap,
+                                                         slotCount)) {
+            for (slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+                slotMap[slotIndex] = (TZrUInt16)slotIndex;
+            }
+        }
 
         for (instructionIndex = blocks[blockIndex].start; instructionIndex < blocks[blockIndex].end; instructionIndex++) {
             SZrOptimizerInstructionInfo info;
