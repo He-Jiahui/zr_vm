@@ -60,7 +60,7 @@ ZR_CORE_API TZrBool ZrCore_BatchShape_ElementCount(
 /** @brief 校验缓冲区描述符、步长乘法及末元素相对距离。
  * @pre buffer 描述的底层分配与存活期由调用方保证，尤其是负 stride 的 data 之前区域。
  * @note count 为零时允许 data 为空，但 elementSize 与 stride 仍须非零；diagnostic 可为空。
- * 末端偏移为该有符号类型最小值时用无符号回退计算幅度，避免对最小值取负。
+ * 负向偏移及其幅度按无符号计算，末端为有符号最小值或下标超过有符号上限时不取负也不溢出。
  * BUG: ptrdiff_t 为 32 位时仍按 64 位界限校验，可在计算偏移前漏掉乘法溢出。 */
 ZR_CORE_API TZrBool ZrCore_BatchBuffer_Validate(
         const SZrBatchBuffer *buffer, TZrSize count,

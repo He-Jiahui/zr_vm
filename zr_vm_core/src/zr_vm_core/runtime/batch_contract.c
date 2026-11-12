@@ -47,6 +47,17 @@ TZrBool ZrCore_BatchShape_ElementCount(SZrBatchShape shape, TZrSize *count,
     return ZR_TRUE;
 }
 
+/* 计算已通过溢出检查的 index * stride。stride=-1、index=2^63 时结果 INT64_MIN 可表示，
+ * 但 index 本身放不进有符号数，先转换再相乘会有符号溢出。负向改用无符号幅度相乘，
+ * 再减一取负转回有符号；正向的 index 不超过 INT64_MAX，保持原有乘法。 */
+static TZrMemoryOffset batch_element_offset(TZrSize index, TZrMemoryOffset stride) {
+    TZrUInt64 magnitude;
+    if (stride > 0) return (TZrMemoryOffset)index * stride;
+    magnitude = (TZrUInt64)index * ((TZrUInt64)(-(stride + 1)) + 1u);
+    if (magnitude == 0u) return 0;
+    return -(TZrMemoryOffset)(magnitude - 1u) - 1;
+}
+
 TZrBool ZrCore_BatchBuffer_Validate(const SZrBatchBuffer *buffer, TZrSize count,
                                     SZrBatchDiagnostic *diagnostic) {
     TZrMemoryOffset last;
@@ -77,7 +88,7 @@ TZrBool ZrCore_BatchBuffer_Validate(const SZrBatchBuffer *buffer, TZrSize count,
                    (TZrUInt64)count);
         return ZR_FALSE;
     }
-    last = (TZrMemoryOffset)(count - 1u) * buffer->stride;
+    last = batch_element_offset(count - 1u, buffer->stride);
     /* 有符号最小值不能取负。先加一再取负，用无符号把少掉的 1 加回来。 */
     if (last < 0) {
         magnitude = (TZrUInt64)(-(last + 1)) + 1u;
@@ -103,7 +114,7 @@ TZrBool ZrCore_BatchBuffer_Offset(const SZrBatchBuffer *buffer, TZrSize count,
                    count, index);
         return ZR_FALSE;
     }
-    *offset = (TZrMemoryOffset)index * buffer->stride;
+    *offset = batch_element_offset(index, buffer->stride);
     return ZR_TRUE;
 }
 
@@ -118,7 +129,7 @@ static TZrBool batch_element_address_range(const SZrBatchBuffer *buffer, TZrSize
     uintptr_t high;
 
     if (count > 1u) {
-        lastOffset = (TZrMemoryOffset)(count - 1u) * buffer->stride;
+        lastOffset = batch_element_offset(count - 1u, buffer->stride);
     }
     if (lastOffset >= 0) {
         if ((uintptr_t)lastOffset > UINTPTR_MAX - base) {

@@ -22,6 +22,8 @@ ExecIR vector pass.
 
 The focused fixture `tests/library/test_ssa_batch_vectorization.c` covers
 zero/one/tail lengths, callback failure ordering, partial overlap rejection,
-negative stride, matrix shape overflow, and matrix zip results. The test is
+negative stride (reversed views that overlap or only abut a forward view, and
+end offsets equal to `INT64_MIN`), matrix shape overflow, and matrix zip
+results. Its assertions stay enabled in `NDEBUG` builds. The test is
 intentionally standalone so it can be registered by `tests/cmake/ssa-tests.cmake`
 as `ssa_batch_vectorization` without coupling this contract to parser 09.02.
