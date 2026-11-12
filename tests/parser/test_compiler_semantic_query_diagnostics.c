@@ -3525,6 +3525,7 @@ static void test_invalid_extern_callable_decorator_publishes_structured_query_di
 #include "test_semantic_using_release_evidence_cases.h"
 #include "test_primary_expression_source_range_cases.h"
 #include "test_definite_assignment_callable_identity_cases.h"
+#include "test_definite_assignment_method_body_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -3613,5 +3614,10 @@ int main(void) {
     RUN_TEST(test_definite_assignment_still_reports_uninitialized_local);
     RUN_TEST(test_definite_assignment_lambda_body_reports_uninitialized_local);
     RUN_TEST(test_definite_assignment_finds_lambda_inside_if_body);
+    RUN_TEST(test_definite_assignment_class_method_body_reports_uninitialized_local);
+    RUN_TEST(test_definite_assignment_struct_method_body_reports_uninitialized_local);
+    RUN_TEST(test_definite_assignment_class_method_body_joins_conditional_write);
+    RUN_TEST(test_definite_assignment_struct_method_body_joins_conditional_write);
+    RUN_TEST(test_definite_assignment_method_bodies_keep_initialized_reads_clean);
     return UNITY_END();
 }

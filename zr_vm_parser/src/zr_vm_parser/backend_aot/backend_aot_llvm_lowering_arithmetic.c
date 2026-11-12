@@ -511,6 +511,56 @@ static TZrBool backend_aot_llvm_lower_add_signed_load_stack_instruction(
     return backend_aot_llvm_lower_add_signed_instruction(context, &decodedInstruction);
 }
 
+/* 与 ADD_SIGNED_LOAD_STACK 相同，槽位在 operand0 而不是 operand1。 */
+static TZrBool backend_aot_llvm_lower_mul_signed_load_stack_instruction(
+        const SZrAotLlvmLoweringContext *context,
+        const SZrAotLlvmInstructionContext *instruction) {
+    SZrAotLlvmInstructionContext decodedInstruction;
+
+    if (context == ZR_NULL || instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fprintf(context->file, "  ; zr_aot_llvm_mul_signed_load_stack\n");
+    decodedInstruction = *instruction;
+    decodedInstruction.operandA1 = instruction->operandU8A;
+    decodedInstruction.operandB1 = instruction->operandU8B;
+    return backend_aot_llvm_lower_binary_value_instruction(context,
+                                                           &decodedInstruction,
+                                                           "ZrLibrary_AotRuntime_MulSigned");
+}
+
+/* (a + b) % k：左/右槽在 operand0，除数常量下标在 operand1[1]。 */
+static TZrBool backend_aot_llvm_lower_add_signed_mod_const_instruction(
+        const SZrAotLlvmLoweringContext *context,
+        const SZrAotLlvmInstructionContext *instruction) {
+    TZrChar argsBuffer[256];
+
+    if (context == ZR_NULL || instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                                                 context->entry->function,
+                                                 instruction->destinationSlot,
+                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+    fprintf(context->file, "  ; zr_aot_llvm_add_signed_mod_const\n");
+    snprintf(argsBuffer,
+             sizeof(argsBuffer),
+             "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, i32 %u",
+             (unsigned)instruction->destinationSlot,
+             (unsigned)instruction->operandU8A,
+             (unsigned)instruction->operandU8B,
+             (unsigned)instruction->operandB1);
+    backend_aot_llvm_write_guarded_call_text(context->file,
+                                             context->tempCounter,
+                                             "ZrLibrary_AotRuntime_AddSignedModConst",
+                                             argsBuffer,
+                                             instruction->nextLabel,
+                                             context->failLabel);
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_llvm_lower_add_unsigned_instruction(const SZrAotLlvmLoweringContext *context,
                                                                const SZrAotLlvmInstructionContext *instruction) {
     return backend_aot_llvm_lower_add_integer_family_instruction(context,
@@ -758,6 +808,10 @@ TZrBool backend_aot_llvm_lower_arithmetic_value_family(const SZrAotLlvmLoweringC
             return backend_aot_llvm_lower_add_signed_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
             return backend_aot_llvm_lower_add_signed_load_stack_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+            return backend_aot_llvm_lower_add_signed_mod_const_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+            return backend_aot_llvm_lower_mul_signed_load_stack_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
             return backend_aot_llvm_lower_add_unsigned_instruction(context, instruction);

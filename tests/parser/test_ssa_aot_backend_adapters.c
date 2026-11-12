@@ -252,8 +252,138 @@ static void link_profile_is_conservative(void) {
     }
 }
 
+static void poison_facts(SZrBackendAotIrFacts *facts) {
+    (void)memset(facts, 0xFF, sizeof(*facts));
+}
+
+/* Failure output shared by every facts entry: counters and hashes are zero
+ * and descriptorOnly is still true (see SZrBackendAotIrFacts). */
+static void assert_facts_reset(const SZrBackendAotIrFacts *facts) {
+    assert(facts->descriptorOnly == ZR_TRUE);
+    assert(facts->artifactAvailable == ZR_FALSE);
+    assert(facts->fallbackUsed == ZR_FALSE);
+    assert((TZrUInt32)facts->target == 0u);
+    assert(facts->instructionCount == 0u);
+    assert(facts->semanticSiteCount == 0u);
+    assert(facts->nativeLoweredCount == 0u);
+    assert(facts->runtimeBridgeCount == 0u);
+    assert(facts->interpreterFallbackCount == 0u);
+    assert(facts->unsupportedCount == 0u);
+    assert(facts->moduleHash == 0u);
+    assert(facts->sourceHash == 0u);
+    assert(facts->loweringHash == 0u);
+    assert(facts->contractHash == 0u);
+}
+
+/* A policy refusal aborts the lowering walk after earlier records were
+ * already counted. The facts must come back reset rather than zero-filled:
+ * no partial counters or hashes, and descriptorOnly still true. */
+static void policy_refusals_reset_facts_and_stay_descriptor_only(void) {
+    const TZrUInt32 operands[] = {1u};
+    const TZrUInt32 results[] = {2u};
+    /* Same three sites as adapter_and_backend_facts_are_shared: ADD and CALL
+     * lower natively, SUSPEND is an async bridge. */
+    SZrAotIrInstruction instructions[] = {
+        {1u, ZR_EXEC_IR_OPCODE_ADD, 0u, {0u, 1u}, {0u, 1u},
+         {0u, 0u}, {0u, 0u}, 0u, 0u, 7u, 0u, 0u, 0u,
+         0u, 0u, {0u, 0u}, {0u, 0u}},
+        {2u, ZR_EXEC_IR_OPCODE_CALL, ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW, {0u, 0u}, {0u, 0u},
+         {0u, 0u}, {0u, 0u}, 1u, 2u, 8u, 0u, 0u, 0u,
+         0u, 0u, {0u, 0u}, {0u, 0u}},
+        {3u, ZR_EXEC_IR_OPCODE_SUSPEND, ZR_EXEC_IR_FLAG_MAY_SUSPEND, {0u, 0u}, {0u, 0u},
+         {0u, 0u}, {0u, 0u}, 2u, 3u, 9u, 0u, 0u, 0u,
+         0u, 0u, {0u, 0u}, {0u, 0u}}
+    };
+    SZrAotIrFunction function;
+    SZrAotIrBlock block;
+    SZrAotIrModule module = make_module(&function, &block, instructions,
+                                        operands, results);
+    SZrBackendAotIrDiagnostic diagnostic;
+    SZrBackendAotIrFacts facts;
+    SZrAotIrLoweringRecord loweringRecords[3];
+    SZrAotIrLoweringResult lowering;
+    SZrAotIrEmitOptions options;
+
+    (void)memset(&options, 0, sizeof(options));
+    options.target = ZR_AOT_IR_EMITTER_C;
+    options.strictFloatingPoint = ZR_TRUE;
+    options.allowRuntimeBridge = ZR_TRUE;
+    options.allowInterpreterFallback = ZR_TRUE;
+    (void)memset(&lowering, 0, sizeof(lowering));
+    assert(backend_aot_ir_adapter_collect(&module, loweringRecords, 3u,
+                                          &lowering, &diagnostic));
+    assert(loweringRecords[2].kind == ZR_AOT_IR_LOWERING_ASYNC_BOUNDARY);
+    /* The lowering is accepted while bridges are allowed, so the failures
+     * below come from the policy and not from the fixture. */
+    assert(backend_aot_ir_adapter_facts_from_lowering(
+        &module, ZR_AOT_IR_EMITTER_C, &options, &lowering, &facts,
+        &diagnostic));
+    assert(facts.nativeLoweredCount == 2u);
+    assert(facts.runtimeBridgeCount == 1u);
+
+    /* Bridges refused: the walk fails at SUSPEND with two native sites
+     * already counted. */
+    options.allowRuntimeBridge = ZR_FALSE;
+    poison_facts(&facts);
+    assert(!backend_aot_ir_adapter_facts_from_lowering(
+        &module, ZR_AOT_IR_EMITTER_C, &options, &lowering, &facts,
+        &diagnostic));
+    assert(diagnostic.status == ZR_BACKEND_AOT_IR_UNSUPPORTED);
+    assert(diagnostic.functionId == 1u);
+    assert(diagnostic.instructionId == 3u);
+    assert(diagnostic.sourceId == 9u);
+    assert_facts_reset(&facts);
+    /* The C and LLVM wrappers refuse the same site through the shared
+     * facade and hand back the same reset facts. */
+    poison_facts(&facts);
+    assert(!backend_aot_ir_c_emit(&module, &options, &facts, &diagnostic));
+    assert(diagnostic.status == ZR_BACKEND_AOT_IR_UNSUPPORTED);
+    assert(diagnostic.instructionId == 3u);
+    assert_facts_reset(&facts);
+    options.target = ZR_AOT_IR_EMITTER_LLVM;
+    poison_facts(&facts);
+    assert(!backend_aot_ir_llvm_emit(&module, &options, &facts, &diagnostic));
+    assert(diagnostic.status == ZR_BACKEND_AOT_IR_UNSUPPORTED);
+    assert(diagnostic.instructionId == 3u);
+    assert_facts_reset(&facts);
+
+    /* Interpreter fallback refused: WAKE has no shared lowering, so the walk
+     * fails at the first record right after counting it as unsupported. */
+    instructions[0].opcode = ZR_EXEC_IR_OPCODE_WAKE;
+    options.target = ZR_AOT_IR_EMITTER_C;
+    options.allowRuntimeBridge = ZR_TRUE;
+    options.allowInterpreterFallback = ZR_TRUE;
+    (void)memset(&lowering, 0, sizeof(lowering));
+    assert(backend_aot_ir_adapter_collect(&module, loweringRecords, 3u,
+                                          &lowering, &diagnostic));
+    assert(loweringRecords[0].kind == ZR_AOT_IR_LOWERING_UNSUPPORTED);
+    assert(backend_aot_ir_adapter_facts_from_lowering(
+        &module, ZR_AOT_IR_EMITTER_C, &options, &lowering, &facts,
+        &diagnostic));
+    assert(facts.descriptorOnly == ZR_TRUE);
+    assert(facts.unsupportedCount == 1u);
+    assert(facts.interpreterFallbackCount == 1u);
+    assert(facts.fallbackUsed == ZR_TRUE);
+    options.allowInterpreterFallback = ZR_FALSE;
+    poison_facts(&facts);
+    assert(!backend_aot_ir_adapter_facts_from_lowering(
+        &module, ZR_AOT_IR_EMITTER_C, &options, &lowering, &facts,
+        &diagnostic));
+    assert(diagnostic.status == ZR_BACKEND_AOT_IR_UNSUPPORTED);
+    assert(diagnostic.functionId == 1u);
+    assert(diagnostic.instructionId == 1u);
+    assert(diagnostic.sourceId == 7u);
+    assert_facts_reset(&facts);
+    poison_facts(&facts);
+    assert(!backend_aot_ir_c_emit(&module, &options, &facts, &diagnostic));
+    assert(diagnostic.status == ZR_BACKEND_AOT_IR_UNSUPPORTED);
+    assert(diagnostic.instructionId == 1u);
+    assert_facts_reset(&facts);
+}
+
 int main(void) {
     adapter_and_backend_facts_are_shared();
+    policy_refusals_reset_facts_and_stay_descriptor_only();
     coverage_keeps_denominator_and_reports_unavailable();
     link_profile_is_conservative();
     return 0;

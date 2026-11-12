@@ -8,6 +8,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
@@ -688,7 +689,11 @@ static TZrBool debug_getinfo_callback(ZrLibCallContext *context, SZrTypeValue *r
         SZrDebugInfo info;
         SZrTypeValue functionValue;
         TZrBool hasFunctionValue = ZR_FALSE;
-        TZrStackValuePointer savedStackTop = context->state->stackTop.valuePointer;
+        /* PUSH_FUNCTION 可能扩栈并搬迁整段 VM 栈；栈顶只保存偏移，
+         * GetInfo 返回后再换回指针，不能跨调用持有扩栈前的地址。 */
+        TZrMemoryOffset savedStackTopOffset =
+                ZrCore_Stack_SavePointerAsOffset(context->state, context->state->stackTop.valuePointer);
+        TZrStackValuePointer savedStackTop;
 
         if (!ZrLib_CallContext_ReadInt(context, 0, &level)) {
             return ZR_FALSE;
@@ -703,10 +708,12 @@ static TZrBool debug_getinfo_callback(ZrLibCallContext *context, SZrTypeValue *r
          * 拷出该值并恢复栈顶，避免 getinfo 改动被调函数的运行栈。 */
         ZrCore_Value_ResetAsNull(&functionValue);
         if (!ZrCore_Debug_GetInfo(context->state, &activation, type, &info)) {
-            context->state->stackTop.valuePointer = savedStackTop;
+            context->state->stackTop.valuePointer =
+                    ZrCore_Stack_LoadOffsetToPointer(context->state, savedStackTopOffset);
             ZrLib_Value_SetNull(result);
             return ZR_TRUE;
         }
+        savedStackTop = ZrCore_Stack_LoadOffsetToPointer(context->state, savedStackTopOffset);
         if ((type & ZR_DEBUG_INFO_PUSH_FUNCTION) != 0 &&
             context->state->stackTop.valuePointer > savedStackTop) {
             ZrCore_Value_Copy(context->state, &functionValue, ZrCore_Stack_GetValue(savedStackTop));

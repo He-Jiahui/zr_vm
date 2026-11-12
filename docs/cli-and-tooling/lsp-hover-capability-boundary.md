@@ -17,6 +17,7 @@ tests:
   - tests/language_server/test_lsp_source_contract_canonical_completion_cases.h
   - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_canonical_hover_format.c
   - tests/language_server/test_semantic_analyzer_local_binding_identity_cases.h
   - tests/parser/test_semantic_declaration_binding_cases.h
 doc_type: module-detail
@@ -41,6 +42,13 @@ canonical symbol has a valid identity and invalid type identity; hover then
 displays `cannot infer exact type`, and completion retains the same declaration
 with an explicit unknown-type detail. An undeclared name still has no canonical
 symbol and does not acquire one from a source-text search.
+
+A type identity that exists but cannot be printed is a different case. When the
+canonical type node is stored and its text does not fit the hover line, or the
+type nests deeper than the formatter allows, hover displays `Type: unknown`,
+the wording expression hover already uses. It does not display
+`cannot infer exact type`, because inference did not fail. A type whose text is
+longer than the 128-byte type buffer still prints in full as `Resolved Type`.
 
 For a resolved symbol that has no richer query result, the existing content
 snapshot markdown documentation path remains available. It consumes the

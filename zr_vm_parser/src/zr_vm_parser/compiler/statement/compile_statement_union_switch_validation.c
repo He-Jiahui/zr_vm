@@ -4,12 +4,42 @@
 #include "type_inference/type_inference_internal.h"
 
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/ast.h"
 
 /* 仅裸标识符或 primary/member-path 形态可以在显式解析失败后借 switch subject 类型补足 union 上下文。 */
 static TZrBool switch_case_can_use_subject_union_type(SZrAstNode *caseValue) {
     return caseValue != ZR_NULL &&
            (caseValue->type == ZR_AST_IDENTIFIER_LITERAL ||
             caseValue->type == ZR_AST_PRIMARY_EXPRESSION);
+}
+
+/*
+ * resolver 输出的 bindings 有两种所有权：struct payload pattern 由 build_union_struct_pattern_bindings 新建独立容器，
+ * 归消费方释放；tuple payload pattern 直接返回 case AST 的 call->args，归 ZrParser_Ast_Free 释放，校验之后的
+ * lowering 还要读取它。本文件只把标识符或 primary 表达式形态的 case 交给 resolver，此时 bindings 只会随 primary
+ * 表达式输出，借用来源只有其成员里的调用实参；无法确认归属的形态按借用处理，宁可漏放也不释放 AST 的数组。
+ */
+static TZrBool switch_union_case_owns_bindings(SZrAstNode *caseValue, SZrAstNodeArray *bindings) {
+    SZrAstNodeArray *members;
+
+    if (caseValue == ZR_NULL || bindings == ZR_NULL || caseValue->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    members = caseValue->data.primaryExpression.members;
+    if (members != ZR_NULL && members->nodes != ZR_NULL) {
+        for (TZrSize index = 0; index < members->count; index++) {
+            SZrAstNode *member = members->nodes[index];
+
+            if (member != ZR_NULL &&
+                member->type == ZR_AST_FUNCTION_CALL &&
+                member->data.functionCall.args == bindings) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 /* 按 subject union 上下文解析 case，再把解析出的 variant 名与当前声明 variant 对照。 */
@@ -19,26 +49,26 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                 SZrString *variantName) {
     SZrString *caseVariantName = ZR_NULL;
     SZrAstNodeArray *bindings = ZR_NULL;
+    TZrBool resolved;
+    TZrBool covers;
 
     if (cs == ZR_NULL || caseValue == ZR_NULL || variantName == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
 
     if (switchUnionTypeName != ZR_NULL && switch_case_can_use_subject_union_type(caseValue)) {
-        if (!try_resolve_union_variant_pattern_for_type(cs,
-                                                        caseValue,
-                                                        switchUnionTypeName,
-                                                        &caseVariantName,
-                                                        &bindings,
-                                                        ZR_NULL)) {
-            return ZR_FALSE;
-        }
-    } else if (!try_resolve_union_variant_pattern_expression(cs,
+        resolved = try_resolve_union_variant_pattern_for_type(cs,
                                                               caseValue,
+                                                              switchUnionTypeName,
                                                               &caseVariantName,
                                                               &bindings,
-                                                              ZR_NULL)) {
-        return ZR_FALSE;
+                                                              ZR_NULL);
+    } else {
+        resolved = try_resolve_union_variant_pattern_expression(cs,
+                                                                caseValue,
+                                                                &caseVariantName,
+                                                                &bindings,
+                                                                ZR_NULL);
     }
 
     /*
@@ -47,19 +77,14 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
      * 交给 payload 类型注册。下一步：明确跨 union 限定模式的契约，为同名但 payload 类型不同的 union 加回归例，
      * 并统一 resolver、覆盖校验、lowering 与 CFG 使用的 variant identity。
      */
-    /*
-     * BUG: struct payload pattern 的解析器会创建并返回独立 AstNodeArray；本校验只比较名称却丢弃 bindings，
-     * 没有调用 ZrParser_AstNodeArray_Free。duplicate 与 exhaustiveness 两轮都会按声明 variant 重解析每个
-     * case，重复编译 struct-pattern switch 会累积未释放的 native arrays。触发样例为
-     * test_union_switch_binds_unqualified_struct_variant_pattern_from_subject_type；分配和显式释放路径见
-     * compile_expression_union.c:600-629 与 ast.c:50-60。
-     */
     /* resolver 的 true 既可能表示 pattern 已识别，也可能表示已报告诊断；须同时检查 error 状态和输出名。 */
-    if (cs->hasError || caseVariantName == ZR_NULL) {
-        return ZR_FALSE;
+    covers = (TZrBool)(resolved && !cs->hasError && caseVariantName != ZR_NULL &&
+                       ZrCore_String_Equal(caseVariantName, variantName));
+    /* 校验只比较名称；struct pattern 的独立容器在此配对释放，duplicate 与 exhaustiveness 两轮扫描都经过这里。 */
+    if (switch_union_case_owns_bindings(caseValue, bindings)) {
+        ZrParser_AstNodeArray_Free(cs->state, bindings);
     }
-
-    return ZrCore_String_Equal(caseVariantName, variantName);
+    return covers;
 }
 
 void compile_switch_validate_union_duplicate_cases(SZrCompilerState *cs,

@@ -1326,6 +1326,20 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddSignedConst(struct SZrState *stat
                                                            TZrUInt32 constantIndex);
 
 /**
+ * @brief 执行融合的有符号加法再常量取模。
+ * @pre state 和当前生成帧有效，参数槽或常量索引属于该帧的函数。
+ * @note 两源须为有符号整数类，除数须为整数标签；零除数报告 modulo by zero。结果写 INT64。
+ *       溢出与除数为 -1 时沿用 ZrCore_Integer_Add / ZrCore_Integer_Modulo。
+ * @return 操作成功状态；比较和转换的实际结果由目标槽或 out 参数承载。
+ */
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddSignedModConst(struct SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 destinationSlot,
+                                                              TZrUInt32 leftSlot,
+                                                              TZrUInt32 rightSlot,
+                                                              TZrUInt32 constantIndex);
+
+/**
  * @brief 执行无符号加法专用值槽退路。
  * @pre state 和当前生成帧有效，参数槽或常量索引属于该帧的函数。
  * @note 两源须为无符号整数类；写 UINT64；类型不符返回 false，不做元方法回退。
