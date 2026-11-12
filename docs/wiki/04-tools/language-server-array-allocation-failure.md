@@ -4,6 +4,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_semantic_snapshot_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/index/symbol_table.c
   - zr_vm_language_server/src/zr_vm_language_server/index/reference_tracker.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_query.c
   - tests/language_server/test_lsp_array_oom.c
   - tests/cmake/lsp-array-oom-tests.cmake
 implementation_files:
@@ -41,6 +43,14 @@ doc_type: module-detail
 `Capture` 返回 `false` 时，调用方仍负责处理传入的 `retainedAst`。因此在 `DetachCurrentStateForSnapshot` 已接管 AST 后再尝试分配数组，会让失败清理与调用方所有权冲突。
 
 实现先统计同 URI 的已有快照，计算本次插入时将淘汰的数量，并对最终总长度调用 `Array_TryReserve`。容量不足或溢出时立即返回 `false`，缓存内容和当前分析器保持原状。预留成功后才分离分析器、淘汰旧快照并追加记录；最后一次追加无需分配。若 URI 已达上限，预留按淘汰后的总长度计算，避免无必要的扩容失败。
+
+## 外部高亮的临时位置
+
+外部元数据声明和外部类型成员的文档高亮先收集引用位置，再只把当前文档的范围投影为高亮。收集器为每个引用单独分配一个 `SZrLspLocation`，`Array_Free` 只释放指针缓冲区，因此两条路径在返回前先逐项释放位置记录，再释放数组。位置中的 URI 是 VM 字符串，不在此回收。
+
+`external_highlight_locations` 用例复用同一上游分配器，但不注入分配失败：它按 `sizeof(SZrLspLocation)` 和 `ZR_MEMORY_NATIVE_TYPE_NONE` 标签统计一次高亮请求内位置记录的分配与释放次数，要求两者相等且确有收集发生。统计在同一请求重复一次之后进行，以排除首次请求建立分析器和元数据缓存的分配。
+
+该用例已记录真实 RED：只修复声明路径时，类型成员路径 2 次分配、0 次释放；回退声明路径的修复时，声明路径 4 次分配、0 次释放。两条路径都释放后通过。
 
 ## 验证与边界
 

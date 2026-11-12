@@ -302,6 +302,65 @@ static void test_existing_error_preserves_query_result_and_environment(void) {
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, g_result.baseType);
 }
 
+static void test_switch_case_and_default_returns_are_collected(void) {
+    assert_query_int(parse_function(
+            "fn sample(value: int) { switch (value) { (1) { return 10; } (2) { return 20; } () { return 0; } } }"));
+}
+
+static void test_switch_default_only_return_is_collected(void) {
+    assert_query_int(parse_function(
+            "fn sample(value: int) { switch (value) { (1) { } () { return 7; } } }"));
+}
+
+static void test_switch_nested_callable_return_is_not_collected(void) {
+    assert_query_int(parse_function(
+            "fn sample(value: int) { switch (value) { (1) { fn inner() { return \"text\"; } return 1; } () { return 0; } } }"));
+}
+
+/* A union payload binding declared by the case pattern must shadow an outer
+ * variable with the same spelling, exactly as compile_switch_statement binds it. */
+static void test_switch_union_payload_binding_shadows_outer_same_spelling(void) {
+    SZrAstNode *functionNode = parse_function(
+            "fn sample(p: Payment) { switch (p) { (Ok(total)) { return total; } (Err(code)) { return 0; } } } "
+            "union Payment { Ok(value: int); Err(code: string); }");
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "total");
+
+    TEST_ASSERT_NOT_NULL(name);
+    register_outer_value(name, ZR_VALUE_TYPE_STRING);
+    assert_query_int(functionNode);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupVariable(
+            g_state, g_compiler.typeEnv, name, &g_result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, g_result.baseType);
+}
+
+static void test_switch_union_struct_payload_binding_uses_field_type(void) {
+    SZrAstNode *functionNode = parse_function(
+            "fn sample(e: Edge) { switch (e) { (Empty) { return 0; } (Bounds { low: lo, high: hi }) { return hi - lo; } } } "
+            "union Edge { Empty; Bounds { low: int; high: int; } }");
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "hi");
+
+    TEST_ASSERT_NOT_NULL(name);
+    register_outer_value(name, ZR_VALUE_TYPE_STRING);
+    for (TZrSize index = 0U; index < 3U; index++) {
+        assert_query_int(functionNode);
+    }
+}
+
+static void test_switch_union_conflicting_case_returns_report_not_provable(void) {
+    SZrAstNode *functionNode = parse_function(
+            "fn sample(p: Payment) { switch (p) { (Ok(total)) { return total; } (Err(code)) { return code; } } } "
+            "union Payment { Ok(value: int); Err(code: string); }");
+    SZrTypeEnvironment *savedEnv = g_compiler.typeEnv;
+
+    TEST_ASSERT_FALSE(ZrParser_Compiler_InferCallableReturnType(
+            &g_compiler, functionNode, &g_result));
+    TEST_ASSERT_TRUE(g_compiler.hasError);
+    TEST_ASSERT_TRUE(g_compiler.hasStructuredError);
+    TEST_ASSERT_EQUAL_PTR(savedEnv, g_compiler.typeEnv);
+    TEST_ASSERT_EQUAL_UINT(0U, savedEnv->variableTypes.length);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, g_result.baseType);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_literal_return_query_prerequisite);
@@ -318,5 +377,11 @@ int main(void) {
     RUN_TEST(test_meta_function_query_binds_its_parameters);
     RUN_TEST(test_repeated_queries_do_not_publish_parameters_to_parent);
     RUN_TEST(test_existing_error_preserves_query_result_and_environment);
+    RUN_TEST(test_switch_case_and_default_returns_are_collected);
+    RUN_TEST(test_switch_default_only_return_is_collected);
+    RUN_TEST(test_switch_nested_callable_return_is_not_collected);
+    RUN_TEST(test_switch_union_payload_binding_shadows_outer_same_spelling);
+    RUN_TEST(test_switch_union_struct_payload_binding_uses_field_type);
+    RUN_TEST(test_switch_union_conflicting_case_returns_report_not_provable);
     return UNITY_END();
 }

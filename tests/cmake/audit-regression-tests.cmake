@@ -53,3 +53,14 @@ add_test(NAME build_macro_keyword_link_contract
         -G "${CMAKE_GENERATOR}"
         "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
         "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+
+# pub/pro/pri async fn 的访问修饰符须保留到 AST 与模块导出预扫描。
+zr_vm_add_unity_test_target(zr_vm_async_function_access_modifier_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_async_function_access_modifier.c)
+zr_vm_link_parser_core(zr_vm_async_function_access_modifier_test)
+target_include_directories(zr_vm_async_function_access_modifier_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/include)
+add_test(NAME async_function_access_modifier COMMAND zr_vm_async_function_access_modifier_test)
+set_tests_properties(async_function_access_modifier PROPERTIES TIMEOUT 30)

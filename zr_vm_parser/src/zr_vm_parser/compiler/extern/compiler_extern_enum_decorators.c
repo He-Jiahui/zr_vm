@@ -39,7 +39,8 @@ static TZrBool compiler_extern_enum_arguments_valid(
         SZrFunctionCall *call) {
     if (target == ZR_EXTERN_ENUM_DECORATOR_MEMBER) {
         TZrInt64 value = 0;
-        /* BUG: INT64_MAX 字面量会通过此处校验；后续枚举成员初始化无界执行 value + 1，触发 C 有符号溢出。 */
+        /* INT64_MAX 是合法成员值，此处不设上限；其后的自动值游标由
+         * extern_compiler_enum_advance_auto_value 标记为耗尽，需要后继的自动成员在编译阶段报错。 */
         return extern_compiler_extract_int_argument(call, &value);
     }
 
