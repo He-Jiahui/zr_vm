@@ -475,8 +475,7 @@ static TZrBool metadata_project_feature_enabled(
     return ZR_FALSE;
 }
 
-/* 查找函数上的唯一 conditional 属性并读出 feature 名。 */
-/* BUG: 用户 schema decorator 解析成功时只设置 boundSchema，schema 仍为 NULL；下方条件随后解引用 schema->role。编译带合法 function-target 用户属性的普通函数即可在 conditional 扫描中空指针解引用。 */
+/* 查找函数上的唯一 conditional 属性并读出 feature 名。用户 schema 只填 boundSchema。 */
 static TZrBool metadata_find_conditional_attribute(
         SZrCompilerState *cs,
         SZrFunctionDeclaration *declaration,
@@ -493,6 +492,7 @@ static TZrBool metadata_find_conditional_attribute(
          index++) {
         SZrParsedMetadataAttribute parsed;
         if (!metadata_parse_attribute(cs, declaration->decorators->nodes[index], &parsed) ||
+            parsed.schema == ZR_NULL ||
             parsed.schema->role != ZR_PARSER_ATTRIBUTE_ROLE_CONDITIONAL) {
             continue;
         }

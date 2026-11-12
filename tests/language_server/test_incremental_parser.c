@@ -578,6 +578,276 @@ static void test_incremental_parser_honors_declaration_retention_boundary(
     TEST_PASS(timer, summary);
 }
 
+/* 回退 AST 仍是上一份合法文本。等长语法错误后再改另一个声明，不能把旧树局部改写成新文本。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_fallback_ast(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Fallback AST";
+    const TZrChar *valid =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *broken =
+            "fn first(): int { return 1  }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 1  }\n"
+            "fn second(): int { return 9; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *initialRoot;
+    SZrAstNode *initialSecond;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-fallback-ast.zr",
+            strlen("file:///declaration-reparse-fallback-ast.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        strlen(valid) != strlen(broken) || strlen(broken) != strlen(edited) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, valid, strlen(valid), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the valid two-declaration baseline");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    initialRoot = fileVersion != ZR_NULL ? fileVersion->ast : ZR_NULL;
+    if (fileVersion == ZR_NULL || fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length != 0U ||
+        initialRoot == ZR_NULL || initialRoot->type != ZR_AST_SCRIPT ||
+        initialRoot->data.script.statements == ZR_NULL ||
+        initialRoot->data.script.statements->count != 2U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Valid baseline must own a current two-declaration AST");
+        return;
+    }
+    initialSecond = initialRoot->data.script.statements->nodes[1];
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, broken, strlen(broken), 2U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->ast != initialRoot || !fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Same-length syntax error must keep the previous AST as fallback and publish a diagnostic");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 3U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE ||
+        !fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length == 0U ||
+        fileVersion->ast != initialRoot ||
+        initialRoot->data.script.statements->nodes[1] != initialSecond) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "Editing another declaration must full-reparse and keep the syntax error on the fallback AST");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* 读取第 index 个顶层函数 `return <整数>;` 的字面量，用来确认 AST 对应的是哪一份文本。 */
+static TZrBool top_level_function_returns_integer(SZrAstNode *root, TZrSize index, TZrInt64 expected) {
+    SZrAstNode *function;
+    SZrAstNode *body;
+    SZrAstNode *statement;
+    SZrAstNode *expression;
+
+    if (root == ZR_NULL || root->type != ZR_AST_SCRIPT || root->data.script.statements == ZR_NULL ||
+        root->data.script.statements->count <= index) {
+        return ZR_FALSE;
+    }
+    function = root->data.script.statements->nodes[index];
+    body = function != ZR_NULL && function->type == ZR_AST_FUNCTION_DECLARATION
+                   ? function->data.functionDeclaration.body : ZR_NULL;
+    statement = body != ZR_NULL && body->type == ZR_AST_BLOCK && body->data.block.body != ZR_NULL &&
+                        body->data.block.body->count > 0U
+                        ? body->data.block.body->nodes[0] : ZR_NULL;
+    expression = statement != ZR_NULL && statement->type == ZR_AST_RETURN_STATEMENT
+                         ? statement->data.returnStatement.expr : ZR_NULL;
+    return expression != ZR_NULL && expression->type == ZR_AST_INTEGER_LITERAL &&
+           expression->data.integerLiteral.value == expected;
+}
+
+/* 首次解析就带语法错误时采用的是恢复树而非回退树。等长修改另一个声明不能局部成功并清掉语法诊断。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_error_recovery_ast(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Error Recovery AST";
+    const TZrChar *broken =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2  }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 9; }\n"
+            "fn second(): int { return 2  }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-recovery-ast.zr",
+            strlen("file:///declaration-reparse-recovery-ast.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL || strlen(broken) != strlen(edited) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, broken, strlen(broken), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the fresh document with a syntax error");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Fresh broken document must publish a syntax diagnostic");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 2U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE ||
+        fileVersion->parserDiagnostics.length == 0U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "Editing another declaration must full-reparse and keep the unrepaired syntax diagnostic");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* 上一份文本没有解析过时，AST 落后一版。再等长改另一个声明，不能在这棵旧树上局部替换。 */
+static void test_incremental_parser_does_not_reparse_declaration_over_unparsed_content(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reparse Declaration Over Unparsed Content";
+    const TZrChar *initial =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *unparsed =
+            "fn first(): int { return 7; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 7; }\n"
+            "fn second(): int { return 8; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-unparsed.zr",
+            strlen("file:///declaration-reparse-unparsed.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, initial, strlen(initial), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, unparsed, strlen(unparsed), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 3U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to apply two updates with a single parse");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->isDirty || fileVersion->usesFallbackAst ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !top_level_function_returns_integer(fileVersion->ast, 0U, 7) ||
+        !top_level_function_returns_integer(fileVersion->ast, 1U, 8)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "An AST that lags the previous text must be rebuilt from the current text");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* 上一份文本没有解析过时，只改注释的更新不能按 token 等价清掉 dirty 并沿用落后的 AST。 */
+static void test_incremental_parser_does_not_reuse_tokens_over_unparsed_content(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Does Not Reuse Tokens Over Unparsed Content";
+    const TZrChar *initial =
+            "fn first(): int { return 1; } // a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *unparsed =
+            "fn first(): int { return 7; } // a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *commentOnly =
+            "fn first(): int { return 7; } // b\n"
+            "fn second(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///token-equivalent-unparsed.zr",
+            strlen("file:///token-equivalent-unparsed.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, initial, strlen(initial), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, unparsed, strlen(unparsed), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, commentOnly, strlen(commentOnly), 3U)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to apply a comment-only update over unparsed content");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || !fileVersion->isDirty ||
+        fileVersion->lastChangeInfo.isTokenEquivalent ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !top_level_function_returns_integer(fileVersion->ast, 0U, 7)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "A comment-only edit over unparsed content must stay dirty and rebuild the AST");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
 /* 编辑改变声明范围时应完整重建，避免复用节点携带过期源码偏移。 */
 static void test_incremental_parser_falls_back_for_unstable_declaration_range(
         SZrState *state) {
@@ -649,6 +919,294 @@ static void test_incremental_parser_falls_back_for_unstable_declaration_range(
     ZrParser_Ast_Free(state, retainedPreviousAst);
     ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, summary);
+}
+
+/* 读取第 index 个顶层函数首条 return 的整数字面量；AST 形状不符时返回假，供脏标记用例核对树的内容。 */
+static TZrBool test_read_function_return_integer(SZrAstNode *root,
+                                                 TZrSize index,
+                                                 TZrInt64 *outValue) {
+    SZrAstNode *function;
+    SZrAstNode *body;
+    SZrAstNode *statement;
+    SZrAstNode *expression;
+
+    if (root == ZR_NULL || outValue == ZR_NULL || root->type != ZR_AST_SCRIPT ||
+        root->data.script.statements == ZR_NULL ||
+        index >= root->data.script.statements->count) {
+        return ZR_FALSE;
+    }
+    function = root->data.script.statements->nodes[index];
+    if (function == ZR_NULL || function->type != ZR_AST_FUNCTION_DECLARATION) {
+        return ZR_FALSE;
+    }
+    body = function->data.functionDeclaration.body;
+    if (body == ZR_NULL || body->type != ZR_AST_BLOCK ||
+        body->data.block.body == ZR_NULL || body->data.block.body->count == 0U) {
+        return ZR_FALSE;
+    }
+    statement = body->data.block.body->nodes[0];
+    if (statement == ZR_NULL || statement->type != ZR_AST_RETURN_STATEMENT) {
+        return ZR_FALSE;
+    }
+    expression = statement->data.returnStatement.expr;
+    if (expression == ZR_NULL || expression->type != ZR_AST_INTEGER_LITERAL) {
+        return ZR_FALSE;
+    }
+    *outValue = expression->data.integerLiteral.value;
+    return ZR_TRUE;
+}
+
+/* 脏文件之后的 token 等价更新不能清掉脏标记：尚未解析的那次改动仍须由下一次 Parse 兑现。
+ * 注释放在两个声明之间，声明级重解析选不出候选，结果只取决于脏标记。 */
+static void test_incremental_parser_keeps_dirty_across_token_equivalent_update(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Keeps Dirty Across Token Equivalent Update";
+    const TZrChar *parsed =
+            "fn first(): int { return 1; }\n"
+            "// note a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *edited =
+            "fn first(): int { return 9; }\n"
+            "// note a\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *recommented =
+            "fn first(): int { return 9; }\n"
+            "// note b\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *recommentedAgain =
+            "fn first(): int { return 9; }\n"
+            "// note c\n"
+            "fn second(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *reparsedRoot;
+    TZrBool readFirst;
+    TZrBool readSecond;
+    TZrInt64 firstValue = 0;
+    TZrInt64 secondValue = 0;
+    TZrChar reason[256];
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Sticky dirty flag",
+            "A token-equivalent update on an unparsed file must not let Parse reuse the AST of an older text");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///dirty-token-equivalent.zr",
+            strlen("file:///dirty-token-equivalent.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        strlen(parsed) != strlen(edited) || strlen(edited) != strlen(recommented) ||
+        strlen(recommented) != strlen(recommentedAgain) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, parsed, strlen(parsed), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the parsed baseline");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->isDirty || fileVersion->ast == ZR_NULL ||
+        !test_read_function_return_integer(fileVersion->ast, 0U, &firstValue) ||
+        firstValue != 1) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "The parsed baseline must be clean and return 1 from the first declaration");
+        return;
+    }
+
+    /* 真实改动先让文件变脏，随后只改注释；两次更新之间不解析。 */
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 2U) ||
+        !fileVersion->isDirty || fileVersion->lastChangeInfo.isTokenEquivalent ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, recommented, strlen(recommented), 3U) ||
+        !fileVersion->lastChangeInfo.isTokenEquivalent) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Failed to stage a real edit followed by a token-equivalent edit");
+        return;
+    }
+    if (!fileVersion->isDirty) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "A token-equivalent update cleared the dirty flag of an unparsed edit");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Parsing the dirty file failed");
+        return;
+    }
+    readFirst = test_read_function_return_integer(fileVersion->ast, 0U, &firstValue);
+    readSecond = test_read_function_return_integer(fileVersion->ast, 1U, &secondValue);
+    if (fileVersion->isDirty || fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length != 0U ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !readFirst || !readSecond || firstValue != 9 || secondValue != 2) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Parse must rebuild the AST from the current text; dirty=%d mode=%d first=%lld/9 second=%lld/2",
+                 fileVersion->isDirty,
+                 (int)fileVersion->lastParseMode,
+                 (long long)firstValue,
+                 (long long)secondValue);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    /* 干净文件上的 token 等价更新仍保持干净并复用同一棵 AST，脏标记不能变成永远为真。 */
+    reparsedRoot = fileVersion->ast;
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, recommentedAgain, strlen(recommentedAgain), 4U) ||
+        !fileVersion->lastChangeInfo.isTokenEquivalent || fileVersion->isDirty ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+        fileVersion->ast != reparsedRoot ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_TOKEN_EQUIVALENT) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "A token-equivalent update on a clean file must stay clean and reuse the AST");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* 先解析 parsed，再连续提交 edited 与 latest 而不解析；惰性取树时必须得到 latest 的完整语法树。
+ * 最后一次差异只描述最新两版文本，AST 比两者都旧时不能据此局部复用。 */
+static void run_unparsed_edit_reparse_case(SZrState *state,
+                                           const TZrChar *summary,
+                                           const TZrChar *parsed,
+                                           const TZrChar *edited,
+                                           const TZrChar *latest,
+                                           TZrBool latestIsTokenEquivalent,
+                                           TZrInt64 expectedFirst,
+                                           TZrInt64 expectedSecond) {
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *root;
+    TZrBool stagedDirty;
+    TZrBool stagedTokenEquivalent;
+    TZrBool readFirst;
+    TZrBool readSecond;
+    TZrInt64 firstValue = 0;
+    TZrInt64 secondValue = 0;
+    TZrChar reason[384];
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Unparsed edit",
+            "An update that lands on an unparsed edit must force a full reparse instead of patching the older AST");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///unparsed-edit-reparse.zr",
+            strlen("file:///unparsed-edit-reparse.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        strlen(parsed) != strlen(edited) || strlen(edited) != strlen(latest) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, parsed, strlen(parsed), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the parsed baseline");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->isDirty || fileVersion->ast == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, edited, strlen(edited), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, latest, strlen(latest), 3U)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Failed to stage two updates without parsing between them");
+        return;
+    }
+
+    stagedDirty = fileVersion->isDirty;
+    stagedTokenEquivalent = fileVersion->lastChangeInfo.isTokenEquivalent;
+    root = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    readFirst = test_read_function_return_integer(root, 0U, &firstValue);
+    readSecond = test_read_function_return_integer(root, 1U, &secondValue);
+    if (!stagedDirty ||
+        (stagedTokenEquivalent != ZR_FALSE) != (latestIsTokenEquivalent != ZR_FALSE) ||
+        root == ZR_NULL || fileVersion->isDirty || fileVersion->usesFallbackAst ||
+        fileVersion->parserDiagnostics.length != 0U ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE ||
+        !readFirst || !readSecond ||
+        firstValue != expectedFirst || secondValue != expectedSecond) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected a full reparse of the newest text; stagedDirty=%d stagedTokenEquivalent=%d dirty=%d mode=%d first=%lld/%lld second=%lld/%lld",
+                 stagedDirty,
+                 stagedTokenEquivalent,
+                 fileVersion->isDirty,
+                 (int)fileVersion->lastParseMode,
+                 (long long)firstValue,
+                 (long long)expectedFirst,
+                 (long long)secondValue,
+                 (long long)expectedSecond);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+/* token 等价改动落在某个声明内部时，声明级重解析只会替换该声明；
+ * 尚未解析的真实改动在另一个声明里，局部替换会把它留在旧树上。 */
+static void test_incremental_parser_full_reparses_token_equivalent_update_over_unparsed_edit(
+        SZrState *state) {
+    run_unparsed_edit_reparse_case(
+            state,
+            "Incremental Parser Full Reparses Token Equivalent Update Over Unparsed Edit",
+            "fn first(): int { return 1; }\n"
+            "fn second(): int {\n"
+            "    // note a\n"
+            "    return 2;\n"
+            "}\n",
+            "fn first(): int { return 9; }\n"
+            "fn second(): int {\n"
+            "    // note a\n"
+            "    return 2;\n"
+            "}\n",
+            "fn first(): int { return 9; }\n"
+            "fn second(): int {\n"
+            "    // note b\n"
+            "    return 2;\n"
+            "}\n",
+            ZR_TRUE,
+            9,
+            2);
+}
+
+/* 两次真实改动之间没有解析时，最后一次差异只覆盖第二个声明；第一次改动同样不能留在旧树上。 */
+static void test_incremental_parser_full_reparses_second_edit_over_unparsed_edit(
+        SZrState *state) {
+    run_unparsed_edit_reparse_case(
+            state,
+            "Incremental Parser Full Reparses Second Edit Over Unparsed Edit",
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n",
+            "fn first(): int { return 9; }\n"
+            "fn second(): int { return 2; }\n",
+            "fn first(): int { return 9; }\n"
+            "fn second(): int { return 7; }\n",
+            ZR_FALSE,
+            9,
+            7);
 }
 
 /* 磁盘合成版本 0 与客户端 didOpen 版本 0 同号但来源不同；
@@ -913,7 +1471,28 @@ int main(void) {
     test_incremental_parser_honors_declaration_retention_boundary(state);
     TEST_DIVIDER();
 
+    test_incremental_parser_does_not_reparse_declaration_over_fallback_ast(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reparse_declaration_over_error_recovery_ast(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reparse_declaration_over_unparsed_content(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_does_not_reuse_tokens_over_unparsed_content(state);
+    TEST_DIVIDER();
+
     test_incremental_parser_falls_back_for_unstable_declaration_range(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_keeps_dirty_across_token_equivalent_update(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_full_reparses_token_equivalent_update_over_unparsed_edit(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_full_reparses_second_edit_over_unparsed_edit(state);
     TEST_DIVIDER();
 
     test_lsp_update_promotes_synthetic_version_zero_to_open_document(state);
