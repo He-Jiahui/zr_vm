@@ -21,6 +21,22 @@ typedef struct SZrTestTimer {
 
 static int g_failures = 0;
 
+/* Arm only at State_Init's lexer allocation, after document setup allocations.
+ * Fail once so later diagnostic allocations can succeed and expose false success. */
+static struct {
+    TZrBool armed;
+    TZrBool sawLexer;
+    TZrSize ordinal;
+    TZrSize failOrdinal;
+    TZrSize failures;
+} g_firstTokenFault;
+
+static void arm_first_token_fault(TZrSize failOrdinal) {
+    memset(&g_firstTokenFault, 0, sizeof(g_firstTokenFault));
+    g_firstTokenFault.armed = ZR_TRUE;
+    g_firstTokenFault.failOrdinal = failOrdinal;
+}
+
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -57,11 +73,20 @@ static TZrPtr test_allocator(TZrPtr userData,
                              TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-
     if (newSize == 0) {
         free(pointer);
         return ZR_NULL;
+    }
+    if (g_firstTokenFault.armed) {
+        if (pointer == ZR_NULL && newSize == sizeof(SZrLexState) &&
+            flag == ZR_MEMORY_NATIVE_TYPE_STRING) {
+            g_firstTokenFault.sawLexer = ZR_TRUE;
+        }
+        if (g_firstTokenFault.sawLexer &&
+            ++g_firstTokenFault.ordinal == g_firstTokenFault.failOrdinal) {
+            g_firstTokenFault.failures++;
+            return ZR_NULL;
+        }
     }
     if (pointer == ZR_NULL) {
         return malloc(newSize);
@@ -158,6 +183,344 @@ static TZrBool run_parser_diagnostic_case(SZrState *state,
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     return ZR_TRUE;
+}
+
+/* Match all fields on the same diagnostic, and release each query's owned results. */
+static TZrBool first_token_diagnostics_match(SZrState *state,
+                                             SZrLspContext *context,
+                                             SZrString *uri,
+                                             TZrBool expectError) {
+    SZrArray diagnostics = {0};
+    TZrBool matches = ZR_FALSE;
+
+    if (ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        if (!expectError) {
+            matches = diagnostics.length == 0;
+        } else if (diagnostics.length == 1) {
+            SZrLspDiagnostic **entry = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, 0);
+            if (entry != ZR_NULL && *entry != ZR_NULL) {
+                SZrLspDiagnostic *diagnostic = *entry;
+                const TZrChar *code = test_string_text(diagnostic->code);
+                const TZrChar *message = test_string_text(diagnostic->message);
+                matches = diagnostic->severity == 1 &&
+                          code != ZR_NULL && strcmp(code, "parser_syntax_error") == 0 &&
+                          message != ZR_NULL && strcmp(message, "unfinished string") == 0 &&
+                          diagnostic->range.start.line == 0 && diagnostic->range.start.character == 0 &&
+                          diagnostic->range.end.line == 0 && diagnostic->range.end.character == 13;
+            }
+        }
+    }
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    return matches;
+}
+
+static void test_lsp_first_token_resource_failures(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token Resource Failures Stay FALSE";
+    TZrChar content[ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE + 32];
+    SZrString *uri = ZR_NULL;
+    SZrIncrementalParser *parser = ZR_NULL;
+    SZrParserState probe;
+    TZrSize allocationCount;
+    TZrSize checked = 0;
+    TZrBool checkedBufferGrowth = ZR_FALSE;
+    TZrBool checkedStringOwnership = ZR_FALSE;
+    const TZrChar *failure = ZR_NULL;
+
+    TEST_START(summary);
+    /* A valid first-token string requires both buffer growth and a new owned string. */
+    content[0] = '"';
+    memset(content + 1, 'a', sizeof(content) - 4);
+    content[sizeof(content) - 3] = '"';
+    content[sizeof(content) - 2] = ';';
+    content[sizeof(content) - 1] = '\0';
+    uri = ZrCore_String_CreateFromNative(state, "file:///first_token_resource.zr");
+    if (uri == ZR_NULL) {
+        failure = "failed to create resource-fault URI";
+        goto cleanup;
+    }
+
+    arm_first_token_fault(0);
+    ZrParser_State_Init(&probe, state, content, strlen(content), uri);
+    g_firstTokenFault.armed = ZR_FALSE;
+    allocationCount = g_firstTokenFault.ordinal;
+    if (probe.hasError || !g_firstTokenFault.sawLexer || allocationCount == 0) {
+        failure = "resource-fault control must scan a valid first token";
+    }
+    ZrParser_State_Free(&probe);
+    if (failure != ZR_NULL) {
+        goto cleanup;
+    }
+
+    for (TZrSize ordinal = 1; ordinal <= allocationCount; ordinal++) {
+        TZrBool resourceError;
+        SZrFileVersion *fileVersion;
+        TZrBool parsed;
+
+        /* Independently confirm that this allocation fails during the first token,
+         * before installing the same one-shot fault at the public LSP parse entry. */
+        arm_first_token_fault(ordinal);
+        ZrParser_State_Init(&probe, state, content, strlen(content), uri);
+        g_firstTokenFault.armed = ZR_FALSE;
+        resourceError = probe.hasError && g_firstTokenFault.failures == 1;
+        if (resourceError) {
+            printf("First-token allocation %zu: %s\n", (size_t)ordinal, probe.errorMessage);
+        }
+        if (resourceError && probe.lexer != ZR_NULL && probe.lexer->buffer != ZR_NULL &&
+            probe.lexer->t.hasLexError && !probe.lexer->hasSourceEvidenceError) {
+            if (strcmp(probe.errorMessage, "Lexer buffer allocation budget exceeded") == 0) {
+                checkedBufferGrowth = ZR_TRUE;
+            } else if (strcmp(probe.errorMessage, "Parser string allocation budget exceeded") == 0) {
+                checkedStringOwnership = ZR_TRUE;
+            } else {
+                failure = "unexpected first-token fault classification";
+            }
+        }
+        ZrParser_State_Free(&probe);
+        if (failure != ZR_NULL) {
+            goto cleanup;
+        }
+        if (!resourceError) {
+            continue;
+        }
+
+        parser = ZrLanguageServer_IncrementalParser_New(state);
+        if (parser == ZR_NULL ||
+            !ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+                    state, parser, uri, content, strlen(content), 1)) {
+            failure = "failed to prepare resource-fault document";
+            goto cleanup;
+        }
+        arm_first_token_fault(ordinal);
+        parsed = ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
+        g_firstTokenFault.armed = ZR_FALSE;
+        fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+        if (g_firstTokenFault.failures != 1 || parsed || fileVersion == ZR_NULL ||
+            fileVersion->parserDiagnostics.length != 0 || fileVersion->ast != ZR_NULL ||
+            fileVersion->usesFallbackAst || !fileVersion->isDirty) {
+            failure = "first-token resource failure must return FALSE without a syntax diagnostic or accepted AST";
+            goto cleanup;
+        }
+        if (!ZrLanguageServer_IncrementalParser_Parse(state, parser, uri) ||
+            fileVersion->ast == ZR_NULL || fileVersion->parserDiagnostics.length != 0) {
+            failure = "the same valid document must parse after the transient resource fault is removed";
+            goto cleanup;
+        }
+        checked++;
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        parser = ZR_NULL;
+    }
+    if (!checkedBufferGrowth || !checkedStringOwnership) {
+        failure = "fault sweep must cover non-NULL lexer buffer growth and token string allocation/ownership";
+    }
+
+cleanup:
+    g_firstTokenFault.armed = ZR_FALSE;
+    if (parser != ZR_NULL) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        printf("Verified %zu one-shot first-token resource failures, including buffer growth and string ownership\n",
+               (size_t)checked);
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_first_token_user_text_errors(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token User Text Errors Remain Diagnostics";
+    const struct {
+        const TZrChar *content;
+        const TZrChar *message;
+    } cases[] = {
+        {"0x", "Hexadecimal literal requires a digit"},
+        {"1e+", "Numeric exponent requires a digit"},
+        {"1e9999", "Floating-point literal is out of range"},
+        {"019", "Invalid digit in integer literal"},
+        {"9223372036854775808", "Integer literal is out of range"},
+        {"\"\\uQ\"", "invalid unicode escape sequence"},
+        {"\"\\xQ\"", "invalid hex escape sequence"},
+        {"'\\uQ'", "invalid unicode escape sequence"},
+        {"'\\xQ'", "invalid hex escape sequence"},
+        {"\"unterminated", "unfinished string"},
+        {"`unterminated", "unfinished template string"},
+        {"'ab'", "unfinished character literal"}
+    };
+    SZrIncrementalParser *parser = ZR_NULL;
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///first_token_user_text.zr");
+    const TZrChar *failure = ZR_NULL;
+
+    TEST_START(summary);
+    for (TZrSize index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        SZrFileVersion *fileVersion;
+        SZrDiagnostic **entry;
+        parser = ZrLanguageServer_IncrementalParser_New(state);
+        if (parser == ZR_NULL || uri == ZR_NULL ||
+            !ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+                    state, parser, uri, cases[index].content, strlen(cases[index].content), 1) ||
+            !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+            failure = "clear first-token user text errors must be accepted with a diagnostic";
+            break;
+        }
+        fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+        entry = fileVersion != ZR_NULL
+                    ? (SZrDiagnostic **)ZrCore_Array_Get(&fileVersion->parserDiagnostics, 0) : ZR_NULL;
+        if (fileVersion == ZR_NULL || fileVersion->parserDiagnostics.length != 1 ||
+            fileVersion->ast != ZR_NULL || fileVersion->usesFallbackAst ||
+            entry == ZR_NULL || *entry == ZR_NULL || (*entry)->severity != ZR_DIAGNOSTIC_ERROR ||
+            (*entry)->code == ZR_NULL || (*entry)->message == ZR_NULL ||
+            strcmp(test_string_text((*entry)->code), "parser_syntax_error") != 0 ||
+            strcmp(test_string_text((*entry)->message), cases[index].message) != 0) {
+            failure = "user text error must retain its exact message and parser_syntax_error code";
+            break;
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        parser = ZR_NULL;
+    }
+    if (parser != ZR_NULL) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+static void test_lsp_first_token_lex_diagnostic_and_repair(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token Lex Diagnostic and Repair";
+    const TZrChar *broken = "\"unterminated";
+    const TZrChar *valid = "var value: int = 1;";
+    const TZrChar *semanticError = "var value: int = missing;";
+    const TZrChar *failure = ZR_NULL;
+    SZrLspContext *context;
+    SZrString *freshUri;
+    SZrString *editUri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *previousAst;
+    SZrArray diagnostics = {0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    freshUri = ZrCore_String_Create(state, "file:///first_token_fresh.zr", strlen("file:///first_token_fresh.zr"));
+    editUri = ZrCore_String_Create(state, "file:///first_token_edit.zr", strlen("file:///first_token_edit.zr"));
+    if (context == ZR_NULL || freshUri == ZR_NULL || editUri == ZR_NULL) {
+        failure = "failed to create first-token diagnostic context or URIs";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, freshUri, broken, strlen(broken), 1) ||
+        !first_token_diagnostics_match(state, context, freshUri, ZR_TRUE)) {
+        failure = "fresh unfinished string must be acknowledged with its error code, message, and full token range";
+        goto cleanup;
+    }
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, freshUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast != ZR_NULL || fileVersion->usesFallbackAst) {
+        failure = "fresh lex error must not invent a fallback AST";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, freshUri, valid, strlen(valid), 2) ||
+        !first_token_diagnostics_match(state, context, freshUri, ZR_FALSE)) {
+        failure = "repairing a fresh unfinished string must clear its diagnostic";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 1) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE)) {
+        failure = "valid starting document must parse without diagnostics";
+        goto cleanup;
+    }
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, editUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || fileVersion->usesFallbackAst) {
+        failure = "valid starting document must own a current AST";
+        goto cleanup;
+    }
+    previousAst = fileVersion->ast;
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, broken, strlen(broken), 2) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_TRUE) ||
+        !fileVersion->usesFallbackAst || fileVersion->ast != previousAst) {
+        failure = "valid-to-broken edit must publish the current lex error and retain the previous AST as fallback";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 3) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE) ||
+        fileVersion->usesFallbackAst || fileVersion->ast == ZR_NULL) {
+        failure = "repaired edit must clear the lex diagnostic and replace the fallback with a current AST";
+        goto cleanup;
+    }
+
+    /* A retained analyzer must not publish diagnostics from the previous text. */
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, semanticError, strlen(semanticError), 4) ||
+        !ZrLanguageServer_Lsp_GetDiagnostics(state, context, editUri, &diagnostics) ||
+        diagnostics.length == 0 || fileVersion->usesFallbackAst || fileVersion->parserDiagnostics.length != 0) {
+        failure = "semantic-error control must have diagnostics and a current syntactically valid AST";
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, broken, strlen(broken), 5) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_TRUE) || !fileVersion->usesFallbackAst) {
+        failure = "fallback must publish only the current lex error, without stale semantic diagnostics";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, editUri, valid, strlen(valid), 6) ||
+        !first_token_diagnostics_match(state, context, editUri, ZR_FALSE) || fileVersion->usesFallbackAst) {
+        failure = "final repair must clear both syntax and stale semantic diagnostics";
+    }
+
+cleanup:
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+/* 首 token 跨行时，诊断范围要覆盖整个 token，并按 CRLF 文本投影成 LSP 行列。 */
+static void test_lsp_first_token_multiline_lex_range(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP First Token Multiline Lex Diagnostic Range";
+    const TZrChar *broken = "`ab\r\ncd";
+    const TZrChar *failure = ZR_NULL;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrArray diagnostics = {0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, "file:///first_token_multiline.zr", strlen("file:///first_token_multiline.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        failure = "failed to create multiline first-token context or URI";
+    } else if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, broken, strlen(broken), 1) ||
+               !ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+               diagnostics.length != 1) {
+        failure = "multiline unfinished template string must be acknowledged with one diagnostic";
+    } else {
+        SZrLspDiagnostic **entry = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, 0);
+        const TZrChar *message = entry != ZR_NULL && *entry != ZR_NULL
+                                     ? test_string_text((*entry)->message) : ZR_NULL;
+        if (message == ZR_NULL || strcmp(message, "unfinished template string") != 0 ||
+            (*entry)->range.start.line != 0 || (*entry)->range.start.character != 0 ||
+            (*entry)->range.end.line != 1 || (*entry)->range.end.character != 2) {
+            failure = "multiline first-token diagnostic must span 0:0 to 1:2";
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (failure != ZR_NULL) {
+        TEST_FAIL(timer, summary, failure);
+    } else {
+        TEST_PASS(timer, summary);
+    }
 }
 
 static void test_lsp_missing_index_close_parser_diagnostic(SZrState *state) {
@@ -888,6 +1251,14 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    test_lsp_first_token_lex_diagnostic_and_repair(state);
+    TEST_DIVIDER();
+    test_lsp_first_token_resource_failures(state);
+    TEST_DIVIDER();
+    test_lsp_first_token_user_text_errors(state);
+    TEST_DIVIDER();
+    test_lsp_first_token_multiline_lex_range(state);
+    TEST_DIVIDER();
     test_lsp_missing_index_close_parser_diagnostic(state);
     TEST_DIVIDER();
     test_lsp_missing_member_name_parser_diagnostic(state);

@@ -2438,6 +2438,89 @@ static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
     free(source);
 }
 
+/* 首 token 的用户文本名单必须与 lexer.c 的 SyntaxError 消息逐条一致：
+ * 名单之外的消息在 LSP 层按资源失败处理，文档更新会被拒绝且没有诊断。 */
+static void test_initial_lex_error_allowlist_matches_lexer_syntax_errors(void) {
+    static const char callPrefix[] = "ZrParser_Lexer_SyntaxError(ls, ";
+    char *lexerSource = read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/syntax/lexer.c");
+    char *parserSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_parser.c");
+    const char *listStart;
+    const char *listEnd;
+    const char *cursor;
+    char needle[224];
+    int lexerMessages = 0;
+    int listedMessages = 0;
+
+    if (lexerSource == NULL || parserSource == NULL) {
+        printf("FAIL: could not read lexer.c or incremental_parser.c\n");
+        g_failures++;
+        free(lexerSource);
+        free(parserSource);
+        return;
+    }
+
+    listStart = strstr(parserSource, "static TZrBool initial_lex_error_is_user_text(");
+    listStart = listStart != NULL ? strstr(listStart, "messages[] = {") : NULL;
+    listEnd = listStart != NULL ? strstr(listStart, "};") : NULL;
+    if (listStart == NULL || listEnd == NULL) {
+        printf("Missing source contract section: initial_lex_error_is_user_text messages\n");
+        g_failures++;
+        free(lexerSource);
+        free(parserSource);
+        return;
+    }
+
+    /* lexer.c 的每条用户文本错误都必须在名单内。 */
+    for (cursor = strstr(lexerSource, callPrefix); cursor != NULL; cursor = strstr(cursor, callPrefix)) {
+        const char *open = cursor + strlen(callPrefix);
+        const char *close = *open == '"' ? strchr(open + 1, '"') : NULL;
+        size_t length = close != NULL ? (size_t)(close - open) + 1u : 0u;
+
+        if (close == NULL || length >= sizeof(needle)) {
+            printf("Unreadable lexer SyntaxError message literal\n");
+            g_failures++;
+            break;
+        }
+        memcpy(needle, open, length);
+        needle[length] = '\0';
+        lexerMessages++;
+        if (!text_range_contains(listStart, listEnd, needle)) {
+            printf("Lexer SyntaxError message missing from LSP first-token list: %s\n", needle);
+            g_failures++;
+        }
+        cursor = close;
+    }
+
+    /* 名单内的每条消息都必须仍由 lexer.c 发出，避免留下失效条目。 */
+    for (cursor = strchr(listStart, '"'); cursor != NULL && cursor < listEnd;) {
+        const char *close = strchr(cursor + 1, '"');
+        size_t length = close != NULL ? (size_t)(close - cursor) + 1u : 0u;
+
+        if (close == NULL || close >= listEnd ||
+            strlen(callPrefix) + length >= sizeof(needle)) {
+            break;
+        }
+        memcpy(needle, callPrefix, strlen(callPrefix));
+        memcpy(needle + strlen(callPrefix), cursor, length);
+        needle[strlen(callPrefix) + length] = '\0';
+        listedMessages++;
+        if (strstr(lexerSource, needle) == NULL) {
+            printf("LSP first-token list entry is not a lexer SyntaxError message: %s\n", needle);
+            g_failures++;
+        }
+        cursor = strchr(close + 1, '"');
+    }
+
+    if (lexerMessages == 0 || listedMessages == 0) {
+        printf("FAIL: first-token lex error contract found no messages to compare\n");
+        g_failures++;
+    }
+
+    free(lexerSource);
+    free(parserSource);
+}
+
 /* 下列 .h 是本翻译单元的静态案例片段；main 统一调度，不能单独编译运行。 */
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_extern_enum_decorator_cases.h"
@@ -2482,6 +2565,7 @@ int main(void) {
     test_semantic_query_uses_content_snapshot();
     test_incremental_parser_parse_uses_content_snapshot();
     test_incremental_parser_content_uses_versioned_refcounted_block();
+    test_initial_lex_error_allowlist_matches_lexer_syntax_errors();
     test_editor_features_use_content_snapshot();
     test_token_metadata_hover_uses_content_snapshot();
     test_semantic_tokens_source_scan_uses_content_snapshot();
@@ -2573,6 +2657,7 @@ int main(void) {
     printf("PASS: Semantic query uses content snapshot\n");
     printf("PASS: Incremental parser parse uses content snapshot\n");
     printf("PASS: Incremental parser content uses versioned refcounted block\n");
+    printf("PASS: First-token lex error list matches lexer SyntaxError messages\n");
     printf("PASS: Editor features use content snapshot\n");
     printf("PASS: Token metadata hover uses content snapshot\n");
     printf("PASS: Semantic tokens source scan uses content snapshot\n");
