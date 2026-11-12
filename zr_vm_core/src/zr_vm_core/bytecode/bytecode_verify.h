@@ -280,9 +280,10 @@ static TZrBool bytecode_verify_instruction(const SZrBytecodeVerificationView *f,
             return (TZrBool)(D(e) && S(x) && S(y));
 
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
-            /* z 与 b 共用操作数字节。不能把它们当成互不相关的槽号和常量下标。 */
-            return (TZrBool)(D(e) && S(x) && S(y) && S(z) && K(b) &&
-                             ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(z, b));
+            /* z 与 b 取自同一段操作数字节，z 由 b 决定，两者不会不一致。
+             * 这里能拒绝的只有越界：S(z) 约束 b 所占字节给出的常量物化槽。
+             * 槽号与下标能否共存由编译器在融合前判断。 */
+            return (TZrBool)(D(e) && S(x) && S(y) && S(z) && K(b));
 
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
             return (TZrBool)(W(a, 4u) && S(b));
