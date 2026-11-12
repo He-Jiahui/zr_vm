@@ -304,6 +304,27 @@ static TZrBool legacy_property_find_name_slice(
         node->location.end.offset > ps->lexer->sourceLength) {
         return ZR_FALSE;
     }
+    /* 名称标识符节点记录了解析时的 token 位置；优先使用它，名称前注释或
+     * 关键字里的同名文本就不会被当成属性名。拼写核对失败才退回文本扫描。 */
+    {
+        const SZrIdentifier *identifier =
+                node->data.interfacePropertySignature.name;
+        const SZrAstNode *nameNode = (const SZrAstNode *)(
+                (const char *)identifier -
+                offsetof(SZrAstNode, data.identifier));
+        TZrSize nameStart = nameNode->location.start.offset;
+
+        if (nameNode->type == ZR_AST_IDENTIFIER_LITERAL &&
+            nameStart >= node->location.start.offset &&
+            nameNode->location.end.offset >= nameStart &&
+            nameNode->location.end.offset - nameStart == nameLength &&
+            nameLength <= node->location.end.offset - nameStart &&
+            memcmp(ps->lexer->source + nameStart, nameText, nameLength) == 0) {
+            outSlice->start = nameStart;
+            outSlice->length = nameLength;
+            return ZR_TRUE;
+        }
+    }
     for (TZrSize offset = node->location.start.offset;
          offset + nameLength <= node->location.end.offset;
          offset++) {
