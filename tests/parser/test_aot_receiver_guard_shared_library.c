@@ -750,6 +750,23 @@ static const char *container_element_callable_field_source(void) {
            "fn invoke(xs) { var r = xs[0].f(3); return r; }\n"
            "return invoke([{ f: plus4 }]);\n";
 }
+
+/* r01c: the staged argument is an object copy, so no constant follows the receiver. */
+static const char *container_element_object_argument_method_source(void) {
+    return "class Counter { pub var n: int = 4; "
+           "pub fn take(o: Counter) { this.n = o.n + 3; } }\n"
+           "fn poke(xs, o) { xs[0].take(o); }\n"
+           "var counter = new Counter(); poke([counter], counter); return counter.n;\n";
+}
+
+/* Spread: FUNCTION_CALL_SPREAD's argument window reads the staged receiver,
+ * independent of the cached dynamic-call liveness rule. */
+static const char *container_element_spread_method_source(void) {
+    return "class Counter { pub var n: int = 4; "
+           "pub fn add2(a: int, b: int) { this.n = this.n + a + b; } }\n"
+           "fn poke(xs, ys) { xs[0].add2(1, ...ys); }\n"
+           "var counter = new Counter(); poke([counter], [2]); return counter.n;\n";
+}
 #endif
 
 static void test_scalar_liveness_pins_match_interpreter(void) {
@@ -760,7 +777,9 @@ static void test_scalar_liveness_pins_match_interpreter(void) {
         cached_call_argument_liveness_source(),
         container_element_method_source(),
         container_element_zero_argument_method_source(),
-        container_element_callable_field_source()
+        container_element_callable_field_source(),
+        container_element_object_argument_method_source(),
+        container_element_spread_method_source()
     };
 
     for (size_t index = 0u; index < sizeof(sources) / sizeof(sources[0]); index++) {
@@ -840,6 +859,46 @@ static void test_aot_c_container_element_callable_field_stops_at_receiver_redefi
 #endif
 }
 
+static void test_aot_c_container_element_object_argument_method_stops_at_receiver_redefinition(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(container_element_object_argument_method_source(), 7, ZR_AOT_BACKEND_KIND_C,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C, ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+            "u1_r01c_c", "aot_c");
+#endif
+}
+
+static void test_aot_llvm_container_element_object_argument_method(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(container_element_object_argument_method_source(), 7, ZR_AOT_BACKEND_KIND_LLVM,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM, ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+            "u1_r01c_llvm", "aot_llvm");
+#endif
+}
+
+static void test_aot_c_container_element_spread_method_stops_at_receiver_redefinition(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(container_element_spread_method_source(), 7, ZR_AOT_BACKEND_KIND_C,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C, ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+            "u1_spread_c", "aot_c");
+#endif
+}
+
+static void test_aot_llvm_container_element_spread_method(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("Generated library execution uses the Unix dlopen toolchain");
+#else
+    execute_source_backend(container_element_spread_method_source(), 7, ZR_AOT_BACKEND_KIND_LLVM,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM, ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+            "u1_spread_llvm", "aot_llvm");
+#endif
+}
+
 
 /* 注册 C 与 LLVM 共享库的接收者守卫及所有权合同用例。 */
 int main(void) {
@@ -851,6 +910,10 @@ int main(void) {
     RUN_TEST(test_aot_c_container_element_zero_argument_method_stops_at_receiver_redefinition);
     RUN_TEST(test_aot_llvm_container_element_zero_argument_method);
     RUN_TEST(test_aot_c_container_element_callable_field_stops_at_receiver_redefinition);
+    RUN_TEST(test_aot_c_container_element_object_argument_method_stops_at_receiver_redefinition);
+    RUN_TEST(test_aot_llvm_container_element_object_argument_method);
+    RUN_TEST(test_aot_c_container_element_spread_method_stops_at_receiver_redefinition);
+    RUN_TEST(test_aot_llvm_container_element_spread_method);
     RUN_TEST(test_aot_c_optional_receiver_abi);
     RUN_TEST(test_aot_llvm_optional_receiver_abi);
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);
