@@ -487,7 +487,7 @@ static void skip_whitespace_and_comments(SZrLexState *ls) {
                 // 注意：ZrParser_Lexer_ReadChar 已经处理了换行符的行号增加，这里不需要重复处理
                 ZrParser_Lexer_ReadChar(ls);
             }
-            /* 文件在闭合之前结束仍是词法错误；以 */ 结束的注释不算未闭合。 */
+            // 文件在闭合之前结束仍是词法错误；恰好以闭合符（星号加斜杠）结束的注释不算未闭合。
             if (!blockCommentClosed) {
                 ZrParser_Lexer_SyntaxError(ls, "unfinished block comment");
             }
