@@ -119,7 +119,7 @@ doc_type: category-index
 | parser 调用展开、闭包捕获与值类型运行测试 | [65 项](coverage/tests_parser_call_value_runtime.tsv) | 3 个 C 文件独立复核，201 个证据锚点有效，源码仅增 70 行注释；GCC 语法检查通过。6 个 BUG 行记录 Unity 失败后清理跳过，另有 3 个覆盖 TODO；未运行运行时测试。 |
 | parser 字面量、语法与旧式迁移测试 | [362 项](coverage/tests_parser_syntax_literals_migration.tsv) | 10 个 C 文件独立复核，1,195 个证据锚点有效，源码仅增 37 行注释；GCC 语法检查 10/10 通过。1 个 BUG 行记录未注册 Unity 用例，5 个 TODO 行归于 3 类覆盖疑点；定向构建停在共享 CMake 再生成，未运行测试。 |
 | parser 项目导入、规范键与反射压力测试 | [142 项](coverage/tests_parser_project_reflection_runtime.tsv) | 3 个 C 文件独立复核，356 个证据锚点有效，源码仅改注释；GCC/Clang 语法检查通过。16 个 BUG 行含正常路径原生数组与源树泄漏，另有 7 个 TODO；定向构建停在共享 CMake 再生成，未运行测试。 |
-| parser 类型、函数、泛型与 extern 语法 | [80 项](coverage/zr_vm_parser_syntax_types_functions.tsv) | 5 个 C 文件独立复核，154 个证据锚点有效，源码仅改注释；GCC/Clang 语法检查通过。26 个 BUG 行记录可达清理缺陷与异步函数修饰符问题，另有 19 个 TODO；定向构建停在共享 CMake 再生成，未运行测试。 |
+| parser 类型、函数、泛型与 extern 语法 | [80 项](coverage/zr_vm_parser_syntax_types_functions.tsv) | 5 个 C 文件独立复核，154 个证据锚点有效，源码仅改注释；GCC/Clang 语法检查通过。24 个 BUG 行记录可达清理缺陷，另有 19 个 TODO；异步函数修饰符缺陷已修复，台账两行改为 commented 并锚定回归断言；定向构建停在共享 CMake 再生成，未运行测试。 |
 | parser 错误恢复与 AST 清理测试 | [23 项](coverage/tests_parser_recovery_ownership.tsv) | 1 个 C 文件独立复核，85 个证据锚点有效，源码仅增注释；GCC 语法检查通过。2 个 BUG 行记录装饰器和可变形参 fixture 没有触及声称的路径；未运行运行时测试。 |
 | parser 表达式、字面量与插值语法 | [111 项](coverage/zr_vm_parser_syntax_expressions.tsv) | 5 个 C 文件独立复核，567 个证据锚点有效，源码仅增 114 行注释；GCC/Clang 语法检查通过。37 个 BUG 行含计算式对象键空指针解引用及失败路径子树泄漏，另有 4 个 TODO；未运行运行时测试。 |
 | parser 引用语法与表达式片段测试 | [49 项](coverage/tests_parser_reference_expression_fragment.tsv) | 2 个 C 文件独立复核，152 个证据锚点有效，源码仅增 23 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行标记同一处准确 token/范围断言缺口，另有 2 个自动测试归属 TODO；未运行测试二进制。 |
