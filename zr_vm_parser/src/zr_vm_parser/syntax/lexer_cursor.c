@@ -232,6 +232,12 @@ void ZrParser_Lexer_Next(SZrLexState *ls) {
         ls->currentLineStartOffset = ls->tokenStartLineStart;
         return;
     }
+    // 文本源的 EOS 是终点。带词法错误的 EOS（未闭合块注释）若被重新扫描，会换成一个干净的
+    // EOS，错误恢复多读一个 token 就丢了这条诊断；此时保持当前 token，并丢弃 EOS 之后的前瞻。
+    if (ls->t.token == ZR_TK_EOS && ls->t.hasLexError) {
+        ls->hasLookahead = ZR_FALSE;
+        return;
+    }
     if (ls->hasSplitPending) {
         ls->t = ls->splitPending;
         ls->hasSplitPending = ZR_FALSE;
