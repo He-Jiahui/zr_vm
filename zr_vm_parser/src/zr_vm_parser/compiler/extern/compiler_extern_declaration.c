@@ -199,12 +199,13 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
                                                        SZrAstNode *memberNode,
                                                        SZrString *underlyingName,
                                                        TZrInt64 *nextAutoValue,
+                                                       TZrBool *autoValueExhausted,
                                                        SZrTypeValue *outValue) {
     SZrAstNode *valueNode;
     TZrInt64 explicitIntValue = 0;
 
-    if (cs == ZR_NULL || memberNode == ZR_NULL || nextAutoValue == ZR_NULL || outValue == ZR_NULL ||
-        memberNode->type != ZR_AST_ENUM_MEMBER) {
+    if (cs == ZR_NULL || memberNode == ZR_NULL || nextAutoValue == ZR_NULL || autoValueExhausted == ZR_NULL ||
+        outValue == ZR_NULL || memberNode->type != ZR_AST_ENUM_MEMBER) {
         return ZR_FALSE;
     }
 
@@ -212,7 +213,7 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
     if (valueNode == ZR_NULL &&
         extern_compiler_decorators_get_int_arg(memberNode->data.enumMember.decorators, "value", &explicitIntValue)) {
         ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
-        *nextAutoValue = explicitIntValue + 1;
+        extern_compiler_enum_advance_auto_value(explicitIntValue, nextAutoValue, autoValueExhausted);
         return ZR_TRUE;
     }
 
@@ -223,9 +224,16 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
                                     memberNode->location);
             return ZR_FALSE;
         }
+        /* INT64_MAX 本身是合法成员值；只有真正需要其后继的自动成员才无法表示。 */
+        if (*autoValueExhausted) {
+            ZrParser_Compiler_Error(cs,
+                                    "Enum member value cannot increment past INT64_MAX",
+                                    memberNode->location);
+            return ZR_FALSE;
+        }
 
         ZrCore_Value_InitAsInt(cs->state, outValue, *nextAutoValue);
-        (*nextAutoValue)++;
+        extern_compiler_enum_advance_auto_value(*nextAutoValue, nextAutoValue, autoValueExhausted);
         return ZR_TRUE;
     }
 
@@ -233,7 +241,7 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
         case ZR_AST_INTEGER_LITERAL:
             explicitIntValue = valueNode->data.integerLiteral.value;
             ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
-            *nextAutoValue = explicitIntValue + 1;
+            extern_compiler_enum_advance_auto_value(explicitIntValue, nextAutoValue, autoValueExhausted);
             return ZR_TRUE;
         case ZR_AST_FLOAT_LITERAL:
             ZrCore_Value_InitAsFloat(cs->state, outValue, valueNode->data.floatLiteral.value);
@@ -281,6 +289,7 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
     SZrTypeValue membersValue;
     SZrTypeValue underlyingValue;
     TZrInt64 nextAutoValue = 0;
+    TZrBool autoValueExhausted = ZR_FALSE;
     ZrExternCompilerTempRoot metadataRoot = {0};
     ZrExternCompilerTempRoot membersRoot = {0};
 
@@ -384,6 +393,7 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
                                                          memberNode,
                                                          underlyingName,
                                                          &nextAutoValue,
+                                                         &autoValueExhausted,
                                                          &memberValue)) {
                 extern_compiler_temp_root_end(&membersRoot);
                 extern_compiler_temp_root_end(&metadataRoot);
