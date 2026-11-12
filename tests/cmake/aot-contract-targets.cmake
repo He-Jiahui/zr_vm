@@ -325,6 +325,26 @@
     zr_vm_link_parser_core_plus_library(zr_vm_aot_llvm_symbol_stripping_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_aot_llvm_specialized_cast_fusion_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_llvm_specialized_cast_fusion.c
+    )
+    target_include_directories(zr_vm_aot_llvm_specialized_cast_fusion_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_llvm_specialized_cast_fusion_test PRIVATE
+            ZR_VM_TESTS_LLVM_COMPILER="clang"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_llvm_specialized_cast_fusion_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_llvm_specialized_cast_fusion_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_aot_c_type_layout_contracts_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_type_layout_contracts.c
     )
