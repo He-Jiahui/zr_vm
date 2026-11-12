@@ -842,6 +842,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/file-path-operations-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-dispatch-self-oom-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/exception-construction-roots-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/worker-exception-forward-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/system-fs-failure-tests.cmake")
 
