@@ -1,5 +1,6 @@
 #include "internal.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -688,7 +689,10 @@ ZrRustBindingStatus ZrRustBinding_Value_ReadInt(const ZrRustBindingValue *value,
         if (ZR_VALUE_IS_TYPE_SIGNED_INT(liveValue->type)) {
             *outIntValue = liveValue->value.nativeObject.nativeInt64;
         } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(liveValue->type)) {
-            /* BUG: VM uint64 超过 INT64_MAX 时仍报成功，Rust Value::as_int 可能收到失真的 i64。 */
+            if (liveValue->value.nativeObject.nativeUInt64 > (TZrUInt64)INT64_MAX) {
+                return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                                 "uint64 value does not fit in int64");
+            }
             *outIntValue = (TZrInt64)liveValue->value.nativeObject.nativeUInt64;
         } else {
             return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT, "vm value is not int");

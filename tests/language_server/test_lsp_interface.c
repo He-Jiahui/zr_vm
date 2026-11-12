@@ -9074,6 +9074,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_native_construct_receiver_fact_cases.h"
 #include "test_lsp_receiver_completion_projection_cases.h"
 #include "test_lsp_project_module_summary_range_cases.h"
+#include "test_lsp_decorator_fallback_ast_cases.h"
 
 /* 本测试目标的唯一 CTest 入口；先建 VM 与原生注册表，再按主题运行本文件及末尾
  * 包含的用例，最后以共享失败计数决定退出状态。 */
@@ -9284,6 +9285,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_hover_describes_decorator_target(state);
+    TEST_DIVIDER();
+
+    test_lsp_decorator_navigation_ignores_fallback_ast(state);
     TEST_DIVIDER();
 
     test_lsp_hover_describes_meta_method_category(state);

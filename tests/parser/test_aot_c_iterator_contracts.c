@@ -158,8 +158,27 @@ static void test_aot_c_source_lowers_iterator_ops_to_boundary_helpers(void) {
             "backend_aot_write_c_direct_iter_move_next(file, destinationSlot, operandA1);",
             "case ZR_INSTRUCTION_ENUM(ITER_CURRENT):",
             "backend_aot_write_c_direct_iter_current(file, destinationSlot, operandA1);",
+            "case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
             "case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
+            "(TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 2",
             "backend_aot_write_c_direct_iter_move_next_jump_if_false(",
+    };
+    static const char *const llvmIteratorNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
+            "case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
+            "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse",
+            "(TZrInt64)instruction->instructionIndex + (TZrInt64)(TZrInt16)instruction->operandB1 + 2",
+    };
+    static const char *const llvmPreludeNeedles[] = {
+            "declare i1 @ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(ptr, ptr, i32, i32, ptr)",
+    };
+    static const char *const execIrNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
+            "case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
+            "(TZrInt32)instructionIndex + 2 + (TZrInt16)instruction->instruction.operand.operand1[1]",
+    };
+    static const char *const supportNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
     };
     static const char *const forbiddenLoweringNeedles[] = {
             "backend_aot_c_write_iterator_unsupported(",
@@ -192,18 +211,34 @@ static void test_aot_c_source_lowers_iterator_ops_to_boundary_helpers(void) {
             "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_iterators.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *llvmIteratorText = read_repo_text_file_owned(
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_iterators.c");
+    char *llvmPreludeText = read_repo_text_file_owned(
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
+    char *execIrText = read_repo_text_file_owned(
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+    char *supportText = read_repo_text_file_owned(
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
 
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeSourceText);
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(llvmIteratorText);
+    TEST_ASSERT_NOT_NULL(llvmPreludeText);
+    TEST_ASSERT_NOT_NULL(execIrText);
+    TEST_ASSERT_NOT_NULL(supportText);
 
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
     assert_text_contains_all(loweringText, loweringNeedles, ARRAY_COUNT(loweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_all(llvmIteratorText, llvmIteratorNeedles, ARRAY_COUNT(llvmIteratorNeedles));
+    assert_text_contains_all(llvmPreludeText, llvmPreludeNeedles, ARRAY_COUNT(llvmPreludeNeedles));
+    assert_text_contains_all(execIrText, execIrNeedles, ARRAY_COUNT(execIrNeedles));
+    assert_text_contains_all(supportText, supportNeedles, ARRAY_COUNT(supportNeedles));
     assert_text_contains_none(loweringText, forbiddenLoweringNeedles, ARRAY_COUNT(forbiddenLoweringNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
@@ -212,6 +247,10 @@ static void test_aot_c_source_lowers_iterator_ops_to_boundary_helpers(void) {
     free(emitterHeaderText);
     free(loweringText);
     free(functionBodyText);
+    free(llvmIteratorText);
+    free(llvmPreludeText);
+    free(execIrText);
+    free(supportText);
 }
 
 void setUp(void) {}

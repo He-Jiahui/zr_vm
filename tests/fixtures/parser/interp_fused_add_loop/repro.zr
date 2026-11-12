@@ -1,0 +1,13 @@
+// 未标注参数会让 i + 1 的常量物化在调用之后仍然存活。
+// 融合这条加法时，不能把常量 1 写进循环变量槽。
+fn id(value: int): int { return value; }
+
+fn apply(n, cb): int {
+    var i = 0;
+    for (; i < n; i = i + 1) {
+        cb(i + 1);
+    }
+    return i + 4;
+}
+
+return apply(3, id);

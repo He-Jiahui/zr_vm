@@ -7,6 +7,7 @@
 
 #include "harness/path_support.h"
 #include "harness/windows_crash_diagnostics.h"
+#include "zr_vm_library/file.h"
 #include "zr_vm_rust_binding.h"
 
 static ZrRustBindingRuntime *g_checkpointReplayRuntime;
@@ -1866,6 +1867,111 @@ static void test_rust_binding_native_builder_rejects_invalid_function_descriptor
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)capture.destroyCount);
 }
 
+/* 以 base 为前缀构造一条恰好 targetLength 字节的目录路径；每个分量不超过 64 字节，且不以分隔符结尾
+ * （结尾是分隔符时 scaffold 拼接不再补 '/'，下面用例里的长度算式就不成立了）。 */
+static void build_path_with_length(const TZrChar *base,
+                                   TZrSize targetLength,
+                                   TZrChar *buffer,
+                                   TZrSize bufferSize) {
+    TZrSize baseLength;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(base);
+    TEST_ASSERT_NOT_NULL(buffer);
+    baseLength = strlen(base);
+    TEST_ASSERT_TRUE(targetLength < bufferSize);
+    TEST_ASSERT_TRUE(baseLength + 2U <= targetLength);
+
+    memcpy(buffer, base, baseLength);
+    for (index = baseLength; index < targetLength; index++) {
+        if ((index - baseLength) % 64U == 0U && index + 1U < targetLength) {
+            buffer[index] = '/';
+        } else {
+            buffer[index] = 'a';
+        }
+    }
+    buffer[targetLength] = '\0';
+}
+
+static void assert_scaffold_rejects_truncated_path(const TZrChar *rootPath,
+                                                   const TZrChar *projectName,
+                                                   const TZrChar *workspaceRoot) {
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingErrorInfo errorInfo;
+    ZrRustBindingStatus status;
+    EZrLibrary_File_Exist rootExistence;
+    TZrBool returnedWorkspace;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+    clean_directory_tree(workspaceRoot);
+
+    scaffoldOptions.rootPath = rootPath;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    status = ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace);
+    /* Free 会清空最近错误，所以错误快照和落盘状态都要在收尾之前取。 */
+    ZrRustBinding_GetLastErrorInfo(&errorInfo);
+    rootExistence = ZrLibrary_File_Exist((TZrNativeString)workspaceRoot);
+
+    /* 先收尾再断言：Unity 的失败断言会 longjmp 跳过后面的清理，句柄和超长目录树都不能留下。 */
+    returnedWorkspace = workspace != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+    if (workspace != ZR_NULL) {
+        (void)ZrRustBinding_ProjectWorkspace_Free(workspace);
+    }
+    clean_directory_tree(workspaceRoot);
+
+    TEST_ASSERT_FALSE_MESSAGE(returnedWorkspace,
+                              "scaffold returned a workspace for a path that does not fit the path buffer");
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_IO_ERROR, status);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_IO_ERROR, errorInfo.status);
+    /* 拒绝必须发生在任何 mkdir 之前：连脚手架根目录本身也不应被创建。 */
+    TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LIBRARY_FILE_NOT_EXIST,
+                                  rootExistence,
+                                  "scaffold created directories before rejecting the truncated path");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(errorInfo.message, "scaffold path is too long"), errorInfo.message);
+}
+
+/* {root}/src/main.zr 恰好比路径缓冲区多一个字节；src、bin 和 {root}/p.zrp 都装得下，
+ * 所以只有入口源文件路径会被截断。 */
+static void test_rust_binding_scaffold_rejects_truncated_entry_source_path(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    build_workspace_root("truncated_entry_source", workspaceRoot, sizeof(workspaceRoot));
+    build_path_with_length(workspaceRoot,
+                           ZR_LIBRARY_MAX_PATH_LENGTH - strlen("/src/main.zr"),
+                           longRoot,
+                           sizeof(longRoot));
+    assert_scaffold_rejects_truncated_path(longRoot, "p", workspaceRoot);
+}
+
+/* {root}/truncated_project.zrp 恰好多一个字节，而 src/main.zr 装得下：只有项目文件路径会被截断，
+ * 截断结果缺少 .zrp 后缀的最后一个字符。 */
+static void test_rust_binding_scaffold_rejects_truncated_project_file_path(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    build_workspace_root("truncated_project_file", workspaceRoot, sizeof(workspaceRoot));
+    build_path_with_length(workspaceRoot,
+                           ZR_LIBRARY_MAX_PATH_LENGTH - strlen("/truncated_project.zrp"),
+                           longRoot,
+                           sizeof(longRoot));
+    assert_scaffold_rejects_truncated_path(longRoot, "truncated_project", workspaceRoot);
+}
+
+/* 根目录很短，但项目名本身就超过路径缓冲区。 */
+static void test_rust_binding_scaffold_rejects_oversized_project_name(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar longProjectName[ZR_LIBRARY_MAX_PATH_LENGTH + 1U];
+
+    build_workspace_root("oversized_project_name", workspaceRoot, sizeof(workspaceRoot));
+    memset(longProjectName, 'p', sizeof(longProjectName) - 1U);
+    longProjectName[sizeof(longProjectName) - 1U] = '\0';
+    assert_scaffold_rejects_truncated_path(workspaceRoot, longProjectName, workspaceRoot);
+}
+
 static void test_rust_binding_selected_native_link_contract(void) {
 #if ZR_VM_RUST_BINDING_TEST_LINK_STATIC
     TEST_ASSERT_FALSE(ZR_VM_RUST_BINDING_TEST_LINK_SHARED);
@@ -1876,6 +1982,193 @@ static void test_rust_binding_selected_native_link_contract(void) {
 #endif
 }
 
+/* 脚本侧 uint 以 UINT64 标签越过 C ABI，host 只能读到 int64；读取前把输出置为此值，用来证明被拒绝时没有写出回绕结果。 */
+#define UNSIGNED_INT_READ_SENTINEL ((TZrInt64)4242)
+
+typedef struct UnsignedIntReadCapture {
+    TZrSize callCount;
+    ZrRustBindingValueKind kind;
+    ZrRustBindingStatus readStatus;
+    TZrInt64 value;
+    ZrRustBindingErrorInfo errorInfo;
+} UnsignedIntReadCapture;
+
+static ZrRustBindingStatus native_unsigned_int_read_visitor(const ZrRustBindingNativeArgumentView *argument,
+                                                            TZrPtr userData) {
+    UnsignedIntReadCapture *capture = (UnsignedIntReadCapture *)userData;
+    ZrRustBindingStatus status = ZrRustBinding_NativeArgumentView_GetKind(argument, &capture->kind);
+
+    if (status != ZR_RUST_BINDING_STATUS_OK) {
+        return status;
+    }
+    capture->value = UNSIGNED_INT_READ_SENTINEL;
+    capture->readStatus = ZrRustBinding_NativeArgumentView_ReadInt(argument, &capture->value);
+    ZrRustBinding_GetLastErrorInfo(&capture->errorInfo);
+    return ZR_RUST_BINDING_STATUS_OK;
+}
+
+/* 只记录 ReadInt 的观测结果并正常返回，使断言聚焦在读取契约上，不依赖 VM 对失败回调的传播方式。 */
+static ZrRustBindingStatus native_unsigned_int_observe_callback(ZrRustBindingNativeCallContext *context,
+                                                                TZrPtr userData,
+                                                                ZrRustBindingValue **outResult) {
+    UnsignedIntReadCapture *capture = (UnsignedIntReadCapture *)userData;
+    ZrRustBindingStatus status;
+
+    capture->callCount++;
+    status = ZrRustBinding_NativeCallContext_WithArgument(context, 0, native_unsigned_int_read_visitor, capture);
+    if (status != ZR_RUST_BINDING_STATUS_OK) {
+        return status;
+    }
+    return ZrRustBinding_Value_NewInt(0, outResult);
+}
+
+static ZrRustBindingStatus unsigned_int_read_export(ZrRustBindingProjectSession *session,
+                                                    const TZrChar *exportName,
+                                                    TZrInt64 *outValue,
+                                                    ZrRustBindingErrorInfo *outErrorInfo) {
+    ZrRustBindingValue *result = ZR_NULL;
+    ZrRustBindingStatus status;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_CallModuleExport(session, "main", exportName, ZR_NULL, 0,
+                                                                        &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, ZrRustBinding_Value_GetKind(result));
+    *outValue = UNSIGNED_INT_READ_SENTINEL;
+    status = ZrRustBinding_Value_ReadInt(result, outValue);
+    ZrRustBinding_GetLastErrorInfo(outErrorInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    return status;
+}
+
+static void unsigned_int_assert_rejected(ZrRustBindingStatus status,
+                                         TZrInt64 value,
+                                         const ZrRustBindingErrorInfo *errorInfo) {
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT, status);
+    TEST_ASSERT_EQUAL_INT64(UNSIGNED_INT_READ_SENTINEL, value);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT, errorInfo->status);
+    TEST_ASSERT_NOT_NULL(strstr(errorInfo->message, "does not fit in int64"));
+}
+
+static void unsigned_int_observe_export(ZrRustBindingProjectSession *session,
+                                        const TZrChar *exportName,
+                                        UnsignedIntReadCapture *capture) {
+    ZrRustBindingErrorInfo errorInfo;
+    TZrInt64 value = 0;
+
+    memset(capture, 0, sizeof(*capture));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          unsigned_int_read_export(session, exportName, &value, &errorInfo));
+    TEST_ASSERT_EQUAL_INT64(0, value);
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)capture->callCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, capture->kind);
+}
+
+/* Value_ReadInt 与 NativeArgumentView_ReadInt 共用同一条范围规则：INT64_MAX 仍可读，2^63 起返回参数错误。 */
+static void test_rust_binding_read_int_rejects_unsigned_values_beyond_int64(void) {
+    static const TZrChar *projectName = "unsigned_int_read_project";
+    static const TZrChar *mainSource =
+            "let host = import(\"unsigned_host\");\n"
+            "pub fn largestSigned(): uint { return <uint> 9223372036854775807; }\n"
+            "pub fn firstUnrepresentable(): uint { return largestSigned() + <uint> 1; }\n"
+            "pub fn largestUnsigned(): uint { return <uint> -1; }\n"
+            "pub fn observeLargestSigned(): int { return host.observe(largestSigned()); }\n"
+            "pub fn observeFirstUnrepresentable(): int { return host.observe(firstUnrepresentable()); }\n"
+            "pub fn observeLargestUnsigned(): int { return host.observe(largestUnsigned()); }\n"
+            "return 0;\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    UnsignedIntReadCapture capture;
+    ZrRustBindingErrorInfo errorInfo;
+    ZrRustBindingNativeParameterDescriptor parameter;
+    ZrRustBindingNativeFunctionDescriptor functionDescriptor;
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingNativeModuleBuilder *builder = ZR_NULL;
+    ZrRustBindingNativeModule *module = ZR_NULL;
+    ZrRustBindingRuntimeNativeModuleRegistration *registration = ZR_NULL;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingProjectSession *session = ZR_NULL;
+    ZrRustBindingStatus status;
+    TZrInt64 value = 0;
+
+    memset(&capture, 0, sizeof(capture));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+    memset(&parameter, 0, sizeof(parameter));
+    memset(&functionDescriptor, 0, sizeof(functionDescriptor));
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+
+    parameter.name = "value";
+    parameter.typeName = "uint";
+    parameter.documentation = "unsigned value observed through the argument view";
+    functionDescriptor.name = "observe";
+    functionDescriptor.minArgumentCount = 1;
+    functionDescriptor.maxArgumentCount = 1;
+    functionDescriptor.callback = native_unsigned_int_observe_callback;
+    functionDescriptor.userData = &capture;
+    functionDescriptor.returnTypeName = "int";
+    functionDescriptor.documentation = "Records how the argument view reads an unsigned value.";
+    functionDescriptor.parameters = &parameter;
+    functionDescriptor.parameterCount = 1;
+
+    build_workspace_root("unsigned_int_read", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_New("unsigned_host", &builder));
+    TEST_ASSERT_NOT_NULL(builder);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_AddFunction(builder, &functionDescriptor));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Build(builder, &module));
+    TEST_ASSERT_NOT_NULL(module);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_NativeModuleBuilder_Free(builder));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_RegisterNativeModule(runtime, module, &registration));
+    TEST_ASSERT_NOT_NULL(registration);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Start(runtime, workspace, &runOptions, &session));
+    TEST_ASSERT_NOT_NULL(session);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          unsigned_int_read_export(session, "largestSigned", &value, &errorInfo));
+    TEST_ASSERT_EQUAL_INT64(INT64_MAX, value);
+    status = unsigned_int_read_export(session, "firstUnrepresentable", &value, &errorInfo);
+    unsigned_int_assert_rejected(status, value, &errorInfo);
+    status = unsigned_int_read_export(session, "largestUnsigned", &value, &errorInfo);
+    unsigned_int_assert_rejected(status, value, &errorInfo);
+
+    unsigned_int_observe_export(session, "observeLargestSigned", &capture);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, capture.readStatus);
+    TEST_ASSERT_EQUAL_INT64(INT64_MAX, capture.value);
+    unsigned_int_observe_export(session, "observeFirstUnrepresentable", &capture);
+    unsigned_int_assert_rejected(capture.readStatus, capture.value, &capture.errorInfo);
+    unsigned_int_observe_export(session, "observeLargestUnsigned", &capture);
+    unsigned_int_assert_rejected(capture.readStatus, capture.value, &capture.errorInfo);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectSession_Free(session));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_RuntimeNativeModuleRegistration_Free(registration));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_NativeModule_Free(module));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+}
+
 #include "execution_budget_cases.h"
 
 int main(void) {
@@ -1884,6 +2177,9 @@ int main(void) {
 
     RUN_FILTERED_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
     RUN_FILTERED_TEST(test_rust_binding_open_missing_project_reports_not_found_error_info);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_truncated_entry_source_path);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_truncated_project_file_path);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_rejects_oversized_project_name);
     RUN_FILTERED_TEST(test_rust_binding_bare_runtime_run_reports_unsupported_error_info);
     RUN_FILTERED_TEST(test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable);
     RUN_FILTERED_TEST(test_rust_binding_run_named_module_preserves_module_name_and_program_args);
@@ -1898,6 +2194,7 @@ int main(void) {
     RUN_FILTERED_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
     RUN_FILTERED_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
     RUN_FILTERED_TEST(test_rust_binding_selected_native_link_contract);
+    RUN_FILTERED_TEST(test_rust_binding_read_int_rejects_unsigned_values_beyond_int64);
     RUN_FILTERED_TEST(test_rust_binding_execution_budget_instruction_boundary_and_recovery);
     RUN_FILTERED_TEST(test_rust_binding_execution_budget_deadline_and_native_cancel);
 

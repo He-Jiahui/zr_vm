@@ -180,7 +180,8 @@ ZR_CORE_API void ZrCore_State_Free(struct SZrGlobalState *global, SZrState *stat
 /** @brief 清理异常 handler/pending control 并恢复基础 native 帧。
  * @pre state 已 launch，且仍处于调用方拥有的执行上下文中。
  * @return 清理期间的最终线程状态；handler 或 pending 清理错误可覆盖传入状态。
- * @note ResetThread 会清空 currentException；主线程有恢复点时，worker 异常转发在清理后执行。
+ * @note ResetThread 会清空 currentException；需要保留异常的调用方须先把它写到别处。
+ *       worker 向主线程恢复点转发时，Exception_Throw 先写入主线程异常槽，再重置 worker。
  */
 ZR_CORE_API TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status);
 /** @brief 从 entry 加载源文件。
