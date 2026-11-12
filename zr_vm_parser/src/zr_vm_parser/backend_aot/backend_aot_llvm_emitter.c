@@ -101,6 +101,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
                                           callBindingRowCount,
                                           stripGeneratedSymbols);
 
+    /* 缓冲写入的失败（如磁盘写满）可能拖到 flush 或 close 才暴露；任一步失败都尝试删除
+     * 已截断的产物并返回失败，调用方不能把空白或截断的 LLVM 文件当成功产物。 */
     if (fflush(file) != 0 || ferror(file) != 0) {
         fclose(file);
         remove(filename);
