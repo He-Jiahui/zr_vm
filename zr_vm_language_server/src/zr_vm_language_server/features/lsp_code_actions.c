@@ -480,6 +480,25 @@ static TZrSize lsp_editor_missing_import_insert_offset(const TZrChar *content, T
     return insertOffset;
 }
 
+/* 插入的导入行沿用文档已有的换行：先看插入点上一行的行尾，文件开头则看其后第一处换行。
+ * 与整理导入保留 CRLF 的做法一致，避免在 CRLF 文档里留下单独的 LF。 */
+static TZrBool lsp_editor_missing_import_uses_crlf(const TZrChar *content,
+                                                   TZrSize contentLength,
+                                                   TZrSize insertOffset) {
+    if (content == ZR_NULL || insertOffset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (insertOffset >= 1 && content[insertOffset - 1] == '\n') {
+        return insertOffset >= 2 && content[insertOffset - 2] == '\r';
+    }
+    for (TZrSize index = insertOffset; index < contentLength; index++) {
+        if (content[index] == '\n') {
+            return index > 0 && content[index - 1] == '\r';
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* 解析成功才构造 quickfix；标题、插入文本只在此调用期间由 malloc 持有。 */
 static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
                                                        SZrLspContext *context,
@@ -494,6 +513,7 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     TZrChar *title;
     TZrChar *editText;
     TZrSize insertOffset;
+    const TZrChar *lineBreak;
     SZrLspRange editRange;
     SZrLspCodeAction *action;
 
@@ -507,9 +527,11 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         return ZR_TRUE;
     }
 
+    insertOffset = lsp_editor_missing_import_insert_offset(content, contentLength);
+    lineBreak = lsp_editor_missing_import_uses_crlf(content, contentLength, insertOffset) ? "\r\n" : "\n";
     titleLength = strlen("Import ") + strlen(candidate.moduleName) + strlen(" as ") + strlen(candidate.alias);
     editTextLength = strlen("let ") + strlen(candidate.alias) + strlen(" = import(\"") +
-                     strlen(candidate.moduleName) + strlen("\");\n");
+                     strlen(candidate.moduleName) + strlen("\");") + strlen(lineBreak);
     title = (TZrChar *)malloc(titleLength + 1);
     editText = (TZrChar *)malloc(editTextLength + 1);
     if (title == ZR_NULL || editText == ZR_NULL) {
@@ -518,7 +540,12 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         return ZR_FALSE;
     }
     snprintf(title, titleLength + 1, "Import %s as %s", candidate.moduleName, candidate.alias);
-    snprintf(editText, editTextLength + 1, "let %s = import(\"%s\");\n", candidate.alias, candidate.moduleName);
+    snprintf(editText,
+             editTextLength + 1,
+             "let %s = import(\"%s\");%s",
+             candidate.alias,
+             candidate.moduleName,
+             lineBreak);
 
     action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCodeAction));
     if (action == ZR_NULL) {
@@ -534,7 +561,6 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     action->isPreferred = ZR_FALSE;
     ZrCore_Array_Init(state, &action->edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
-    insertOffset = lsp_editor_missing_import_insert_offset(content, contentLength);
     editRange.start = lsp_editor_position_from_offset(content, contentLength, insertOffset);
     editRange.end = editRange.start;
     if (!lsp_editor_append_text_edit(state, &action->edits, editRange, editText, strlen(editText))) {

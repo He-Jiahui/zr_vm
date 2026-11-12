@@ -535,10 +535,23 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
     return builder.data;
 }
 
+/* 片段末尾不带 LF 的 \r 既不是 LF 也不是 CRLF，共享 codec 也不把它计成一列：
+ * 编辑范围的终点会落在它前面。把片段终点收到这些 \r 之前，替换文本才与范围对应同一段字节，
+ * 否则客户端应用编辑后会多出一个 \r。 */
+static TZrSize lsp_editor_trim_trailing_lone_cr(const TZrChar *content,
+                                                TZrSize startOffset,
+                                                TZrSize endOffset) {
+    while (endOffset > startOffset && content[endOffset - 1] == '\r') {
+        endOffset--;
+    }
+    return endOffset;
+}
+
 /**
  * @brief 供 stdio、WASM 和测试请求全文格式化；未检出旧语法迁移项且文本有差异时追加单个编辑。
  * @note result 可为已初始化数组；无修改时成功返回空增量，调用方须用 FreeTextEdits 清理。
  * @note options 为 NULL 时使用四空格；换行符按原文的 LF 或 CRLF 逐行保留。
+ * @note 文末不带 LF 的 \r 留在编辑之外，原样保留。
  */
 TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
                                            SZrLspContext *context,
@@ -549,6 +562,7 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
     SZrLspFormattingOptions resolvedOptions;
     TZrChar *formatted;
     TZrSize formattedLength;
+    TZrSize formatEnd;
     SZrLspRange range;
     TZrBool isCurrentSyntax;
 
@@ -578,10 +592,11 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
     }
 
     resolvedOptions = lsp_editor_formatting_options_or_default(options);
+    formatEnd = lsp_editor_trim_trailing_lone_cr(snapshot.content, 0, snapshot.contentLength);
     formatted = lsp_editor_format_segment(snapshot.content,
                                           snapshot.contentLength,
                                           0,
-                                          snapshot.contentLength,
+                                          formatEnd,
                                           resolvedOptions,
                                           &formattedLength);
     if (formatted == ZR_NULL) {
@@ -589,13 +604,14 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (formattedLength == snapshot.contentLength &&
+    if (formattedLength == formatEnd &&
         memcmp(formatted, snapshot.content, formattedLength) == 0) {
         free(formatted);
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
+    /* 文末的 \r 不占列，全文范围的终点与 formatEnd 是同一个位置。 */
     range = lsp_editor_full_document_range(snapshot.content, snapshot.contentLength);
     if (!lsp_editor_append_text_edit(state, result, range, formatted, formattedLength)) {
         free(formatted);
@@ -611,7 +627,7 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
 /**
  * @brief 供 stdio 单区间和多区间适配器请求整行范围格式化。
  * @note 结果替换区间会扩到整行并包含该行的 LF 或 CRLF；多区间调用方须先合并相交行。
- * @note options 与全文格式化共用；NULL 表示四空格。
+ * @note options 与全文格式化共用；NULL 表示四空格。文末不带 LF 的 \r 留在编辑之外。
  */
 TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
                                                 SZrLspContext *context,
@@ -655,13 +671,19 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
 
     startOffset = lsp_editor_line_start_offset(snapshot.content, snapshot.contentLength, range.start.line);
     endOffset = lsp_editor_line_end_offset(snapshot.content, snapshot.contentLength, range.end.line);
-    if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\r') {
-        endOffset++;
-        if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\n') {
-            endOffset++;
-        }
+    /* 只把成对的 CRLF 或单独的 LF 纳入替换；文末不带 LF 的 \r 留在编辑之外。 */
+    if (endOffset + 1 < snapshot.contentLength &&
+        snapshot.content[endOffset] == '\r' &&
+        snapshot.content[endOffset + 1] == '\n') {
+        endOffset += 2;
     } else if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\n') {
         endOffset++;
+    } else {
+        endOffset = lsp_editor_trim_trailing_lone_cr(snapshot.content, startOffset, endOffset);
+    }
+    /* 起始行越过文末时行尾 helper 可能退到文末 \r 之前；空片段不能算成负长度。 */
+    if (endOffset < startOffset) {
+        endOffset = startOffset;
     }
 
     resolvedOptions = lsp_editor_formatting_options_or_default(options);

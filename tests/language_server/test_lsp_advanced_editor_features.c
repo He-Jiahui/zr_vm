@@ -2634,6 +2634,414 @@ cleanup:
     }
 }
 
+/* 只接受恰好一段编辑，并同时核对范围两端和替换文本，范围与文本必须描述同一段字节。 */
+static TZrBool single_text_edit_matches(SZrArray *edits,
+                                        TZrInt32 startLine,
+                                        TZrInt32 startCharacter,
+                                        TZrInt32 endLine,
+                                        TZrInt32 endCharacter,
+                                        const TZrChar *expectedText) {
+    SZrLspTextEdit *edit = first_text_edit(edits);
+    const TZrChar *text = edit != ZR_NULL ? test_string_text(edit->newText) : ZR_NULL;
+
+    return edits != ZR_NULL &&
+           edits->length == 1 &&
+           edit != ZR_NULL &&
+           edit->range.start.line == startLine &&
+           edit->range.start.character == startCharacter &&
+           edit->range.end.line == endLine &&
+           edit->range.end.character == endCharacter &&
+           text != ZR_NULL &&
+           expectedText != ZR_NULL &&
+           strcmp(text, expectedText) == 0;
+}
+
+static TZrBool folding_ranges_contain(SZrArray *folds,
+                                      const TZrChar *kind,
+                                      TZrInt32 startLine,
+                                      TZrInt32 startCharacter,
+                                      TZrInt32 endLine,
+                                      TZrInt32 endCharacter) {
+    for (TZrSize index = 0; folds != ZR_NULL && index < folds->length; index++) {
+        SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(folds, index);
+        const TZrChar *rangeKind = rangePtr != ZR_NULL && *rangePtr != ZR_NULL
+                                       ? test_string_text((*rangePtr)->kind)
+                                       : ZR_NULL;
+        if (rangeKind != ZR_NULL &&
+            strcmp(rangeKind, kind) == 0 &&
+            (*rangePtr)->startLine == startLine &&
+            (*rangePtr)->startCharacter == startCharacter &&
+            (*rangePtr)->endLine == endLine &&
+            (*rangePtr)->endCharacter == endCharacter) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/* 文末不带 LF 的 \\r 不占 UTF-16 列，范围终点落在它前面；替换文本若带上它，应用后会多出一个 \\r。 */
+static void test_lsp_formatting_keeps_trailing_lone_cr_outside_edit(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP formatting keeps a trailing lone CR outside the edit";
+    const TZrChar *sources[] = {
+        "fn main(): int {\nreturn 1;\n}\r",
+        "fn main(): int {\r\nreturn 1;\r\n}\r",
+        "fn main(): int {\n    return 1;\n}\r",
+    };
+    const TZrChar *expectedDocumentTexts[] = {
+        "fn main(): int {\n    return 1;\n}",
+        "fn main(): int {\r\n    return 1;\r\n}",
+        ZR_NULL,
+    };
+    const TZrChar *expectedRangeTexts[] = {
+        "    return 1;\n}",
+        "    return 1;\r\n}",
+        ZR_NULL,
+    };
+    SZrLspRange range = {{1, 0}, {2, 0}};
+    SZrLspRange pastEndRange = {{9, 0}, {9, 0}};
+    TZrSize caseIndex;
+
+    TEST_START(summary);
+    for (caseIndex = 0; caseIndex < sizeof(sources) / sizeof(sources[0]); caseIndex++) {
+        SZrString *uri = ZR_NULL;
+        SZrLspContext *context;
+        SZrArray documentEdits = {0};
+        SZrArray rangeEdits = {0};
+        SZrArray pastEndEdits = {0};
+        TZrBool valid;
+        char uriText[64];
+
+        snprintf(uriText, sizeof(uriText), "file:///tmp/zr_lsp_format_lone_cr_%u.zr", (unsigned)caseIndex);
+        context = test_open_document(state, uriText, sources[caseIndex], &uri);
+        valid = context != ZR_NULL &&
+                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, ZR_NULL, &documentEdits) &&
+                ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, ZR_NULL, &rangeEdits) &&
+                ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, pastEndRange, ZR_NULL, &pastEndEdits) &&
+                /* 越过文末的区间没有可格式化的行，不能因为文末的 \\r 冒出一段空编辑。 */
+                pastEndEdits.length == 0;
+        ZrLanguageServer_Lsp_FreeTextEdits(state, &pastEndEdits);
+        if (valid && expectedDocumentTexts[caseIndex] == ZR_NULL) {
+            /* 已排好版的文档只差文末的 \\r：两条入口都不该提出编辑。 */
+            valid = documentEdits.length == 0 && rangeEdits.length == 0;
+        } else if (valid) {
+            valid = single_text_edit_matches(&documentEdits, 0, 0, 2, 1, expectedDocumentTexts[caseIndex]) &&
+                    single_text_edit_matches(&rangeEdits, 1, 0, 2, 1, expectedRangeTexts[caseIndex]);
+        }
+        ZrLanguageServer_Lsp_FreeTextEdits(state, &documentEdits);
+        ZrLanguageServer_Lsp_FreeTextEdits(state, &rangeEdits);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        if (!valid) {
+            char detail[96];
+            snprintf(detail,
+                     sizeof(detail),
+                     "case %u: the edit range and text disagree about the trailing CR",
+                     (unsigned)caseIndex);
+            (*failures)++;
+            TEST_FAIL(timer, summary, detail);
+            return;
+        }
+    }
+    TEST_PASS(timer, summary);
+}
+
+/* 列号只在所在行内换算：非 ASCII 首行和 CRLF 都不能让后面各行的折叠列漂移。 */
+static void test_lsp_folding_columns_stay_utf16_on_later_lines(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP folding columns stay UTF-16 on later CRLF lines";
+    const TZrChar *content =
+        "// 标题\r\n"
+        "\r\n"
+        "  let system = import(\"zr.system\"); // 系统\r\n"
+        "  let math = import(\"zr.math\"); // 数学\r\n"
+        "\r\n"
+        "  //#region 区域\r\n"
+        "fn 中(): int {\r\n"
+        "    return 0;\r\n"
+        "}\r\n"
+        "  //#endregion 结束\r\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray folds = {0};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_fold_later_lines.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "folding failed for a CRLF document with non-ASCII lines");
+    } else if (!folding_ranges_contain(&folds, ZR_LSP_FOLDING_RANGE_KIND_IMPORTS, 2, 2, 3, 37)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "imports fold columns are not line-relative UTF-16 columns");
+    } else if (!folding_ranges_contain(&folds, ZR_LSP_FOLDING_RANGE_KIND_REGION, 5, 2, 9, 17)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "region marker fold columns are not line-relative UTF-16 columns");
+    } else if (!folding_ranges_contain(&folds, ZR_LSP_FOLDING_RANGE_KIND_REGION, 6, 12, 8, 0)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "brace fold columns are not line-relative UTF-16 columns");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+#define ZR_TEST_FOLDING_LINE_RUN_COUNT 20000
+/* 线性实现只需毫秒级；逐行从文件头重算列号时，同一份输入在 Debug 下要一分钟以上。 */
+#define ZR_TEST_FOLDING_LINE_RUN_BUDGET_MS 5000.0
+
+/* 整行注释的折叠列若每行都从文件头换算，耗时随行数平方增长，编辑器在大文件上会卡住。 */
+static void test_lsp_folding_line_runs_stay_linear(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP folding line runs stay linear in document size";
+    const TZrChar *line = "// 注释 lorem ipsum dolor\n";
+    TZrSize lineLength = strlen(line);
+    TZrChar *content = (TZrChar *)malloc(lineLength * ZR_TEST_FOLDING_LINE_RUN_COUNT + 1);
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrArray folds = {0};
+    clock_t started;
+    double elapsedMs;
+    TZrBool folded;
+
+    TEST_START(summary);
+    if (content == ZR_NULL) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "failed to allocate the large comment document");
+        return;
+    }
+    for (TZrSize index = 0; index < ZR_TEST_FOLDING_LINE_RUN_COUNT; index++) {
+        memcpy(content + index * lineLength, line, lineLength);
+    }
+    content[lineLength * ZR_TEST_FOLDING_LINE_RUN_COUNT] = '\0';
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_fold_line_run_scale.zr", content, &uri);
+    if (context == ZR_NULL) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "failed to open the large comment document");
+        free(content);
+        return;
+    }
+
+    started = clock();
+    folded = ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds);
+    elapsedMs = ((double)(clock() - started) / CLOCKS_PER_SEC) * 1000.0;
+    if (!folded ||
+        !folding_ranges_contain(&folds,
+                                ZR_LSP_FOLDING_RANGE_KIND_COMMENT,
+                                0,
+                                0,
+                                ZR_TEST_FOLDING_LINE_RUN_COUNT - 1,
+                                23)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "the comment run did not fold with UTF-16 end columns");
+    } else if (elapsedMs > ZR_TEST_FOLDING_LINE_RUN_BUDGET_MS) {
+        char detail[128];
+        snprintf(detail,
+                 sizeof(detail),
+                 "folding %d comment lines took %.0f ms; columns are being recomputed from the file start",
+                 ZR_TEST_FOLDING_LINE_RUN_COUNT,
+                 elapsedMs);
+        (*failures)++;
+        TEST_FAIL(timer, summary, detail);
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    ZrLanguageServer_LspContext_Free(state, context);
+    free(content);
+}
+
+/* 文档链接、整理/删除导入与 property 重构的范围都经同一个出口投影，非 ASCII 之后不能回到字节列。 */
+static void test_lsp_link_and_action_ranges_are_utf16(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP link and code action ranges are UTF-16 after non-ASCII text";
+    const TZrChar *linkContent = "/* 中 */ import(\"zr.math\");\n";
+    const TZrChar *importContent = "let math = import(\"zr.math\"); // 中文";
+    const TZrChar *propertyContent =
+        "class Box {\n"
+        "    pub property label: string { get { return \"中文\"; } }\n"
+        "}\n";
+    SZrLspRange importRange = {{0, 0}, {0, 0}};
+    SZrLspRange propertyRange = {{1, 17}, {1, 17}};
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray links = {0};
+    SZrArray actions = {0};
+    SZrLspDocumentLink **linkPtr;
+    TZrBool organized = ZR_FALSE;
+    TZrBool removed = ZR_FALSE;
+    TZrBool introduced = ZR_FALSE;
+    TZrSize index;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_link_range.zr", linkContent, &uri);
+    linkPtr = context != ZR_NULL &&
+              ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &links) &&
+              links.length == 1
+                  ? (SZrLspDocumentLink **)ZrCore_Array_Get(&links, 0)
+                  : ZR_NULL;
+    if (linkPtr == ZR_NULL ||
+        *linkPtr == ZR_NULL ||
+        (*linkPtr)->range.start.line != 0 ||
+        (*linkPtr)->range.start.character != 16 ||
+        (*linkPtr)->range.end.line != 0 ||
+        (*linkPtr)->range.end.character != 23) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "document link range counted UTF-8 bytes after a CJK comment");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    memset(&links, 0, sizeof(links));
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_import_action_range.zr", importContent, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, importRange, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for an import line without a final newline");
+        goto cleanup;
+    }
+    for (index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *kind = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                  ? test_string_text((*actionPtr)->kind)
+                                  : ZR_NULL;
+        if (kind == ZR_NULL) {
+            continue;
+        }
+        if (strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS) == 0) {
+            organized = single_text_edit_matches(&(*actionPtr)->edits,
+                                                 0,
+                                                 0,
+                                                 0,
+                                                 35,
+                                                 "let math = import(\"zr.math\"); // 中文\n");
+        } else if (strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED) == 0) {
+            removed = single_text_edit_matches(&(*actionPtr)->edits, 0, 0, 0, 35, "");
+        }
+    }
+    if (!organized || !removed) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "import action ranges ran past the UTF-16 end of the line");
+        goto cleanup;
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    memset(&actions, 0, sizeof(actions));
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_utf16_property_action_range.zr", propertyContent, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, propertyRange, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for an inline property accessor");
+        goto cleanup;
+    }
+    for (index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                   ? test_string_text((*actionPtr)->title)
+                                   : ZR_NULL;
+        SZrLspTextEdit *edit = title != ZR_NULL &&
+                               strcmp(title, "Introduce explicit field for property label") == 0
+                                   ? first_text_edit(&(*actionPtr)->edits)
+                                   : ZR_NULL;
+        if (edit != ZR_NULL &&
+            edit->range.start.line == 1 &&
+            edit->range.start.character == 4 &&
+            edit->range.end.line == 1 &&
+            edit->range.end.character == 55) {
+            introduced = ZR_TRUE;
+        }
+    }
+    if (!introduced) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "property refactor range ran past the UTF-16 end of the declaration");
+        goto cleanup;
+    }
+    TEST_PASS(timer, summary);
+cleanup:
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+/* 缺失导入插入的整行必须沿用文档的 CRLF；有导入段时看上一行行尾，没有时看文档第一处换行。 */
+static void test_lsp_missing_import_insert_preserves_crlf(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP missing import insert preserves CRLF";
+    const TZrChar *sources[] = {
+        "let system = import(\"zr.system\");\r\n"
+        "\r\n"
+        "fn main(value: int): int {\r\n"
+        "    return math.abs(value);\r\n"
+        "}\r\n",
+        "fn main(value: int): int {\r\n"
+        "    return math.abs(value);\r\n"
+        "}\r\n",
+    };
+    const SZrLspRange ranges[] = {
+        {{3, 11}, {3, 15}},
+        {{1, 11}, {1, 15}},
+    };
+    const TZrInt32 insertLines[] = {2, 0};
+    TZrSize caseIndex;
+
+    TEST_START(summary);
+    for (caseIndex = 0; caseIndex < sizeof(sources) / sizeof(sources[0]); caseIndex++) {
+        SZrString *uri = ZR_NULL;
+        SZrLspContext *context;
+        SZrArray actions = {0};
+        TZrBool found = ZR_FALSE;
+        char uriText[64];
+
+        snprintf(uriText, sizeof(uriText), "file:///tmp/zr_lsp_missing_import_crlf_%u.zr", (unsigned)caseIndex);
+        context = test_open_document(state, uriText, sources[caseIndex], &uri);
+        if (context != ZR_NULL &&
+            ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, ranges[caseIndex], &actions)) {
+            for (TZrSize index = 0; index < actions.length; index++) {
+                SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+                const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                           ? test_string_text((*actionPtr)->title)
+                                           : ZR_NULL;
+                if (title != ZR_NULL &&
+                    strcmp(title, "Import zr.math as math") == 0 &&
+                    single_text_edit_matches(&(*actionPtr)->edits,
+                                             insertLines[caseIndex],
+                                             0,
+                                             insertLines[caseIndex],
+                                             0,
+                                             "let math = import(\"zr.math\");\r\n")) {
+                    found = ZR_TRUE;
+                }
+            }
+        }
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        if (!found) {
+            char detail[96];
+            snprintf(detail,
+                     sizeof(detail),
+                     "case %u: the inserted import line did not end with CRLF",
+                     (unsigned)caseIndex);
+            (*failures)++;
+            TEST_FAIL(timer, summary, detail);
+            return;
+        }
+    }
+    TEST_PASS(timer, summary);
+}
+
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
@@ -2667,6 +3075,11 @@ int main(void) {
     test_lsp_folding_columns_are_utf16(state, &failures);
     test_lsp_missing_import_range_uses_utf16_columns(state, &failures);
     test_lsp_organize_imports_preserves_crlf(state, &failures);
+    test_lsp_formatting_keeps_trailing_lone_cr_outside_edit(state, &failures);
+    test_lsp_folding_columns_stay_utf16_on_later_lines(state, &failures);
+    test_lsp_folding_line_runs_stay_linear(state, &failures);
+    test_lsp_link_and_action_ranges_are_utf16(state, &failures);
+    test_lsp_missing_import_insert_preserves_crlf(state, &failures);
     test_lsp_formatting_does_not_emit_removed_syntax(state, &failures);
     test_lsp_formatting_preserves_current_compile_tool_syntax(state, &failures);
     test_lsp_folding_and_selection_ranges(state, &failures);

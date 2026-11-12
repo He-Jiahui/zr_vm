@@ -9,29 +9,39 @@ typedef struct SZrLspLineTrim {
     TZrSize end;
 } SZrLspLineTrim;
 
-/* 两类折叠扫描共用起点形状；值应按 LSP 列表示，当前扫描路径仍可能传入字节列。 */
+/* 两类折叠扫描共用起点形状；character 是内部 UTF-16 列，不是行内字节差。 */
 typedef struct SZrBraceStart {
     TZrInt32 line;
     TZrInt32 character;
 } SZrBraceStart;
 
-/* 结构字符回调借用同一次文档快照，并在有界栈中配对源码花括号。 */
+/* 结构字符回调借用同一次文档快照，并在有界栈中配对源码花括号。
+ * 花括号按偏移递增到达，行号游标只前进，不为每个花括号从文件头重数。 */
 typedef struct SZrStructuralFoldingScanData {
     SZrState *state;
     SZrArray *result;
     const TZrChar *content;
     TZrSize contentLength;
+    TZrSize lineScanOffset;
+    TZrSize lineStartOffset;
+    TZrInt32 line;
     SZrBraceStart stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
     TZrSize stackLength;
 } SZrStructuralFoldingScanData;
 
-/* 折叠列与其它编辑器范围一样按 UTF-16 计，trim 的字节差不能直接当 character。 */
+/* 折叠列与其它编辑器范围一样按 UTF-16 计，trim 的字节差不能直接当 character。
+ * 列号只取决于所在行，因此从 lineStart 起换算；逐行从文件头重算会让整份扫描变成平方级。
+ * lineStart 必须是 offset 所在行的行首，结果与整份快照的 codec 列号一致。 */
 static TZrInt32 lsp_folding_utf16_column(const TZrChar *content,
                                         TZrSize contentLength,
+                                        TZrSize lineStart,
                                         TZrSize offset) {
-    return ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
-                                                                       contentLength,
-                                                                       offset).character;
+    if (content == ZR_NULL || lineStart > contentLength || offset < lineStart) {
+        return 0;
+    }
+    return ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content + lineStart,
+                                                                       contentLength - lineStart,
+                                                                       offset - lineStart).character;
 }
 
 /* 只有跨行段才交给 stdio/WASM 发布；结果数组的 range 元素由 FreeFoldingRanges 归还。 */
@@ -194,10 +204,10 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
             if (!inBlock) {
                 inBlock = ZR_TRUE;
                 blockStartLine = line;
-                blockStartCharacter = lsp_folding_utf16_column(content, contentLength, trim.start);
+                blockStartCharacter = lsp_folding_utf16_column(content, contentLength, lineStart, trim.start);
             }
             lastLine = line;
-            lastEndCharacter = lsp_folding_utf16_column(content, contentLength, trim.end);
+            lastEndCharacter = lsp_folding_utf16_column(content, contentLength, lineStart, trim.end);
         } else if (inBlock) {
             if (!lsp_editor_append_folding_range(state,
                                                  result,
@@ -272,7 +282,8 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
             if (lsp_editor_is_region_start_marker(content, &trim) &&
                 stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
                 stack[stackLength].line = line;
-                stack[stackLength].character = lsp_folding_utf16_column(content, contentLength, trim.start);
+                stack[stackLength].character =
+                    lsp_folding_utf16_column(content, contentLength, lineStart, trim.start);
                 stackLength++;
             } else if (lsp_editor_is_region_end_marker(content, &trim) && stackLength > 0) {
                 SZrBraceStart start = stack[--stackLength];
@@ -281,7 +292,10 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
                                                      start.line,
                                                      start.character,
                                                      line,
-                                                     lsp_folding_utf16_column(content, contentLength, trim.end),
+                                                     lsp_folding_utf16_column(content,
+                                                                              contentLength,
+                                                                              lineStart,
+                                                                              trim.end),
                                                      ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
                     return ZR_FALSE;
                 }
@@ -298,6 +312,33 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 把花括号偏移换成内部 UTF-16 位置：行号沿游标累加，列只在当前行内换算。
+ * 偏移若回退（扫描器不会这样交付）就退回整份快照的换算，保证结果仍然正确。 */
+static SZrLspPosition lsp_folding_structural_position(SZrStructuralFoldingScanData *data, TZrSize offset) {
+    SZrLspPosition position;
+
+    if (offset > data->contentLength) {
+        offset = data->contentLength;
+    }
+    if (offset < data->lineScanOffset) {
+        return lsp_editor_position_from_offset(data->content, data->contentLength, offset);
+    }
+    while (data->lineScanOffset < offset) {
+        if (data->content[data->lineScanOffset] == '\n') {
+            data->line++;
+            data->lineStartOffset = data->lineScanOffset + 1;
+        }
+        data->lineScanOffset++;
+    }
+
+    position.line = data->line;
+    position.character = lsp_folding_utf16_column(data->content,
+                                                  data->contentLength,
+                                                  data->lineStartOffset,
+                                                  offset);
+    return position;
+}
+
 /* 共用词法扫描器只交付代码态花括号；回调将配对结果追加为结构折叠段。 */
 static TZrBool lsp_editor_append_structural_folding_ranges_callback(TZrChar value,
                                                                     TZrSize offset,
@@ -309,7 +350,7 @@ static TZrBool lsp_editor_append_structural_folding_ranges_callback(TZrChar valu
         return ZR_FALSE;
     }
 
-    position = lsp_editor_position_from_offset(data->content, data->contentLength, offset);
+    position = lsp_folding_structural_position(data, offset);
     if (value == '{') {
         /* BUG: 超出第 32 层的 { 被忽略，其 } 却会弹出先前起点，破坏深嵌套折叠配对。 */
         if (data->stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
@@ -346,6 +387,9 @@ static TZrBool lsp_editor_append_structural_folding_ranges(SZrState *state,
     data.result = result;
     data.content = content;
     data.contentLength = contentLength;
+    data.lineScanOffset = 0;
+    data.lineStartOffset = 0;
+    data.line = 0;
     data.stackLength = 0;
     return lsp_editor_scan_structural_chars(content,
                                             contentLength,

@@ -429,7 +429,6 @@ static TZrBool lsp_property_action_append_explicit_field(
         editWritten <= 0 || (TZrSize)editWritten >= sizeof(editText)) {
         return ZR_FALSE;
     }
-    /* BUG: 同行内联访问器含非 ASCII 文本时，共享 helper 按字节生成终列，替换范围可能越界。 */
     return lsp_property_action_append(
             state,
             result,
