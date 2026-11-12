@@ -64,12 +64,13 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess, sys
+          from pathlib import Path
           build = os.environ['BUILD_DIR']
           required = [
               'language_pipeline', 'language_server', 'debug_metadata', 'debug_hook_core', 'debug_library', 'core_runtime',
               'interpreter_quickening', 'lexer_diagnostics', 'expression_fragment_parser',
               'macro_token_stream_limits', 'writer_output_failure',
-              'macro_callable_return_inference', 'compile_time_execution',
+              'macro_callable_return_inference',
               'async_function_access_modifier', 'language_server_stdio_diagnostic_publication',
               'language_server_stdio_document_close', 'language_server_stdio_document_sync_conformance',
               'property_consumer_contracts', 'macro_parser_primary_budget',
@@ -81,8 +82,8 @@ jobs:
               'ssa_batch_vectorization', 'core_exception_worker_forward',
               'function_instruction_verify', 'fused_add_operand_packing',
               'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary',
-              'language_server_incremental_parser_tests', 'language_server_lsp_interface_tests',
-              'language_server_lsp_advanced_editor_features_tests',
+
+
               'language_server_stdio_protocol_conformance',
               'language_server_lsp_array_oom_cache_new',
               'language_server_lsp_array_oom_symbol_table_new',
@@ -99,18 +100,32 @@ jobs:
           ]
           result = subprocess.run(['ctest', '--test-dir', build, '--show-only=json-v1'],
                                   check=True, text=True, capture_output=True)
-          actual = {test['name'] for test in json.loads(result.stdout)['tests']}
+          listing = {test['name']: test for test in json.loads(result.stdout)['tests']}
+          actual = set(listing)
           missing = sorted(set(required) - actual)
           if missing:
               print('Missing required CTest registrations:', *missing, sep='\n  ', file=sys.stderr)
               sys.exit(1)
+          aggregate_members = {'language_pipeline': ['zr_vm_compile_time_test'], 'language_server': ['zr_vm_language_server_incremental_parser_test', 'zr_vm_language_server_parser_diagnostics_test', 'zr_vm_language_server_lsp_source_contracts_test', 'zr_vm_language_server_lsp_interface_test', 'zr_vm_language_server_lsp_advanced_editor_features_test', 'zr_vm_language_server_inlay_semantic_facts_test']}
+          for suite, required_binaries in aggregate_members.items():
+              arguments = listing[suite]['command']
+              programs = [arg.removeprefix('-DEXECUTABLES=') for arg in arguments if arg.startswith('-DEXECUTABLES=')]
+              if len(programs) != 1:
+                  sys.exit(f'{suite}: missing executable-suite command inventory')
+              executable_paths = programs[0].split(';')
+              names = {Path(path).name for path in executable_paths}
+              missing_binaries = sorted(set(required_binaries) - names)
+              unavailable = [path for path in executable_paths if Path(path).name in required_binaries and not os.access(path, os.X_OK)]
+              if missing_binaries or unavailable:
+                  sys.exit(f'{suite}: missing regression programs {missing_binaries}, unbuilt programs {unavailable}')
+              print(f'{suite}: all {len(required_binaries)} required regression programs are built and selected.')
           print(f'All {len(required)} required CTest registrations are present.')
           PY
       - name: Run reviewed CTest regressions
         run: >-
           ctest --test-dir "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
           --output-on-failure --no-tests=error
-          -R '^(language_pipeline|language_server|debug_metadata|debug_hook_core|debug_library|core_runtime|interpreter_quickening|lexer_diagnostics|expression_fragment_parser|macro_token_stream_limits|writer_output_failure|macro_callable_return_inference|compile_time_execution|async_function_access_modifier|language_server_stdio_diagnostic_publication|language_server_stdio_document_close|language_server_stdio_document_sync_conformance|property_consumer_contracts|macro_parser_primary_budget|aot_llvm_symbol_stripping|aot_backend_adapters|language_server_lsp_semantic_snapshot|language_server_wasm_response|language_server_wasm_exports|project_run_module_failure|language_server_canonical_hover_format|macro_nominal_declaration_publication|union_switch_binding_lifetime|aot_llvm_specialized_cast_fusion|rust_binding_api|zr_vm_rust_binding_cargo_check|zr_vm_rust_binding_cargo_test|ssa_batch_vectorization|core_exception_worker_forward|function_instruction_verify|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary|language_server_incremental_parser_tests|language_server_lsp_interface_tests|language_server_lsp_advanced_editor_features_tests|language_server_stdio_protocol_conformance|language_server_lsp_array_oom_(cache_new|symbol_table_new|reference_tracker_new|symbol_new|add_reference|add_reference_symbol|symbol_reference|snapshot_capture|external_highlight_locations|incremental_parser_new|incremental_parser_insert|incremental_parser_insert_open))$'
+          -R '^(language_pipeline|language_server|debug_metadata|debug_hook_core|debug_library|core_runtime|interpreter_quickening|lexer_diagnostics|expression_fragment_parser|macro_token_stream_limits|writer_output_failure|macro_callable_return_inference|async_function_access_modifier|language_server_stdio_diagnostic_publication|language_server_stdio_document_close|language_server_stdio_document_sync_conformance|property_consumer_contracts|macro_parser_primary_budget|aot_llvm_symbol_stripping|aot_backend_adapters|language_server_lsp_semantic_snapshot|language_server_wasm_response|language_server_wasm_exports|project_run_module_failure|language_server_canonical_hover_format|macro_nominal_declaration_publication|union_switch_binding_lifetime|aot_llvm_specialized_cast_fusion|rust_binding_api|zr_vm_rust_binding_cargo_check|zr_vm_rust_binding_cargo_test|ssa_batch_vectorization|core_exception_worker_forward|function_instruction_verify|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary|language_server_stdio_protocol_conformance|language_server_lsp_array_oom_(cache_new|symbol_table_new|reference_tracker_new|symbol_new|add_reference|add_reference_symbol|symbol_reference|snapshot_capture|external_highlight_locations|incremental_parser_new|incremental_parser_insert|incremental_parser_insert_open))$'
       - name: Run unregistered regression executables
         working-directory: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/bin
         run: |

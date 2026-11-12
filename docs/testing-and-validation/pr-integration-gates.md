@@ -44,3 +44,11 @@ The merge process checks the latest PR head and CI result and verifies that
 the actual main merge tree equals the tested integration tree. A changed
 head, changed target, merge conflict, absent required suite, or failed check
 requires review and verification of the resulting combination.
+
+Regression programs that belong to executable aggregate suites are validated
+through the registered suite command, rather than treated as independent CTest
+names from inactive CMake fragments. The registration preflight requires the
+compile-time program in `language_pipeline` and the incremental-parser, initial
+diagnostics, source-contract, interface, advanced-editor, and inlay-facts
+programs in `language_server`. It also verifies that these programs are built
+and executable. Both aggregate suites remain in the executed CTest selection.
