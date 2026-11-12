@@ -107,6 +107,80 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
+/* hasLexError 也会承载分配和所有权失败。只有扫描器明确写出的用户文本错误才算源码非法。
+ * 未知消息保持拒绝提交。这份名单必须和 lexer.c 的 SyntaxError 调用保持一致。 */
+static TZrBool initial_lex_error_is_user_text(const SZrToken *token) {
+    static const TZrChar *const messages[] = {
+        "Hexadecimal literal requires a digit",
+        "Numeric exponent requires a digit",
+        "Floating-point literal is out of range",
+        "Invalid floating-point literal",
+        "Invalid digit in integer literal",
+        "Integer literal is out of range",
+        "invalid unicode escape sequence",
+        "invalid hex escape sequence",
+        "unfinished string",
+        "unfinished template string",
+        "unfinished character literal",
+        "unfinished block comment"
+    };
+
+    if (token == ZR_NULL || !token->hasLexError || token->lexErrorMessage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < sizeof(messages) / sizeof(messages[0]); index++) {
+        if (strcmp(token->lexErrorMessage, messages[index]) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/** @brief 首 token 的用户文本错误发生在回调安装前；用该 token 范围补一条语法诊断。 */
+static TZrBool collect_initial_lex_diagnostic(SZrState *state,
+                                              SZrFileVersion *fileVersion,
+                                              const SZrParserState *parserState,
+                                              SZrString *uri) {
+    const SZrLexState *lexer;
+    SZrFilePosition start;
+    SZrFilePosition end;
+    SZrDiagnostic *diagnostic;
+
+    if (state == ZR_NULL || fileVersion == ZR_NULL || parserState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    lexer = parserState->lexer;
+    /* 分配、所有权和源证据失败不是用户文本错误，保持拒绝提交。 */
+    if (lexer == ZR_NULL || lexer->buffer == ZR_NULL || lexer->hasSourceEvidenceError ||
+        !initial_lex_error_is_user_text(&lexer->t) || parserState->errorMessage == ZR_NULL ||
+        !fileVersion->parserDiagnostics.isValid || fileVersion->parserDiagnostics.head == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrParser_TokenSpan_IsValid(lexer->t.span)) {
+        start = ZrParser_FilePosition_Create(lexer->t.span.startOffset, lexer->t.span.startLine,
+                                             lexer->t.span.startColumn);
+        end = ZrParser_FilePosition_Create(lexer->t.span.endOffset, lexer->t.span.endLine,
+                                           lexer->t.span.endColumn);
+    } else {
+        start = ZrParser_FilePosition_Create(0, 1, 1);
+        end = start;
+    }
+    diagnostic = ZrLanguageServer_Diagnostic_New(state,
+                                                 ZR_DIAGNOSTIC_ERROR,
+                                                 ZrParser_FileRange_Create(start, end, uri),
+                                                 parserState->errorMessage,
+                                                 "parser_syntax_error");
+    if (diagnostic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (diagnostic->code == ZR_NULL ||
+        !ZrCore_Array_TryPush(state, &fileVersion->parserDiagnostics, &diagnostic)) {
+        ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 /** @brief 为文档版本创建自有文本块；快照和历史版本依赖它独立于更新存活。 */
 static SZrFileVersionContentBlock *content_block_new(SZrState *state,
                                                      const TZrChar *content,
@@ -280,6 +354,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
     fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
+    fileVersion->previousContentHasCurrentAst = ZR_FALSE;
     ZrCore_Array_Init(state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
@@ -404,6 +479,7 @@ TZrBool ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
 /**
  * @brief 将一次已接受的文档更新提交为新文本块，同时保留上一版供局部解析。
  * @note 分配失败不推进版本；token 等价时 AST 与旧诊断仍被视为可复用。
+ * @note 更新前文件已脏时保持脏并丢弃增量信息，后续 Parse 只能完整重解析。
  */
 TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  SZrFileVersion *fileVersion,
@@ -413,6 +489,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  const SZrFileChangeInfo *changeInfo) {
     SZrFileVersionContentBlock *newBlock;
     TZrSize contentGeneration;
+    TZrBool wasDirty;
 
     if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL ||
         changeInfo == ZR_NULL) {
@@ -427,14 +504,23 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
+      wasDirty = fileVersion->isDirty;
+      /* Retain both sticky-dirty and current-AST eligibility guards. */
+      fileVersion->previousContentHasCurrentAst =
+              fileVersion->ast != ZR_NULL && !wasDirty &&
+              !fileVersion->usesFallbackAst &&
+              !parser_diagnostics_have_errors(fileVersion);
     file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     /* isDirty、变更信息和解析模式共同决定 AST 是否重算及下游缓存失效范围。 */
-    fileVersion->isDirty = !changeInfo->isTokenEquivalent;
+    /* token 等价更新不会清掉尚未重解析的脏标记，否则后续 Parse 会复用旧 AST。 */
+    fileVersion->isDirty = (TZrBool)(wasDirty || !changeInfo->isTokenEquivalent);
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
-    fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
+    /* 变更信息只描述最近两版文本的差异。更新前已脏时 AST 比上一版文本更旧，
+     * 声明级重解析按这份差异局部替换会留下更早的改动，所以不提供增量信息。 */
+    fileVersion->hasIncrementalInfo = (TZrBool)!wasDirty;
     fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
 
     if (!changeInfo->isTokenEquivalent) {
@@ -452,7 +538,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
 
 /**
  * @brief 为 LSP context 创建 URI 到文件版本的状态表，默认启用 token 与声明级复用。
- * BUG: HashSet_Init 失败仅写 isValid，构造仍返回 parser；后续新文件插入会失败。
+ * @return URI 表初始桶分配失败时释放解析器并返回 NULL：无桶的表会拒绝之后每个新 URI 的登记。
  */
 SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     if (state == ZR_NULL) {
@@ -467,6 +553,10 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     parser->state = state;
     ZrCore_HashSet_Construct(&parser->uriToFileMap);
     ZrCore_HashSet_Init(state, &parser->uriToFileMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
+    if (!parser->uriToFileMap.isValid) {
+        ZrCore_Memory_RawFree(state->global, parser, sizeof(SZrIncrementalParser));
+        return ZR_NULL;
+    }
     parser->parserState = ZR_NULL; // TODO: 仓内仅在此赋空及析构，核对该字段是否仍由外部 ABI 使用。
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
@@ -546,7 +636,7 @@ static TZrBool incremental_parser_update_file(
             fileVersion->hasIncrementalInfo = ZR_FALSE;
             return ZR_TRUE;
         }
-        /* 仅有非回退 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
+        /* 仅有非回退且已对应上一份文本的 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
         SZrFileChangeInfo changeInfo;
         ZrLanguageServer_IncrementalChange_Compute(
                 uri,
@@ -556,6 +646,7 @@ static TZrBool incremental_parser_update_file(
                 contentLength,
                 &changeInfo);
         changeInfo.isTokenEquivalent = fileVersion->ast != ZR_NULL &&
+                                       !fileVersion->isDirty &&
                                        !fileVersion->usesFallbackAst &&
                                        ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
                                                state,
@@ -583,19 +674,19 @@ static TZrBool incremental_parser_update_file(
         }
         fileVersion->isOpenDocument = isOpenDocument;
 
-        /* BUG: Add 可因初始化、扩容或分配失败返回 NULL；仍返回成功且泄漏 fileVersion，
-         * 后续 GetFileVersion 找不到此 URI，上层误以为文档更新成功。 */
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
 
-        // 使用 ZrCore_HashSet_Add 添加，然后设置值
+        /* Add 返回空表示桶扩容被拒或表已失效：不发布未登记的版本，释放后报告失败。
+         * pair 节点由 GcMalloc 申请，其失败抛 MEMORY_ERROR 而不返回空，不经过此分支。 */
         SZrHashKeyValuePair *pair = ZrCore_HashSet_Add(state, &parser->uriToFileMap, &key);
-        if (pair != ZR_NULL) {
-            // 将 SZrFileVersion 指针存储为原生指针
-            SZrTypeValue value;
-            ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)fileVersion);
-            ZrCore_Value_Copy(state, &pair->value, &value);
+        if (pair == ZR_NULL) {
+            ZrLanguageServer_FileVersion_Free(state, fileVersion);
+            return ZR_FALSE;
         }
+        SZrTypeValue value;
+        ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)fileVersion);
+        ZrCore_Value_Copy(state, &pair->value, &value);
     }
 
     return ZR_TRUE;
@@ -677,8 +768,8 @@ static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
 /**
  * @brief 为指定 URI 更新解析结果：优先 token 复用，再尝试单声明替换，最后完整解析。
  * @note 语法错误可保留上一棵有效 AST，并以 usesFallbackAst 告知编辑器查询不能当成当前结果。
- * BUG: 完整解析在 State_Init 预读后才设置 suppressErrorOutput；未终止字符串可直接写 stdout，
- *      stdio 文档更新因此可能破坏 JSON-RPC 帧流。
+ * @note State_Init 在回调安装前预读首 token。明确的用户文本错误补进当前诊断并提交；
+ *       资源、所有权与源证据失败仍返回 FALSE。
  */
 TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
                                  SZrIncrementalParser *parser,
@@ -751,10 +842,12 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     }
 
     /* 只有声明级重解析证明未触及节点位置稳定，才能原位替换并保留其余 AST。
-     * BUG: 此门槛未排除 usesFallbackAst；V1 有效、V2 等长语法错保留 V1 AST、V3
-     *      等长改另一声明时，局部成功可把 V1 当成 V3 并清除 V2 的错误诊断。 */
+     * 回退 AST 属于上一份合法文本，不能作为当前文本的局部替换基准；
+     * 带语法错误的恢复树、或落后于上一份文本的树同样不能。 */
     if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
         fileVersion->ast != ZR_NULL &&
+        !fileVersion->usesFallbackAst &&
+        fileVersion->previousContentHasCurrentAst &&
         fileVersion->hasIncrementalInfo) {
         SZrFileVersionContentSnapshot previousSnapshot = {0};
 
@@ -806,19 +899,22 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         clear_parser_diagnostics(state, fileVersion);
         ZrParser_State_Init(&parserState, state, snapshot.content, snapshot.contentLength, sourceName);
         if (parserState.hasError) {
-            ZrParser_State_Free(&parserState);
-            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-            return ZR_FALSE;
+            if (!collect_initial_lex_diagnostic(state, fileVersion, &parserState, sourceName)) {
+                ZrParser_State_Free(&parserState);
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+                return ZR_FALSE;
+            }
+            parsedAst = ZR_NULL;
+        } else {
+            collector.state = state;
+            collector.fileVersion = fileVersion;
+            collector.suppressNextLegacyDiagnostic = ZR_FALSE;
+            parserState.errorCallback = collect_parser_diagnostic;
+            parserState.structuredErrorCallback = collect_structured_parser_diagnostic;
+            parserState.errorUserData = &collector;
+            parserState.suppressErrorOutput = ZR_TRUE;
+            parsedAst = ZrParser_ParseWithState(&parserState);
         }
-
-        collector.state = state;
-        collector.fileVersion = fileVersion;
-        collector.suppressNextLegacyDiagnostic = ZR_FALSE;
-        parserState.errorCallback = collect_parser_diagnostic;
-        parserState.structuredErrorCallback = collect_structured_parser_diagnostic;
-        parserState.errorUserData = &collector;
-        parserState.suppressErrorOutput = ZR_TRUE;
-        parsedAst = ZrParser_ParseWithState(&parserState);
         ZrParser_State_Free(&parserState);
 
         /* 交出旧 AST 仅用于调用方的语义快照迁移，否则由本层释放。 */

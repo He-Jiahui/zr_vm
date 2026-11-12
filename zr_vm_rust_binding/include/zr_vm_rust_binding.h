@@ -628,8 +628,7 @@ ZR_RUST_BINDING_API ZrRustBindingOwnershipKind ZrRustBinding_Value_GetOwnershipK
         const ZrRustBindingValue *value);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadBool(const ZrRustBindingValue *value,
                                                                      TZrBool *outBoolValue);
-/** @brief 读取宿主或 VM 整数到 int64。
- * BUG: VM uint64 大于 INT64_MAX 时 value.c 未拒绝窄化，返回成功但值失真。 */
+/** @brief 读取宿主或 VM 整数到 int64。超过 INT64_MAX 的 uint64 返回参数错误。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadInt(const ZrRustBindingValue *value,
                                                                     TZrInt64 *outIntValue);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Value_ReadFloat(const ZrRustBindingValue *value,
