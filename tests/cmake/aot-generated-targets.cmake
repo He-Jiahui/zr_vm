@@ -578,10 +578,14 @@
     )
     target_compile_definitions(zr_vm_aot_c_iterator_shared_library_smoke_test PRIVATE
             ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_LLVM_COMPILER="clang"
             ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
             ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
     )
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_iterator_shared_library_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_iterator_shared_library_smoke_test PRIVATE dl)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_aot_c_scope_shared_library_smoke_test

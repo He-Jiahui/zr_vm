@@ -10,13 +10,23 @@
 #include "harness/aot_c_link_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_library/aot_runtime.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 #endif
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
+#endif
+
+#ifndef ZR_VM_TESTS_LLVM_COMPILER
+#define ZR_VM_TESTS_LLVM_COMPILER "clang"
 #endif
 
 #ifndef ZR_VM_TESTS_REPO_ROOT
@@ -591,11 +601,213 @@ static void test_aot_fused_iterator_result_write_invalidates_scalar_local(void) 
 #endif
 }
 
+#if defined(ZR_PLATFORM_UNIX)
+static void write_text_file_or_fail(const TZrChar *path, const char *text) {
+    FILE *file;
+
+    TEST_ASSERT_NOT_NULL(path);
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(path));
+    file = fopen(path, "wb");
+    TEST_ASSERT_NOT_NULL(file);
+    TEST_ASSERT_EQUAL_size_t(strlen(text), fwrite(text, 1, strlen(text), file));
+    TEST_ASSERT_EQUAL_INT(0, fclose(file));
+}
+
+static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
+    FILE *file;
+    TZrByte chunk[ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH];
+    TZrUInt64 hash = ZR_STABLE_HASH_FNV1A64_OFFSET_BASIS;
+    TZrSize readSize;
+
+    file = fopen(path, "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    while ((readSize = fread(chunk, 1, sizeof(chunk), file)) > 0u) {
+        for (TZrSize index = 0u; index < readSize; index++) {
+            hash ^= chunk[index];
+            hash *= ZR_STABLE_HASH_FNV1A64_PRIME;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(0, fclose(file));
+    snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
+}
+
+static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    for (TZrUInt32 index = 0u; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/* 文本断言证明不了控制流。这里把真实 foreach 源码编成共享库并执行，结果须与解释器一致。 */
+static void execute_foreach_source(const char *caseName,
+                                   const char *source,
+                                   EZrInstructionCode fusedOpcode,
+                                   TZrInt64 expected,
+                                   EZrAotBackendKind backendKind) {
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-fused-iterator-exec\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    const TZrBool isC = (TZrBool)(backendKind == ZR_AOT_BACKEND_KIND_C);
+    const char *backendDirectory = isC ? "aot_c" : "aot_llvm";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrString *sourceName;
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrInt64 interpreted = 0;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0u;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar subDirectory[256];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "main.zr", 7);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function_contains_opcode(function, fusedOpcode));
+
+    snprintf(subDirectory, sizeof(subDirectory), "exec_%s_%s", caseName, backendDirectory);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library", subDirectory,
+                                                       "fused_iterator", ".zrp", projectPath, sizeof(projectPath)));
+    snprintf(subDirectory, sizeof(subDirectory), "exec_%s_%s/src", caseName, backendDirectory);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library", subDirectory,
+                                                       "main", ".zr", sourcePath, sizeof(sourcePath)));
+    snprintf(subDirectory, sizeof(subDirectory), "exec_%s_%s/bin", caseName, backendDirectory);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library", subDirectory,
+                                                       "main", ".zro", zroPath, sizeof(zroPath)));
+    snprintf(subDirectory, sizeof(subDirectory), "exec_%s_%s/bin/%s/src", caseName, backendDirectory, backendDirectory);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library", subDirectory,
+                                                       "main", isC ? ".c" : ".ll", generatedPath, sizeof(generatedPath)));
+    snprintf(subDirectory, sizeof(subDirectory), "exec_%s_%s/bin/%s/lib", caseName, backendDirectory, backendDirectory);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library", subDirectory,
+                                                       "zrvm_aot_main", ".so", sharedLibraryPath, sizeof(sharedLibraryPath)));
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    if (isC) {
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedPath, &aotOptions));
+        compile_shared_library_or_fail(generatedPath, sharedLibraryPath);
+    } else {
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, generatedPath, &aotOptions));
+        snprintf(command,
+                 sizeof(command),
+                 "\"%s\" " ZR_VM_TESTS_LLVM_POINTER_FLAGS " -fPIC -shared \"%s\" "
+                 "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+                 ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+                 "-o \"%s\"",
+                 ZR_VM_TESTS_LLVM_COMPILER,
+                 generatedPath,
+                 ZR_VM_TESTS_BUILD_LIB_DIR,
+                 ZR_VM_TESTS_BUILD_LIB_DIR,
+                 sharedLibraryPath);
+        TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+    }
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &interpreted));
+    TEST_ASSERT_EQUAL_INT64(expected, interpreted);
+    ZrCore_Function_Free(state, function);
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          isC ? ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C
+                                                              : ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                                                          ZR_TRUE));
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, backendKind, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(expected, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(isC ? ZR_LIBRARY_EXECUTED_VIA_AOT_C : ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+/* 循环体只做常量自增：求和与显式转换另有不属于融合跳转的 AOT 缺口，会掩盖这里要测的控制流。 */
+static const char *const kTypedForeachCountSource =
+        "var xs: int[3] = [4, 5, 6];\n"
+        "var count = 0;\n"
+        "for (var item in xs) {\n"
+        "    count = count + 1;\n"
+        "}\n"
+        "return count;\n";
+
+static const char *const kDynamicForeachCountSource =
+        "fn makeValues(): object {\n"
+        "    return [4, 5, 6];\n"
+        "}\n"
+        "var values = makeValues();\n"
+        "var count = 0;\n"
+        "for (var item in values) {\n"
+        "    count = count + 1;\n"
+        "}\n"
+        "return count;\n";
+#endif
+
+static void test_aot_c_fused_foreach_executes_like_interpreter(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");
+#else
+    execute_foreach_source("typed", kTypedForeachCountSource,
+                           ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3, ZR_AOT_BACKEND_KIND_C);
+    execute_foreach_source("dynamic", kDynamicForeachCountSource,
+                           ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3, ZR_AOT_BACKEND_KIND_C);
+#endif
+}
+
+static void test_aot_llvm_fused_foreach_executes_like_interpreter(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT LLVM iterator shared-library smoke currently validates the Unix toolchain path");
+#else
+    execute_foreach_source("typed", kTypedForeachCountSource,
+                           ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3, ZR_AOT_BACKEND_KIND_LLVM);
+    execute_foreach_source("dynamic", kDynamicForeachCountSource,
+                           ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE), 3, ZR_AOT_BACKEND_KIND_LLVM);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering);
     RUN_TEST(test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge);
     RUN_TEST(test_aot_fused_iterator_false_branch_uses_verifier_step);
     RUN_TEST(test_aot_fused_iterator_result_write_invalidates_scalar_local);
+    RUN_TEST(test_aot_c_fused_foreach_executes_like_interpreter);
+    RUN_TEST(test_aot_llvm_fused_foreach_executes_like_interpreter);
     return UNITY_END();
 }
