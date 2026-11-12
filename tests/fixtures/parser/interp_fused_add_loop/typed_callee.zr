@@ -1,0 +1,3 @@
+fn addFour(value: int): int { return value + 4; }
+fn apply(n: int) { var i = 0; var r = addFour(0); while (i < n) { r = addFour(i + 1); i = i + 1; } return r; }
+return apply(3);
