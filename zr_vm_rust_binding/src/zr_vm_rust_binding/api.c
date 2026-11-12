@@ -426,21 +426,28 @@ ZrRustBindingStatus ZrRustBinding_Project_Scaffold(const ZrRustBindingScaffoldOp
     TZrChar mainSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar manifestContent[512];
     ZrRustBindingProjectWorkspace *workspace;
+    int projectFileLength;
 
     if (options == ZR_NULL || outWorkspace == ZR_NULL || options->rootPath == ZR_NULL || options->projectName == ZR_NULL) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
                                          "scaffold options are incomplete");
     }
 
-    if (!zr_rust_binding_ensure_directory(options->rootPath) ||
-        !zr_rust_binding_join_path(options->rootPath, "src", sourceDirectory, sizeof(sourceDirectory)) ||
+    /* 四条脚手架路径先全部拼好并确认没有截断，之后才创建目录；
+     * 否则根目录会在拒绝之前落盘，截断后的项目文件路径也会被照常写入。 */
+    projectFileLength = snprintf(projectFile,
+                                 sizeof(projectFile),
+                                 "%s/%s.zrp",
+                                 options->rootPath,
+                                 options->projectName);
+    if (!zr_rust_binding_join_path(options->rootPath, "src", sourceDirectory, sizeof(sourceDirectory)) ||
         !zr_rust_binding_join_path(options->rootPath, "bin", binaryDirectory, sizeof(binaryDirectory)) ||
         !zr_rust_binding_join_path(options->rootPath, "src/main.zr", mainSourcePath, sizeof(mainSourcePath)) ||
-        snprintf(projectFile,
-                 sizeof(projectFile),
-                 "%s/%s.zrp",
-                 options->rootPath,
-                 options->projectName) < 0 ||
+        projectFileLength < 0 || (TZrSize)projectFileLength >= sizeof(projectFile)) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_IO_ERROR, "scaffold path is too long");
+    }
+
+    if (!zr_rust_binding_ensure_directory(options->rootPath) ||
         !zr_rust_binding_ensure_directory(sourceDirectory) ||
         !zr_rust_binding_ensure_directory(binaryDirectory)) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_IO_ERROR, "failed to prepare scaffold directories");

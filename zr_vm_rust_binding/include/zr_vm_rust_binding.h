@@ -341,7 +341,8 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_NewStandard(const 
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Runtime_Free(ZrRustBindingRuntime *runtime);
 
 /** @brief 按项目模板创建 .zrp 和入口源码，再打开 workspace；已有文件由 overwriteExisting 决定是否覆盖。
- * BUG: api.c 对路径和 JSON 使用固定缓冲区，却只检查 snprintf 非负；长路径可被截断，项目名中的引号未转义。 */
+ * 任一脚手架路径放不进 ZR_VM_PATH_LENGTH_MAX 字节的路径缓冲区时返回 IO_ERROR，且不创建任何目录或文件。
+ * BUG: api.c 把项目名直接写入固定长度的 JSON 缓冲区；引号/反斜杠未转义，过长的项目名会截断清单内容。 */
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Project_Scaffold(
         const ZrRustBindingScaffoldOptions *options,
         ZrRustBindingProjectWorkspace **outWorkspace);
