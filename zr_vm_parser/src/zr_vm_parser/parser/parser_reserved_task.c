@@ -42,10 +42,9 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
     }
 
     startLoc = get_current_token_location(ps);
+    EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
     if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
-        /* BUG: pub/pro async fn 可达此分支；修饰符先被消费，后续
-         * parse_function_declaration 只看到 fn，AST 访问级别回落为 private。 */
-        parse_access_modifier(ps);
+        accessModifier = parse_access_modifier(ps);
     }
 
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
@@ -66,6 +65,7 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
         return ZR_NULL;
     }
     declaration = &functionNode->data.functionDeclaration;
+    declaration->accessModifier = accessModifier;
     declaration->isAsync = ZR_TRUE;
     functionNode->location = functionLocation;
     return functionNode;

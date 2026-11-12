@@ -30,6 +30,8 @@ static size_t g_jsonFailAt;
 static size_t g_jsonFailures;
 static size_t g_liveJson;
 static TZrBool g_persistentFailure; /* 仅在发送路径安装 cJSON 钩子，区分单点及持续分配失败。 */
+static TZrBool g_failUriText; /* 置位期间发布路径取不到 URI 文本；setUp 复位，断言中途跳出也不会带入下一用例。 */
+static size_t g_uriTextFailures; /* 转换替身实际拒绝的次数，用于确认注入落在被测发布路径上。 */
 #ifdef _WIN32
 static int g_stdoutMode;
 #endif
@@ -63,7 +65,7 @@ static void begin_json_tracking(size_t failAt, TZrBool persistent) { /* 在完�
     g_jsonFailAt = failAt;
     g_jsonFailures = 0;
     g_persistentFailure = persistent;
-    cJSON_InitHooks(&hooks); /* TODO: 此钩子不覆盖 URI 文本转换和快照缓存的 libc 分配；需另行注入并核对重发语义。 */
+    cJSON_InitHooks(&hooks); /* TODO: 此钩子不覆盖快照缓存的 libc 分配；需另行注入并核对重发语义。URI 文本转换失败由文件后部的转换替身覆盖。 */
 }
 
 static void restore_stdout(void) { /* 发布结束或断言跳出后恢复 Unity 的输出通道。 */
@@ -147,6 +149,7 @@ void setUp(void) { /* 为每个用例创建独立缓存，避免上一个发布�
     g_output = ZR_NULL;
     g_message = ZR_NULL;
     g_liveJson = 0;
+    g_failUriText = ZR_FALSE;
     g_server = ZrLanguageServer_StdioServer_New(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_server);
     g_uri = server_get_cached_uri(g_server, "file:///diagnostic-publication.zr");
@@ -262,6 +265,56 @@ static void test_nonempty_diagnostic_allocation_failures_do_not_publish(void) { 
     sweep_allocations(ZR_FALSE, ZR_TRUE);
 }
 
+/* 以下用例覆盖 URI 文本转换失败：生产转换只在宿主分配失败时返回 NULL，cJSON 钩子触及不到这次分配。 */
+static char *publication_uri_text(SZrString *value) { /* 未置位时原样转交生产转换，其余用例的行为不变。 */
+    if (g_failUriText) {
+        g_uriTextFailures++;
+        return ZR_NULL;
+    }
+    return zr_string_to_c_string(value);
+}
+
+/* 把生产发布实现编入本翻译单元，使其中的 URI 文本转换改经上面的替身；CMake 相应地不再为本目标单独编译该源文件。 */
+#define zr_string_to_c_string publication_uri_text
+#include "stdio_diagnostics.c"
+#undef zr_string_to_c_string
+
+static long capture_without_uri_text(TZrBool empty) { /* 只在这一次发布期间让转换失败，返回实际写出的字节数。 */
+    long bytes;
+
+    g_uriTextFailures = 0;
+    g_failUriText = ZR_TRUE;
+    begin_json_tracking(0, ZR_FALSE); /* 不注入 cJSON 故障，只借净分配计数检查被丢弃通知的 JSON 节点。 */
+    bytes = capture_diagnostics(empty);
+    g_failUriText = ZR_FALSE;
+    return bytes;
+}
+
+static void test_uri_text_failure_drops_empty_diagnostics(void) { /* 清理通知取不到 URI 文本时不得改发空 URI，也不得提交快照。 */
+    TEST_ASSERT_EQUAL_INT64(0, capture_without_uri_text(ZR_TRUE));
+    TEST_ASSERT_EQUAL_UINT64(1, g_uriTextFailures);
+    TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
+    TEST_ASSERT_EQUAL_UINT(0U, g_server->diagnosticPushCache.count);
+    TEST_ASSERT_TRUE(capture_diagnostics(ZR_TRUE) > 0L); /* 转换恢复后同一清理仍会发出，捕获夹具同时核对其目标为原 URI。 */
+    TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.count);
+    TEST_ASSERT_EQUAL_STRING("file:///diagnostic-publication.zr", g_server->diagnosticPushCache.items[0].uriText);
+}
+
+static void test_uri_text_failure_drops_document_diagnostics(void) { /* 新版本诊断取不到 URI 文本时保留上一版快照，恢复后按原 URI 补发。 */
+    update_document(1, ZR_FALSE);
+    TEST_ASSERT_TRUE(capture_diagnostics(ZR_FALSE) > 0L);
+    update_document(2, ZR_TRUE);
+    TEST_ASSERT_EQUAL_INT64(0, capture_without_uri_text(ZR_FALSE));
+    TEST_ASSERT_EQUAL_UINT64(1, g_uriTextFailures);
+    TEST_ASSERT_EQUAL_UINT64(0, g_liveJson);
+    TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.count); /* 以空 URI 代发会在这里多出一项空串为键的快照。 */
+    TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.items[0].documentVersion);
+    TEST_ASSERT_TRUE(capture_diagnostics(ZR_FALSE) > 0L);
+    TEST_ASSERT_TRUE(cJSON_GetArraySize(get_object_item(get_object_item(g_message, "params"), "diagnostics")) > 0);
+    TEST_ASSERT_EQUAL_UINT(1U, g_server->diagnosticPushCache.count);
+    TEST_ASSERT_EQUAL_UINT(2U, g_server->diagnosticPushCache.items[0].documentVersion);
+}
+
 int main(void) { /* CMake 单独注册本 Unity 可执行文件，使发送缓存回归可独立运行。 */
     UNITY_BEGIN();
     RUN_TEST(test_empty_diagnostics_cache_commits_after_successful_publication);
@@ -270,5 +323,7 @@ int main(void) { /* CMake 单独注册本 Unity 可执行文件，使发送缓�
     RUN_TEST(test_empty_diagnostic_allocation_failures_do_not_publish);
     RUN_TEST(test_document_diagnostic_allocation_failures_do_not_publish);
     RUN_TEST(test_nonempty_diagnostic_allocation_failures_do_not_publish);
+    RUN_TEST(test_uri_text_failure_drops_empty_diagnostics);
+    RUN_TEST(test_uri_text_failure_drops_document_diagnostics);
     return UNITY_END();
 }

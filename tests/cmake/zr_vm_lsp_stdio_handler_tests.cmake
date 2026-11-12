@@ -11,10 +11,17 @@ if(TARGET zr_vm_language_server_stdio)
     foreach(_zr_vm_stdio_handler_test IN ITEMS
             handler_cancellation initialize transport_output diagnostic_publication diagnostic_json document_close)
         set(_zr_vm_stdio_handler_target zr_vm_language_server_stdio_${_zr_vm_stdio_handler_test}_test)
+        set(_zr_vm_stdio_handler_scenario_sources ${_zr_vm_stdio_handler_sources})
+        if(_zr_vm_stdio_handler_test STREQUAL "diagnostic_publication")
+            # 发布用例把 stdio_diagnostics.c 文本包含进测试翻译单元，以替换其中的 URI 文本转换；
+            # 再单独编译同一源会重复定义处理器，故仅该场景从源列表移除它，其余场景仍编译生产源。
+            list(REMOVE_ITEM _zr_vm_stdio_handler_scenario_sources
+                    ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_diagnostics.c)
+        endif()
         zr_vm_add_unity_test_target(
                 ${_zr_vm_stdio_handler_target}
                 ${CMAKE_SOURCE_DIR}/tests/language_server/test_stdio_${_zr_vm_stdio_handler_test}.c
-                ${_zr_vm_stdio_handler_sources}
+                ${_zr_vm_stdio_handler_scenario_sources}
         )
         target_include_directories(${_zr_vm_stdio_handler_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio

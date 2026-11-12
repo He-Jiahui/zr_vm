@@ -1874,6 +1874,21 @@ static TZrBool semantic_query_append_project_external_type_member_references(SZr
     return appended;
 }
 
+/** @brief 释放仅供本次请求投影的临时位置数组：append_location 为每项单独 RawMalloc 位置外壳，
+ *  Array_Free 只归还指针缓冲区，因此先逐项释放；URI 由 VM 管理，不在此回收。 */
+static void semantic_query_free_temporary_locations(SZrState *state, SZrArray *locations) {
+    if (state == ZR_NULL || locations == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0; index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *locationPtr, sizeof(SZrLspLocation));
+        }
+    }
+    ZrCore_Array_Free(state, locations);
+}
+
 /** @brief 只将本文件的外部成员引用位置投影为高亮，避免跨文档位置泄漏到 documentHighlight。 */
 static TZrBool semantic_query_append_external_type_member_highlights(SZrState *state,
                                                                      SZrLspContext *context,
@@ -1913,9 +1928,7 @@ static TZrBool semantic_query_append_external_type_member_highlights(SZrState *s
         appended = semantic_query_append_locations_as_highlights(state, &locations, query->uri, 2, result) || appended;
     }
 
-    /* BUG: append_location 为每项独立分配 SZrLspLocation；这里只释放数组缓冲区。
-     * 同文档外部类型成员每次请求高亮都会遗失这些 location 对象。 */
-    ZrCore_Array_Free(state, &locations);
+    semantic_query_free_temporary_locations(state, &locations);
     return appended;
 }
 
