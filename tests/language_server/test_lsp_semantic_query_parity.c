@@ -1598,6 +1598,7 @@ int main(void) {
     test_external_member_references_reject_mismatched_declaration_identity(state);
     test_external_member_query_rejects_stale_document_snapshot(state);
     test_external_member_query_rejects_missing_declaration_identity(state);
+    test_external_member_references_visit_every_sibling_subtree(state);
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_FALSE);
     test_cross_snapshot_imported_references_use_external_identity(state, ZR_TRUE);
     test_analysis_provider_generation_invalidates_same_ast_cache(state);

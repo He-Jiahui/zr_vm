@@ -396,3 +396,21 @@ TZrBool extern_compiler_decorators_get_int_arg(SZrAstNodeArray *decorators,
     return extern_compiler_extract_int_argument(call, outValue);
 }
 
+void extern_compiler_enum_advance_auto_value(TZrInt64 memberValue,
+                                                    TZrInt64 *nextAutoValue,
+                                                    TZrBool *autoValueExhausted) {
+    if (nextAutoValue == ZR_NULL || autoValueExhausted == ZR_NULL) {
+        return;
+    }
+
+    /* INT64_MAX is a valid member value, but memberValue + 1 would be signed overflow.
+     * Only record that no successor exists; the member that needs an auto value reports it. */
+    if (memberValue == ZR_TYPE_RANGE_INT64_MAX) {
+        *autoValueExhausted = ZR_TRUE;
+        return;
+    }
+
+    *nextAutoValue = memberValue + 1;
+    *autoValueExhausted = ZR_FALSE;
+}
+
