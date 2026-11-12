@@ -459,7 +459,6 @@ static TZrBool backend_aot_instruction_const_div_mod_is_known_non_zero(const SZr
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
             return backend_aot_constant_int_is_known_non_zero(function, instruction->instruction.operand.operand1[1]);
@@ -510,6 +509,9 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(MUL):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        /* 融合形式的加法/乘法仍会报溢出，与除数是否为零无关。 */
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
         case ZR_INSTRUCTION_ENUM(DIV):
@@ -555,7 +557,6 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
             return backend_aot_instruction_const_div_mod_is_known_non_zero(function, instruction)

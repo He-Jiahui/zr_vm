@@ -423,6 +423,9 @@ static void assert_pinned_ir(const char *text, TZrBool requireMulCall) {
         assert_text_contains(text, "; zr_aot_llvm_mul_signed_load_stack");
         assert_text_contains(text,
                              "call i1 @ZrLibrary_AotRuntime_MulSigned(ptr %state, ptr %frame, i32 12, i32 1, i32 2)");
+        /* 两条融合指令都会报整数溢出，步进点须带 MAY_THROW(1) 才会发布 PC；除数 7 非零也不例外。 */
+        assert_text_contains(text, "call i1 @ZrLibrary_AotRuntime_BeginInstruction(ptr %state, ptr %frame, i32 6, i32 1)");
+        assert_text_contains(text, "call i1 @ZrLibrary_AotRuntime_BeginInstruction(ptr %state, ptr %frame, i32 7, i32 1)");
     }
     assert_text_contains(text, "; zr_aot_llvm_add_signed_mod_const");
     assert_text_contains(
