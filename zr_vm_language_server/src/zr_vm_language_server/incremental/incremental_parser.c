@@ -404,6 +404,7 @@ TZrBool ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
 /**
  * @brief 将一次已接受的文档更新提交为新文本块，同时保留上一版供局部解析。
  * @note 分配失败不推进版本；token 等价时 AST 与旧诊断仍被视为可复用。
+ * @note 更新前文件已脏时保持脏并丢弃增量信息，后续 Parse 只能完整重解析。
  */
 TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  SZrFileVersion *fileVersion,
@@ -413,6 +414,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  const SZrFileChangeInfo *changeInfo) {
     SZrFileVersionContentBlock *newBlock;
     TZrSize contentGeneration;
+    TZrBool wasDirty;
 
     if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL ||
         changeInfo == ZR_NULL) {
@@ -427,15 +429,18 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
+    wasDirty = fileVersion->isDirty;
     file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     /* isDirty、变更信息和解析模式共同决定 AST 是否重算及下游缓存失效范围。 */
-    /* 仅空白变化不会清掉尚未重解析的脏标记，否则后续 Parse 会复用旧 AST。 */
-    fileVersion->isDirty = (TZrBool)(fileVersion->isDirty || !changeInfo->isTokenEquivalent);
+    /* token 等价更新不会清掉尚未重解析的脏标记，否则后续 Parse 会复用旧 AST。 */
+    fileVersion->isDirty = (TZrBool)(wasDirty || !changeInfo->isTokenEquivalent);
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
-    fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
+    /* 变更信息只描述最近两版文本的差异。更新前已脏时 AST 比上一版文本更旧，
+     * 声明级重解析按这份差异局部替换会留下更早的改动，所以不提供增量信息。 */
+    fileVersion->hasIncrementalInfo = (TZrBool)!wasDirty;
     fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
 
     if (!changeInfo->isTokenEquivalent) {
