@@ -897,7 +897,7 @@ if(TARGET zr_vm_compiler_w2_performance_quickening_test)
 endif()
 
 if(TARGET zr_vm_cli_executable)
-    foreach(case repro callback_result cb_i literal_bound temp_local typed_callee)
+    foreach(case callback_result_repro callback_result cb_i literal_bound temp_local typed_callee)
         set(expected_result 7)
         if(case STREQUAL "cb_i")
             set(expected_result 6)
@@ -929,3 +929,5 @@ endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/function-instruction-verification.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-value-layout.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/fused-add-loop-tests.cmake")
