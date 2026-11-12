@@ -14,25 +14,45 @@ const EDIT = {
     newText: FORMATTED,
 };
 
-/** 为磁盘重新读取分支建立真实 file URI，异常时回收临时文件。 */
-async function withDiskDocument(run) {
+/**
+ * 为磁盘重新读取分支建立真实 file URI：workspace 作为登记的工作区根，outside 是它的兄弟目录。
+ * 未打开文档的 didSave 只对根内文件读盘；根外文件供门禁断言使用，异常时回收整个临时目录。
+ */
+async function withDiskWorkspace(run) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-lsp-save-'));
-    const filePath = path.join(directory, 'saved.zr');
+    const rootPath = path.join(directory, 'workspace');
+    const outsidePath = path.join(directory, 'outside');
+    const filePath = path.join(rootPath, 'saved.zr');
+    const outsideFilePath = path.join(outsidePath, 'secret.zr');
     try {
+        fs.mkdirSync(rootPath);
+        fs.mkdirSync(outsidePath);
         fs.writeFileSync(filePath, 'class BeforeSave { }\n', 'utf8');
-        await run(filePath, pathToFileURL(filePath).href);
+        fs.writeFileSync(outsideFilePath, 'class OutsideSave { }\n', 'utf8');
+        const rootUri = pathToFileURL(rootPath).href;
+        await run({
+            rootUri,
+            filePath,
+            diskUri: pathToFileURL(filePath).href,
+            outsideUri: pathToFileURL(outsideFilePath).href,
+            // 字面上以工作区根开头，经 `..` 后落到根外的同一个文件。
+            escapeUri: `${rootUri}/../outside/secret.zr`,
+        });
     } finally {
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        fs.rmdirSync(directory);
+        // 布局固定，先删文件再删目录；不依赖旧版 Node 没有的 fs.rmSync。
+        [filePath, outsideFilePath].forEach((file) => { if (fs.existsSync(file)) fs.unlinkSync(file); });
+        [rootPath, outsidePath, directory].forEach((dir) => { if (fs.existsSync(dir)) fs.rmdirSync(dir); });
     }
 }
 
-/** 每项能力断言独占初始化会话，保证前一项的文档和通知不影响后一项。 */
-async function withClient(serverPath, capabilities, run) {
+/** 每项能力断言独占初始化会话，保证前一项的文档和通知不影响后一项；rootUri 缺省时不登记工作区根。 */
+async function withClient(serverPath, capabilities, run, rootUri) {
     const client = new StdioProtocolClient(serverPath);
     let cleanExit = false;
     try {
-        const response = await client.request('initialize', { capabilities }, 'initialize', TIMEOUT_MS);
+        const response = await client.request(
+            'initialize', rootUri === undefined ? { capabilities } : { capabilities, rootUri },
+            'initialize', TIMEOUT_MS);
         assert.equal(response.jsonrpc, '2.0');
         assert.equal(response.id, 'initialize');
         assert.equal(response.error, undefined);
@@ -115,8 +135,8 @@ async function main() {
                     } }],
                 });
             }));
-        /** 未打开的磁盘文档应由 didSave 刷新到下一代快照。 */
-        await check(`${name} disk save refresh`, () => withDiskDocument(async (filePath, diskUri) => {
+        /** 工作区根内未打开的磁盘文档应由 didSave 刷新到下一代快照。 */
+        await check(`${name} disk save refresh`, () => withDiskWorkspace(async ({ rootUri, filePath, diskUri }) => {
             /** 在一个服务端会话中比较两次磁盘保存前后的声明定位。 */
             await withClient(serverPath, capabilities, async (client) => {
                 /** 用声明范围检查定义查询确实来自预期的磁盘版本。 */
@@ -144,7 +164,21 @@ async function main() {
                 assert.ok(Number.isInteger(beforeVersion) && afterVersion === beforeVersion + 1,
                           'didSave must publish the next disk snapshot generation');
                 await definition('after-disk-save', 15);
-            });
+            }, rootUri);
+        }));
+        /** 未打开的根外文档不得由 didSave 读盘，借 `..` 逃出工作区根的 URI 也不例外。 */
+        await check(`${name} closed save outside workspace`, () => withDiskWorkspace(async (disk) => {
+            /** 读盘成功必然推送该 URI 的诊断，故用首条诊断推送的归属判断根外文件是否被读取。 */
+            await withClient(serverPath, capabilities, async (client) => {
+                // 服务端按到达顺序处理通知：根外保存若读了盘，其诊断会先于根内文档发布。
+                client.notify('textDocument/didSave', { textDocument: { uri: disk.escapeUri } });
+                client.notify('textDocument/didSave', { textDocument: { uri: disk.outsideUri } });
+                client.notify('textDocument/didSave', { textDocument: { uri: disk.diskUri } });
+                const published = await client.waitForNotification('textDocument/publishDiagnostics', TIMEOUT_MS);
+                assert.equal(published.uri, disk.diskUri,
+                             'didSave must not reload a closed document outside the workspace from disk');
+                assert.deepEqual(published.diagnostics, []);
+            }, disk.rootUri);
         }));
     }
     assert.equal(failures, 0, `${failures}/${checks} save capability checks failed`);
