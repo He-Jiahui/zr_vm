@@ -1080,6 +1080,12 @@ TZrBool extern_compiler_decorators_get_int_arg(SZrAstNodeArray *decorators,
                                                       const TZrChar *leafName,
                                                       TZrInt64 *outValue) ;
 
+/* 枚举自动值游标：在取值为 memberValue 的成员之后推进。memberValue 为 INT64_MAX 时
+ * 不执行有符号加一，只置 *autoValueExhausted；否则写入后继并清除该标志。 */
+void extern_compiler_enum_advance_auto_value(TZrInt64 memberValue,
+                                                    TZrInt64 *nextAutoValue,
+                                                    TZrBool *autoValueExhausted) ;
+
 SZrAstNode *extern_compiler_find_named_declaration(SZrExternBlock *externBlock, SZrString *name) ;
 
 TZrBool extern_compiler_is_precise_ffi_primitive_name(SZrString *name) ;

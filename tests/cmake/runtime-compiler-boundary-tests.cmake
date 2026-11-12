@@ -55,6 +55,16 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     set_tests_properties(compiled_function_lifetime PROPERTIES TIMEOUT 20)
 endif()
 
+# /dev/full 让 .zro/.zri/.zrs writer 遇到真实的 ENOSPC 刷新失败；该设备只在 Linux 上有。
+if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    zr_vm_add_unity_test_target(zr_vm_writer_output_failure_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_writer_output_failure.c)
+    target_include_directories(zr_vm_writer_output_failure_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_writer_output_failure_test)
+    add_test(NAME writer_output_failure COMMAND zr_vm_writer_output_failure_test)
+    set_tests_properties(writer_output_failure PROPERTIES TIMEOUT 300)
+endif()
+
 if(TARGET zr_vm_cli_executable)
     add_test(NAME native_lambda_loops
             COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
