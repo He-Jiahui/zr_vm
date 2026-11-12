@@ -1,5 +1,6 @@
 ---
 related_code:
+  - tests/cmake/zr_vm_register_executable_suite.cmake
   - .github/workflows/pr-regression-validation.yml
   - .github/workflows/interpreter-gates.yml
   - tests/CMakeLists.txt
@@ -52,3 +53,10 @@ compile-time program in `language_pipeline` and the incremental-parser, initial
 diagnostics, source-contract, interface, advanced-editor, and inlay-facts
 programs in `language_server`. It also verifies that these programs are built
 and executable. Both aggregate suites remain in the executed CTest selection.
+
+The pipeline aggregate passes a generated `SUITE_MANIFEST` file, while the
+language-server aggregate supplies `EXECUTABLES` directly. Preflight accepts
+exactly one form, confines manifest reads to the build tree, and extracts the
+full executable list emitted by the CMake generator. The runner uses that full
+list when no tier filter is requested; smoke/core/stress fields are not used as
+substitutes for the full inventory.

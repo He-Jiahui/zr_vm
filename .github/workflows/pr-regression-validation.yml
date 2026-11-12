@@ -63,7 +63,7 @@ jobs:
           BUILD_DIR: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}
         run: |
           python3 - <<'PY'
-          import json, os, subprocess, sys
+          import json, os, re, subprocess, sys
           from pathlib import Path
           build = os.environ['BUILD_DIR']
           required = [
@@ -110,9 +110,20 @@ jobs:
           for suite, required_binaries in aggregate_members.items():
               arguments = listing[suite]['command']
               programs = [arg.removeprefix('-DEXECUTABLES=') for arg in arguments if arg.startswith('-DEXECUTABLES=')]
-              if len(programs) != 1:
-                  sys.exit(f'{suite}: missing executable-suite command inventory')
-              executable_paths = programs[0].split(';')
+              manifests = [arg.removeprefix('-DSUITE_MANIFEST=') for arg in arguments if arg.startswith('-DSUITE_MANIFEST=')]
+              if len(programs) == 1 and not manifests:
+                  executable_list = programs[0]
+              elif len(manifests) == 1 and not programs:
+                  manifest = Path(manifests[0])
+                  if not manifest.resolve().is_relative_to(Path(build).resolve()):
+                      sys.exit(f'{suite}: executable manifest is outside the build tree')
+                  match = re.search(r'^set\(EXECUTABLES \[==\[(.*?)\]==\]\)', manifest.read_text(encoding='utf-8'), re.M | re.S)
+                  if match is None:
+                      sys.exit(f'{suite}: executable manifest has no full regression inventory')
+                  executable_list = match.group(1)
+              else:
+                  sys.exit(f'{suite}: missing or ambiguous executable-suite inventory')
+              executable_paths = executable_list.split(';')
               names = {Path(path).name for path in executable_paths}
               missing_binaries = sorted(set(required_binaries) - names)
               unavailable = [path for path in executable_paths if Path(path).name in required_binaries and not os.access(path, os.X_OK)]
