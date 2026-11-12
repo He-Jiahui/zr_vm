@@ -24,7 +24,8 @@ static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right)
     return 0;
 }
 
-/* LSP Range 的 end 是排他的。等于 end 的提示属于下一个范围。 */
+/* LSP Range 的 end 是排他的：位于 start 的提示计入本范围，等于 end 的提示属于下一个范围。
+ * stdio 和 Wasm 均原样传入客户端范围，因此相邻分页不重复返回边界提示，空范围不含提示。 */
 static TZrBool lsp_inlay_position_in_range(SZrLspPosition position, SZrLspRange range) {
     return lsp_inlay_compare_position(position, range.start) >= 0 &&
            lsp_inlay_compare_position(position, range.end) < 0;
