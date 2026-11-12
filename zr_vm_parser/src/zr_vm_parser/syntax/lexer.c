@@ -476,17 +476,21 @@ static void skip_whitespace_and_comments(SZrLexState *ls) {
             // 块注释
             ZrParser_Lexer_ReadChar(ls); // 跳过 '/'
             ZrParser_Lexer_ReadChar(ls); // 跳过 '*'
+            TZrBool blockCommentClosed = ZR_FALSE;
             while (ls->currentChar != ZR_PARSER_LEXER_EOZ) {
                 if (ls->currentChar == '*' && ls->currentPos < ls->sourceLength && ls->source[ls->currentPos] == '/') {
                     ZrParser_Lexer_ReadChar(ls); // 跳过 '*'
                     ZrParser_Lexer_ReadChar(ls); // 跳过 '/'
+                    blockCommentClosed = ZR_TRUE;
                     break;
                 }
                 // 注意：ZrParser_Lexer_ReadChar 已经处理了换行符的行号增加，这里不需要重复处理
                 ZrParser_Lexer_ReadChar(ls);
             }
-            // BUG: `/*` 到文件末尾时不报错，ZrParser_Lexer_Scan 随后返回 EOS；Parse 可返回空脚本。
-            // 语言词法文档要求未闭合块注释是源文件词法错误。
+            // 文件在闭合之前结束仍是词法错误；恰好以闭合符（星号加斜杠）结束的注释不算未闭合。
+            if (!blockCommentClosed) {
+                ZrParser_Lexer_SyntaxError(ls, "unfinished block comment");
+            }
         } else {
             break;
         }

@@ -1710,3 +1710,157 @@ void test_w2_constant_loops_have_compact_bodies(void) {
         ZrTests_Runtime_State_Destroy(state);
     }
 }
+
+void test_w2_stack_load_const_add_fuses_only_representable_operands(void);
+
+typedef struct SZrW2StackLoadConstAddCase {
+    const TZrChar *name;
+    TZrUInt8 sourceSlot;
+    TZrUInt8 constantSlot;
+    TZrBool expectFused;
+    TZrInt64 expectedResult;
+} SZrW2StackLoadConstAddCase;
+
+/* ADD_SIGNED_LOAD_STACK_LOAD_CONST 的常量物化槽 operand0[2] 与常量下标 operand1[1] 共用一个字节。
+ * 下标 257 的两个字节都是 1，因此无论字节序如何，共用字节指向的都是槽 1。
+ * 常量 i 的值为 1000 + i；结果累加所有相关槽，任何一个槽被写错或漏写都会改变结果。 */
+void test_w2_stack_load_const_add_fuses_only_representable_operands(void) {
+    enum {
+        W2_COPY_SLOT = 3,
+        W2_SUM_SLOT = 5,
+        W2_STACK_SIZE = 10,
+        W2_CONSTANT_INDEX = 257,
+        W2_CONSTANT_COUNT = 258,
+        W2_MAX_INSTRUCTIONS = 9
+    };
+    static const SZrW2StackLoadConstAddCase cases[] = {
+            /* 共用字节指向加法自己的源局部变量，对应 interp_fused_add_loop/repro.zr 的循环变量。 */
+            {"constant slot 4, shared index byte names the source local", 1u, 4u, ZR_FALSE, 6517},
+            /* 共用字节指向一个与本次加法无关、但之后仍被读取的局部变量。 */
+            {"constant slot 4, shared index byte names an unrelated local", 0u, 4u, ZR_FALSE, 6515},
+            /* 槽号与下标在共用字节上一致，尽管下标本身并不等于槽号。 */
+            {"constant slot 1 equals the shared index byte", 0u, 1u, ZR_TRUE, 6771},
+    };
+    SZrRegressionTestTimer timer;
+    TZrUInt32 index;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Stack Load Const Add Fuses Only Representable Operands");
+    ZR_TEST_INFO("fused add operand packing",
+                 "Testing that GET_STACK plus ADD_SIGNED_LOAD_CONST fuses only when the constant slot survives the byte it shares with the constant index.");
+
+    for (index = 0; index < ZR_ARRAY_COUNT(cases); index++) {
+        const SZrW2StackLoadConstAddCase *testCase = &cases[index];
+        EZrInstructionCode expectedOpcode = testCase->expectFused
+                                                    ? ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST)
+                                                    : ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST);
+        TZrInstruction code[W2_MAX_INSTRUCTIONS];
+        TZrInstruction observed;
+        const TZrInstruction *found;
+        SZrState *state;
+        SZrFunction *function;
+        SZrTypeValue *constants;
+        TZrUInt32 instructionCount = 0u;
+        TZrUInt32 constantIndex;
+        TZrUInt32 fusedCount;
+        TZrUInt32 unfusedCount;
+        TZrBool quickened;
+        TZrBool foundExpected;
+        TZrBool executed = ZR_FALSE;
+        TZrInt64 result = 0;
+
+        code[instructionCount++] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0u, 0);
+        if (testCase->constantSlot != 1u) {
+            code[instructionCount++] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1u, 1);
+        }
+        code[instructionCount++] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK),
+                                                        W2_COPY_SLOT,
+                                                        testCase->sourceSlot);
+        code[instructionCount] = create_instruction_4(ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST),
+                                                      W2_SUM_SLOT,
+                                                      W2_COPY_SLOT,
+                                                      testCase->constantSlot,
+                                                      0u,
+                                                      0u);
+        code[instructionCount++].instruction.operand.operand1[1] = W2_CONSTANT_INDEX;
+        code[instructionCount++] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_SIGNED), 6u, W2_SUM_SLOT, 0u);
+        code[instructionCount++] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_SIGNED), 7u, 6u, 1u);
+        code[instructionCount++] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_SIGNED), 8u, 7u, W2_COPY_SLOT);
+        code[instructionCount++] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_SIGNED),
+                                                        9u,
+                                                        8u,
+                                                        testCase->constantSlot);
+        code[instructionCount++] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1u, 9u, 0u);
+
+        state = ZrTests_Runtime_State_Create(ZR_NULL);
+        TEST_ASSERT_NOT_NULL_MESSAGE(state, testCase->name);
+        ZrParser_ToGlobalState_Register(state);
+        function = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL_MESSAGE(function, testCase->name);
+        function->instructionsList =
+                (TZrInstruction *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                  sizeof(*code) * instructionCount,
+                                                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        constants = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                    sizeof(*constants) * W2_CONSTANT_COUNT,
+                                                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL_MESSAGE(function->instructionsList, testCase->name);
+        TEST_ASSERT_NOT_NULL_MESSAGE(constants, testCase->name);
+        memcpy(function->instructionsList, code, sizeof(*code) * instructionCount);
+        for (constantIndex = 0; constantIndex < W2_CONSTANT_COUNT; constantIndex++) {
+            ZrCore_Value_InitAsInt(state, &constants[constantIndex], 1000 + (TZrInt64)constantIndex);
+        }
+        function->instructionsLength = instructionCount;
+        function->constantValueList = constants;
+        function->constantValueLength = W2_CONSTANT_COUNT;
+        function->stackSize = W2_STACK_SIZE;
+
+        quickened = compiler_quicken_execbc_function(state, function);
+        fusedCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST));
+        unfusedCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST));
+        memset(&observed, 0, sizeof(observed));
+        found = find_first_opcode(function, expectedOpcode);
+        foundExpected = found != ZR_NULL;
+        if (foundExpected) {
+            observed = *found;
+        }
+        if (quickened) {
+            executed = ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result);
+            if (!executed) {
+                ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
+            }
+        }
+        /* 断言可能 longjmp 离开用例，先释放 VM 再检查已拷贝出来的观测值。 */
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+
+        TEST_ASSERT_TRUE_MESSAGE(quickened, testCase->name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(testCase->expectFused ? 1u : 0u, fusedCount, testCase->name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(testCase->expectFused ? 0u : 1u, unfusedCount, testCase->name);
+        TEST_ASSERT_TRUE_MESSAGE(foundExpected, testCase->name);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(W2_CONSTANT_INDEX,
+                                         observed.instruction.operand.operand1[1],
+                                         testCase->name);
+        if (testCase->expectFused) {
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(testCase->sourceSlot,
+                                             observed.instruction.operand.operand0[0],
+                                             testCase->name);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(W2_COPY_SLOT,
+                                             observed.instruction.operand.operand0[1],
+                                             testCase->name);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(testCase->constantSlot,
+                                             observed.instruction.operand.operand0[2],
+                                             testCase->name);
+        } else {
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(testCase->constantSlot,
+                                             observed.instruction.operand.operand0[1],
+                                             testCase->name);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(executed, testCase->name);
+        TEST_ASSERT_EQUAL_INT64_MESSAGE(testCase->expectedResult, result, testCase->name);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Stack Load Const Add Fuses Only Representable Operands");
+    ZR_TEST_DIVIDER();
+}

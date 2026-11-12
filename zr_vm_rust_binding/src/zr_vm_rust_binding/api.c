@@ -257,13 +257,13 @@ static ZrRustBindingStatus zr_rust_binding_manifest_copy_entry_string(
     return ZR_RUST_BINDING_STATUS_OK;
 }
 
-/* BUG: scaffold 依赖此返回值判断路径可用；snprintf 截断时仍返回非负，后续可能写到意外路径。 */
 static TZrBool zr_rust_binding_join_path(const TZrChar *left,
                                          const TZrChar *right,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
     TZrSize leftLength;
     TZrBool needsSeparator;
+    int written;
 
     if (left == ZR_NULL || right == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -271,11 +271,12 @@ static TZrBool zr_rust_binding_join_path(const TZrChar *left,
 
     leftLength = strlen(left);
     needsSeparator = leftLength > 0 && left[leftLength - 1] != '/' && left[leftLength - 1] != '\\';
-    return snprintf(buffer,
-                    bufferSize,
-                    needsSeparator ? "%s/%s" : "%s%s",
-                    left,
-                    right) >= 0;
+    written = snprintf(buffer,
+                       bufferSize,
+                       needsSeparator ? "%s/%s" : "%s%s",
+                       left,
+                       right);
+    return written >= 0 && (TZrSize)written < bufferSize;
 }
 
 static TZrBool zr_rust_binding_ensure_directory(const TZrChar *path) {
@@ -425,21 +426,28 @@ ZrRustBindingStatus ZrRustBinding_Project_Scaffold(const ZrRustBindingScaffoldOp
     TZrChar mainSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar manifestContent[512];
     ZrRustBindingProjectWorkspace *workspace;
+    int projectFileLength;
 
     if (options == ZR_NULL || outWorkspace == ZR_NULL || options->rootPath == ZR_NULL || options->projectName == ZR_NULL) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
                                          "scaffold options are incomplete");
     }
 
-    if (!zr_rust_binding_ensure_directory(options->rootPath) ||
-        !zr_rust_binding_join_path(options->rootPath, "src", sourceDirectory, sizeof(sourceDirectory)) ||
+    /* 四条脚手架路径先全部拼好并确认没有截断，之后才创建目录；
+     * 否则根目录会在拒绝之前落盘，截断后的项目文件路径也会被照常写入。 */
+    projectFileLength = snprintf(projectFile,
+                                 sizeof(projectFile),
+                                 "%s/%s.zrp",
+                                 options->rootPath,
+                                 options->projectName);
+    if (!zr_rust_binding_join_path(options->rootPath, "src", sourceDirectory, sizeof(sourceDirectory)) ||
         !zr_rust_binding_join_path(options->rootPath, "bin", binaryDirectory, sizeof(binaryDirectory)) ||
         !zr_rust_binding_join_path(options->rootPath, "src/main.zr", mainSourcePath, sizeof(mainSourcePath)) ||
-        snprintf(projectFile,
-                 sizeof(projectFile),
-                 "%s/%s.zrp",
-                 options->rootPath,
-                 options->projectName) < 0 ||
+        projectFileLength < 0 || (TZrSize)projectFileLength >= sizeof(projectFile)) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_IO_ERROR, "scaffold path is too long");
+    }
+
+    if (!zr_rust_binding_ensure_directory(options->rootPath) ||
         !zr_rust_binding_ensure_directory(sourceDirectory) ||
         !zr_rust_binding_ensure_directory(binaryDirectory)) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_IO_ERROR, "failed to prepare scaffold directories");

@@ -727,6 +727,57 @@ static void test_switch_duplicate_default_is_rejected_without_leaks(void) {
     expect_switch_syntax_failure("switch (subject) { () {} () {} }");
 }
 
+/* parse_throw_statement builds its expression before the statement node, so a
+ * quota one node short of the unlimited parse rejects only that final wrapper. */
+static void test_throw_statement_node_rejection_frees_expression(void) {
+    static const char source[] = "throw box.x;";
+    SZrPrimaryRejection rejection;
+    TZrUInt64 nodeCount;
+    TZrSize rootsBefore;
+    EZrToken rejectedToken;
+
+    primary_source_fixture_open(source);
+    rootsBefore = g_fixture.rootsBefore;
+    g_fixture.result = parse_throw_statement(&g_fixture.parser);
+    TEST_ASSERT_NOT_NULL(g_fixture.result);
+    TEST_ASSERT_FALSE(g_fixture.parser.hasError);
+    TEST_ASSERT_FALSE(g_fixture.parser.hasFatalError);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, g_fixture.parser.lexer->t.token);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_THROW_STATEMENT, g_fixture.result->type);
+    TEST_ASSERT_NOT_NULL(g_fixture.result->data.throwStatement.expr);
+    nodeCount = g_fixture.ledger->usage.nodeCount;
+    TEST_ASSERT_GREATER_THAN_UINT64(1u, nodeCount);
+    fixture_free();
+    TEST_ASSERT_EQUAL_UINT64(0u, g_liveCount);
+    TEST_ASSERT_EQUAL_UINT64(rootsBefore, ZrCore_GcDomain_GetRootCount(g_state));
+
+    primary_source_fixture_open(source);
+    rootsBefore = g_fixture.rootsBefore;
+    memset(&rejection, 0, sizeof(rejection));
+    rejection.limit = nodeCount - 1u;
+    g_fixture.ledger->limits.nodeCount = rejection.limit;
+    g_fixture.result = parse_throw_statement(&g_fixture.parser);
+    rejectedToken = g_fixture.parser.lexer->t.token;
+    capture_primary_probe_rejection(&rejection);
+
+    TEST_ASSERT_TRUE_MESSAGE(rejection.rejected,
+            "Throw statement node rejection must return NULL");
+    TEST_ASSERT_TRUE(rejection.error);
+    TEST_ASSERT_TRUE_MESSAGE(rejection.fatal,
+            "Throw statement node quota failure must remain fatal");
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_COMPTIME_BUDGET_NODE_COUNT, rejection.exceeded);
+    TEST_ASSERT_EQUAL_UINT64(rejection.limit, rejection.usage);
+    TEST_ASSERT_EQUAL_UINT64(rejection.limit + 1u, rejection.requested);
+    /* The expression and its semicolon were consumed before the rejection. */
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, rejectedToken);
+    TEST_ASSERT_FALSE(g_trackingOverflow);
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0u, rejection.liveAfterParser,
+            "Rejected throw statement must release its parsed expression");
+    TEST_ASSERT_EQUAL_UINT64_MESSAGE(rootsBefore, rejection.rootsAfterParser,
+            "Rejected throw statement must release AST ownership roots");
+}
+
 static void expect_generic_constructors(TZrBool fromStream) {
     static const char *sources[] = {
         "new Target()",
@@ -905,6 +956,7 @@ int main(void) {
     RUN_TEST(test_switch_bad_later_header_releases_adopted_branches);
     RUN_TEST(test_switch_missing_later_body_releases_adopted_branches);
     RUN_TEST(test_switch_duplicate_default_is_rejected_without_leaks);
+    RUN_TEST(test_throw_statement_node_rejection_frees_expression);
     RUN_TEST(test_nested_generic_constructor_succeeds_and_releases_storage);
     RUN_TEST(test_token_stream_generic_constructor_succeeds_and_releases_storage);
     RUN_TEST(test_text_closing_angle_consumes_first_split_piece);
