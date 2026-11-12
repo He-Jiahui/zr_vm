@@ -74,3 +74,6 @@ parameter types and passes an integer and a string. A fully concrete signature
 with unused generic declarations cannot provide inference evidence for those
 parameters. The fixture retains both generic descriptors, constraints, callback
 result, and result assertion while exercising successful inference.
+
+Native generic constraints use the supported builtin equatability protocol.
+Primitive type names are not protocol or nominal prototype constraints.
