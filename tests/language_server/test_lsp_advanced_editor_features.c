@@ -2673,6 +2673,11 @@ static TZrBool folding_ranges_contain(SZrArray *folds,
             (*rangePtr)->startCharacter == startCharacter &&
             (*rangePtr)->endLine == endLine &&
             (*rangePtr)->endCharacter == endCharacter) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
 
 static TZrBool test_fold_has_kind_span(SZrArray *folds,
                                        TZrInt32 startLine,
@@ -2985,6 +2990,11 @@ static void test_lsp_link_and_action_ranges_are_utf16(SZrState *state, int *fail
     TEST_PASS(timer, summary);
 cleanup:
     ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
 
 static TZrBool test_remove_unused_deletes_line(SZrArray *actions, TZrInt32 startLine) {
     if (actions == ZR_NULL) {
