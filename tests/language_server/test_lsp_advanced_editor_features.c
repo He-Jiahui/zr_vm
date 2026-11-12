@@ -2337,12 +2337,16 @@ static void test_lsp_selection_ranges_keep_ancestor_containment(SZrState *state,
         selections.length == 1) {
         SZrLspSelectionRange **selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
         selection = selectionPtr != ZR_NULL ? *selectionPtr : ZR_NULL;
+        /* 块从行中的 `{` 开始；块层起点扩到行首后仍包含整行，三层都保留。 */
         headerOk = selection != ZR_NULL &&
                    selection->hasParent &&
-                   !selection->hasGrandParent &&
+                   selection->hasGrandParent &&
                    selection->parentRange.start.line == 0 &&
                    selection->parentRange.start.character <= selection->range.start.character &&
-                   selection->parentRange.end.line >= selection->range.end.line;
+                   selection->parentRange.end.line >= selection->range.end.line &&
+                   selection->grandParentRange.start.line == 0 &&
+                   selection->grandParentRange.start.character == 0 &&
+                   selection->grandParentRange.end.line == 1;
     }
     ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
     if (context != ZR_NULL) {
@@ -2733,6 +2737,187 @@ static void test_lsp_missing_import_is_scoped_and_sees_interpolation(SZrState *s
     }
 }
 
+static TZrBool test_tail_folds_survive(SZrState *state, const TZrChar *uriText, const TZrChar *content) {
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context = test_open_document(state, uriText, content, &uri);
+    SZrArray folds = {0};
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {40, 0}};
+    TZrBool ok = ZR_FALSE;
+
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds) &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        ok = test_fold_has_kind_span(&folds, 1, 4, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+             test_fold_has_kind_span(&folds, 5, 7, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+             test_fold_has_kind_span(&folds, 8, 12, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+             test_fold_has_kind_span(&folds, 9, 11, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+             !test_remove_unused_deletes_line(&actions, 0);
+    }
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    return ok;
+}
+
+/* lexer 在第一个未转义的反引号结束模板；之后的代码必须照常折叠，导入也仍算被使用。 */
+static void test_lsp_template_ends_at_first_unescaped_backtick(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP scanner ends a template at the first unescaped backtick";
+    const TZrChar *nested =
+        "let math = import(\"zr.math\");\n"
+        "fn first(name: int): int {\n"
+        "    var text = `value ${ \\`in${name}ner\\` } done`;\n"
+        "    return name;\n"
+        "}\n"
+        "fn later(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n"
+        "//#region tail\n"
+        "fn second(): int {\n"
+        "    return 2;\n"
+        "}\n"
+        "//#endregion\n";
+    const TZrChar *unterminated =
+        "let math = import(\"zr.math\");\n"
+        "fn first(name: int): int {\n"
+        "    var text = `value ${ call({ name`;\n"
+        "    return name;\n"
+        "}\n"
+        "fn later(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n"
+        "//#region tail\n"
+        "fn second(): int {\n"
+        "    return 2;\n"
+        "}\n"
+        "//#endregion\n";
+    const TZrChar *comment =
+        "let math = import(\"zr.math\");\n"
+        "fn first(name: int): int {\n"
+        "    var text = `value ${ name // note }`;\n"
+        "    return name;\n"
+        "}\n"
+        "fn later(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n"
+        "//#region tail\n"
+        "fn second(): int {\n"
+        "    return 2;\n"
+        "}\n"
+        "//#endregion\n";
+    const TZrChar *openString =
+        "var broken = \"abc\n"
+        "//#region real\n"
+        "fn main(): int {\n"
+        "    return 1;\n"
+        "}\n"
+        "//#endregion\n"
+        "// one\n"
+        "// two\n";
+    const TZrChar *unterminatedFormat =
+        "fn main(): int {\n"
+        "var text = `value ${name`;\n"
+        "return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray folds = {0};
+    SZrArray edits = {0};
+    const TZrChar *formatted;
+    TZrBool nestedOk;
+    TZrBool unterminatedOk;
+    TZrBool commentOk;
+    TZrBool stringOk = ZR_FALSE;
+    TZrBool formatOk = ZR_FALSE;
+
+    TEST_START(summary);
+    nestedOk = test_tail_folds_survive(state, "file:///tmp/zr_lsp_scan_nested_template.zr", nested);
+    unterminatedOk = test_tail_folds_survive(state, "file:///tmp/zr_lsp_scan_open_interpolation.zr", unterminated);
+    commentOk = test_tail_folds_survive(state, "file:///tmp/zr_lsp_scan_interpolation_comment.zr", comment);
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_scan_open_string.zr", openString, &uri);
+    if (context != ZR_NULL && ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        stringOk = test_fold_has_kind_span(&folds, 1, 5, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+                   test_fold_has_kind_span(&folds, 2, 4, ZR_LSP_FOLDING_RANGE_KIND_REGION) &&
+                   test_fold_has_kind_span(&folds, 5, 7, ZR_LSP_FOLDING_RANGE_KIND_COMMENT);
+    }
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_scan_open_interpolation_format.zr",
+                                 unterminatedFormat, &uri);
+    formatted = context != ZR_NULL &&
+                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits)
+                    ? first_text_edit_text(&edits)
+                    : ZR_NULL;
+    formatOk = formatted != ZR_NULL &&
+               strstr(formatted, "\n    return 0;\n}\n") != ZR_NULL;
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!nestedOk || !unterminatedOk || !commentOk || !stringOk || !formatOk) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "text after a closed template or an unterminated string was not scanned as code");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
+/* 声明头所在行仍要给出词、行、块三层，且每层包含下一层。 */
+static void test_lsp_selection_header_line_keeps_block_layer(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP selection on a declaration header keeps the block layer";
+    const TZrChar *content =
+        "class Sample {\n"
+        "    pub fn run(value: int): int {\n"
+        "        return value;\n"
+        "    }\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray selections = {0};
+    SZrLspPosition position;
+    TZrBool ok = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_selection_header_block.zr", content, &uri);
+    if (context != ZR_NULL &&
+        test_find_position(content, "run", 0, &position) &&
+        ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selections) &&
+        selections.length == 1) {
+        SZrLspSelectionRange **selectionPtr = (SZrLspSelectionRange **)ZrCore_Array_Get(&selections, 0);
+        SZrLspSelectionRange *selection = selectionPtr != ZR_NULL ? *selectionPtr : ZR_NULL;
+        ok = selection != ZR_NULL &&
+             selection->hasParent &&
+             selection->hasGrandParent &&
+             selection->range.start.line == 1 &&
+             selection->parentRange.start.line == 1 &&
+             selection->parentRange.start.character == 0 &&
+             selection->parentRange.end.line == 1 &&
+             selection->grandParentRange.start.line == 1 &&
+             selection->grandParentRange.start.character == 0 &&
+             selection->grandParentRange.end.line == 3;
+    }
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selections);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!ok) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "header line selection lost the block layer or broke containment");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
@@ -2784,6 +2969,8 @@ int main(void) {
     test_lsp_code_action_ignores_text_mentions_when_removing_unused_alias_imports(state, &failures);
     test_lsp_remove_unused_counts_template_interpolation(state, &failures);
     test_lsp_missing_import_is_scoped_and_sees_interpolation(state, &failures);
+    test_lsp_template_ends_at_first_unescaped_backtick(state, &failures);
+    test_lsp_selection_header_line_keeps_block_layer(state, &failures);
     test_lsp_code_action_inserts_missing_semicolon(state, &failures);
     test_lsp_code_action_inserts_semicolon_before_line_comment(state, &failures);
     test_lsp_code_action_skips_semicolon_inside_block_comment(state, &failures);

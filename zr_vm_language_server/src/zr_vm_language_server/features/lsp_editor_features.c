@@ -189,6 +189,31 @@ TZrBool lsp_text_builder_append_char(SZrLspTextBuilder *builder, TZrChar value) 
     return lsp_text_builder_append_range(builder, &value, 1);
 }
 
+/* 未转义的反引号结束整个模板 token。插值里尚未闭合的代码花括号在此补发闭合事件，
+ * 使未写完的 `${` 不会让后续真实代码的括号配对错位。 */
+static TZrBool lsp_editor_scan_end_template(SZrLspEditorScanState *state,
+                                            TZrSize offset,
+                                            TZrLspEditorStructuralCharCallback callback,
+                                            void *userData) {
+    TZrBool ok = ZR_TRUE;
+
+    while (state->interpolationDepth > 0) {
+        TZrSize level = state->interpolationDepth - 1;
+        while (state->interpolationBraceDepth[level] > 0) {
+            state->interpolationBraceDepth[level]--;
+            if (ok && callback != ZR_NULL && !callback('}', offset, userData)) {
+                ok = ZR_FALSE;
+            }
+        }
+        state->interpolationNested[level] = ZR_FALSE;
+        state->interpolationDepth--;
+    }
+    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+    state->escaped = ZR_FALSE;
+    state->templateNested = ZR_FALSE;
+    return ok;
+}
+
 /* 消费一个词法步进。代码态花括号才回调；模板 `${` 重新进入代码，其定界符不回调。 */
 static TZrBool lsp_editor_scan_consume(const TZrChar *content,
                                        TZrSize endOffset,
@@ -208,6 +233,32 @@ static TZrBool lsp_editor_scan_consume(const TZrChar *content,
     current = content[index];
     if (outCodeByte != ZR_NULL) {
         *outCodeByte = state->mode == ZR_LSP_EDITOR_SCAN_CODE ? ZR_TRUE : ZR_FALSE;
+    }
+
+    /* 插值里的代码、字符串和注释仍在同一个模板 token 内，反引号规则先于各自的词法。 */
+    if (state->interpolationDepth > 0 && state->mode != ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING) {
+        TZrBool inQuoted = state->mode == ZR_LSP_EDITOR_SCAN_STRING ||
+                           state->mode == ZR_LSP_EDITOR_SCAN_CHAR;
+        if (current == '`' && !(inQuoted && state->escaped)) {
+            if (outCodeByte != ZR_NULL) {
+                *outCodeByte = ZR_FALSE;
+            }
+            *cursor = index + 1;
+            return lsp_editor_scan_end_template(state, index, callback, userData);
+        }
+        if (!inQuoted && current == '\\' && index + 1 < endOffset && content[index + 1] == '`') {
+            /* 转义反引号在插值代码里打开嵌套模板；注释里的只是被跳过的文本。 */
+            if (outCodeByte != ZR_NULL) {
+                *outCodeByte = ZR_FALSE;
+            }
+            if (state->mode == ZR_LSP_EDITOR_SCAN_CODE) {
+                state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                state->templateNested = ZR_TRUE;
+                state->escaped = ZR_FALSE;
+            }
+            *cursor = index + 2;
+            return ZR_TRUE;
+        }
     }
 
     switch (state->mode) {
@@ -243,6 +294,7 @@ static TZrBool lsp_editor_scan_consume(const TZrChar *content,
                     state->interpolationBraceDepth[state->interpolationDepth - 1] == 0) {
                     state->interpolationDepth--;
                     state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                    state->templateNested = state->interpolationNested[state->interpolationDepth];
                     state->escaped = ZR_FALSE;
                 } else {
                     if (state->interpolationDepth > 0) {
@@ -300,14 +352,24 @@ static TZrBool lsp_editor_scan_consume(const TZrChar *content,
             if (state->escaped) {
                 state->escaped = ZR_FALSE;
             } else if (current == '\\') {
+                if (state->templateNested && index + 1 < endOffset && content[index + 1] == '`') {
+                    /* 转义反引号关闭插值里的嵌套模板，回到外层插值代码。 */
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                    state->templateNested = ZR_FALSE;
+                    *cursor = index + 2;
+                    return ZR_TRUE;
+                }
                 state->escaped = ZR_TRUE;
             } else if (current == '`') {
-                state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                *cursor = index + 1;
+                return lsp_editor_scan_end_template(state, index, callback, userData);
             } else if (current == '$' &&
                        index + 1 < endOffset &&
                        content[index + 1] == '{' &&
                        state->interpolationDepth < ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH) {
                 state->interpolationBraceDepth[state->interpolationDepth] = 0;
+                state->interpolationNested[state->interpolationDepth] = state->templateNested;
+                state->templateNested = ZR_FALSE;
                 state->interpolationDepth++;
                 state->mode = ZR_LSP_EDITOR_SCAN_CODE;
                 state->escaped = ZR_FALSE;
@@ -610,7 +672,11 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
             free(builder.data);
             return ZR_NULL;
         }
-        if (hasNewline && scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+        if (hasNewline &&
+            (scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT ||
+             scanState.mode == ZR_LSP_EDITOR_SCAN_STRING ||
+             scanState.mode == ZR_LSP_EDITOR_SCAN_CHAR)) {
+            /* 行切片不含换行；行注释和未闭合的字符串、字符字面量都在换行处结束。 */
             scanState.mode = ZR_LSP_EDITOR_SCAN_CODE;
             scanState.escaped = ZR_FALSE;
         }
@@ -971,6 +1037,15 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
                                                               blockSearchLineStart,
                                                               blockSearchLineEnd,
                                                               &blockRange);
+        /* 声明头所在行的块从行中的 `{` 开始；把块层起点扩到行首，
+         * 保留“词、行、块”三层，同时让块层包含行层。 */
+        if (hasBlockRange &&
+            !lsp_editor_range_contains(blockRange, selection->parentRange) &&
+            lsp_editor_compare_position(blockRange.start, selection->parentRange.start) >= 0 &&
+            lsp_editor_compare_position(blockRange.start, selection->parentRange.end) <= 0 &&
+            lsp_editor_compare_position(blockRange.end, selection->parentRange.end) > 0) {
+            blockRange.start = selection->parentRange.start;
+        }
         selection->hasGrandParent = selection->hasParent &&
                                     hasBlockRange &&
                                     lsp_editor_range_strictly_contains(blockRange, selection->parentRange);

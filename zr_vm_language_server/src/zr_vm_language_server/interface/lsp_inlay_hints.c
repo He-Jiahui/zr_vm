@@ -154,7 +154,7 @@ static TZrBool lsp_inlay_append_exact_edit(SZrState *state,
     }
     edit->range.start = position;
     edit->range.end = position;
-    edit->newText = ZrCore_String_Create(state, editText, strlen(editText));
+    edit->newText = ZrCore_String_Create(state, (TZrNativeString)editText, strlen(editText));
     if (edit->newText == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, edit, sizeof(SZrLspTextEdit));
         return ZR_FALSE;
@@ -196,7 +196,7 @@ static TZrBool lsp_inlay_append_hint(SZrState *state,
     hint->kind = kind;
     hint->paddingLeft = paddingLeft;
     hint->paddingRight = paddingRight;
-    hint->label = ZrCore_String_Create(state, labelText, strlen(labelText));
+    hint->label = ZrCore_String_Create(state, (TZrNativeString)labelText, strlen(labelText));
     if (hint->label == ZR_NULL ||
         !lsp_inlay_append_exact_edit(state, hint, position, editText)) {
         ZrLanguageServer_Lsp_FreeTextEdits(state, &hint->textEdits);
@@ -311,6 +311,133 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
 
     return lsp_inlay_append_numeric_fact_detail(buffer, bufferSize, &used, numericFact) &&
            lsp_inlay_append_logical_fact_detail(buffer, bufferSize, &used, logicalFact);
+}
+
+static TZrBool lsp_inlay_source_is_document(SZrString *source, SZrString *uri);
+
+#define ZR_LSP_INLAY_SOURCE_TYPE_MAX_DEPTH 16U
+
+/* 名义类型只有在本文档里有同名的类型声明时，裸名才一定能写回源码；
+ * 模块别名、限定导入的类型和内部类型的展示名都不是可写的类型标注。 */
+static TZrBool lsp_inlay_nominal_is_declared_in_document(SZrSemanticAnalyzer *analyzer,
+                                                        SZrString *uri,
+                                                        const SZrCanonicalNominalType *nominal) {
+    const SZrArray *symbols = &analyzer->semanticContext->symbols;
+
+    if (nominal->name == ZR_NULL ||
+        (nominal->moduleIdentity != ZR_NULL &&
+         ZrCore_String_GetByteLength(nominal->moduleIdentity) > 0U) ||
+        !symbols->isValid) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < symbols->length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get((SZrArray *)symbols, index);
+        if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+            symbol->name == ZR_NULL || symbol->astNode == ZR_NULL ||
+            !ZrCore_String_Equal(symbol->name, (SZrString *)nominal->name) ||
+            !lsp_inlay_source_is_document(symbol->location.source, uri)) {
+            continue;
+        }
+        switch (symbol->astNode->type) {
+            case ZR_AST_CLASS_DECLARATION:
+            case ZR_AST_STRUCT_DECLARATION:
+            case ZR_AST_INTERFACE_DECLARATION:
+                return ZR_TRUE;
+            default:
+                break;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/* 展示文本只在逐节点都对应源码类型语法时才作为插入文本。
+ * 浮点（展示为 double/float，源码拼写与宽度不一一对应）、null、可空、闭包等只保留标签。 */
+static TZrBool lsp_inlay_type_is_source_writable(SZrSemanticAnalyzer *analyzer,
+                                                 SZrString *uri,
+                                                 TZrTypeId typeId,
+                                                 TZrSize depth) {
+    const SZrCanonicalTypeNode *node;
+
+    if (depth > ZR_LSP_INLAY_SOURCE_TYPE_MAX_DEPTH || typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    node = ZrParser_CanonicalType_Find(analyzer->semanticContext, typeId);
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (node->kind) {
+        case ZR_CANONICAL_TYPE_PRIMITIVE:
+            switch (node->data.primitive.valueType) {
+                case ZR_VALUE_TYPE_BOOL:
+                case ZR_VALUE_TYPE_INT8:
+                case ZR_VALUE_TYPE_INT16:
+                case ZR_VALUE_TYPE_INT32:
+                case ZR_VALUE_TYPE_INT64:
+                case ZR_VALUE_TYPE_UINT8:
+                case ZR_VALUE_TYPE_UINT16:
+                case ZR_VALUE_TYPE_UINT32:
+                case ZR_VALUE_TYPE_UINT64:
+                case ZR_VALUE_TYPE_STRING:
+                case ZR_VALUE_TYPE_OBJECT:
+                    return ZR_TRUE;
+                default:
+                    return ZR_FALSE;
+            }
+        case ZR_CANONICAL_TYPE_NOMINAL:
+            return lsp_inlay_nominal_is_declared_in_document(analyzer, uri, &node->data.nominal);
+        case ZR_CANONICAL_TYPE_GENERIC_PARAMETER:
+            return ZR_TRUE;
+        case ZR_CANONICAL_TYPE_GENERIC_INSTANCE: {
+            TZrTypeId definitionTypeId = node->data.genericInstance.definitionTypeId;
+            TZrSize argumentCount = node->data.genericInstance.arguments.length;
+
+            if (!lsp_inlay_type_is_source_writable(analyzer, uri, definitionTypeId, depth + 1U)) {
+                return ZR_FALSE;
+            }
+            for (TZrSize index = 0; index < argumentCount; index++) {
+                const SZrCanonicalGenericArgument *argument;
+                TZrTypeId argumentTypeId;
+
+                /* 递归中的 Find 不新增节点，但仍按下标重新取，避免持有跨调用的元素指针。 */
+                node = ZrParser_CanonicalType_Find(analyzer->semanticContext, typeId);
+                if (node == ZR_NULL || node->kind != ZR_CANONICAL_TYPE_GENERIC_INSTANCE) {
+                    return ZR_FALSE;
+                }
+                argument = (const SZrCanonicalGenericArgument *)ZrCore_Array_Get(
+                        (SZrArray *)&node->data.genericInstance.arguments, index);
+                if (argument == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                if (argument->kind == ZR_CANONICAL_GENERIC_ARGUMENT_TYPE) {
+                    argumentTypeId = argument->data.typeId;
+                    if (!lsp_inlay_type_is_source_writable(analyzer, uri, argumentTypeId, depth + 1U)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            return ZR_TRUE;
+        }
+        case ZR_CANONICAL_TYPE_ARRAY:
+            return node->data.array.storageKind == ZR_CANONICAL_ARRAY_STORAGE_MANAGED &&
+                   lsp_inlay_type_is_source_writable(
+                           analyzer, uri, node->data.array.elementTypeId, depth + 1U);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+/* 声明提示展示的类型：函数取返回类型，其余取声明类型。 */
+static TZrTypeId lsp_inlay_declaration_display_type_id(SZrSemanticAnalyzer *analyzer,
+                                                       const SZrParserSemanticSymbolQuery *declaration) {
+    if (declaration->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+        const SZrCanonicalTypeNode *callable =
+                ZrParser_CanonicalType_Find(analyzer->semanticContext, declaration->typeId);
+        return callable != ZR_NULL && callable->kind == ZR_CANONICAL_TYPE_FUNCTION
+                       ? callable->data.function.returnTypeId
+                       : ZR_SEMANTIC_ID_INVALID;
+    }
+    return declaration->typeId;
 }
 
 /* 隐式类型的变量、字段及隐式返回类型才需要提示；显式标注处不重复呈现。 */
@@ -438,6 +565,13 @@ static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
                                   sizeof(editText),
                                   insertsBeforeBody ? ": %s " : ": %s",
                                   typeText);
+        /* struct 字段的声明范围止于下一个成员，提示锚点不在字段名后，不能在那里插入标注。 */
+        TZrBool editable = astNode->type != ZR_AST_STRUCT_FIELD &&
+                           lsp_inlay_type_is_source_writable(
+                                   analyzer,
+                                   uri,
+                                   lsp_inlay_declaration_display_type_id(analyzer, declaration),
+                                   0U);
         if (displayLength <= 0 || (TZrSize)displayLength >= sizeof(displayLabel) ||
             editLength <= 0 || (TZrSize)editLength >= sizeof(editText)) {
             return ZR_FALSE;
@@ -449,7 +583,7 @@ static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
                                      ZR_TRUE,
                                      ZR_FALSE,
                                      displayLabel,
-                                     editText);
+                                     editable ? editText : ZR_NULL);
     }
 }
 
@@ -481,7 +615,8 @@ static TZrBool lsp_inlay_source_is_document(SZrString *source, SZrString *uri) {
             ZrLanguageServer_Lsp_UrisResolveToSameNativePath(source, uri));
 }
 
-/* 形参名只来自已解析目标的声明 AST；具名实参和外部未解析调用不发明名字。 */
+/* 形参名只来自已解析目标的声明 AST；具名实参和外部未解析调用不发明名字。
+ * 每个位置实参都有标签；编辑只给接受后仍是合法调用的那一个。 */
 static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrString *uri,
@@ -510,6 +645,8 @@ static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
         SZrParserSemanticCallQuery query;
         const SZrSemanticSymbolRecord *symbol;
         const SZrAstNodeArray *parameters;
+        TZrSize lastPositionalIndex;
+        TZrBool hasPositional;
 
         if (fact == ZR_NULL || !fact->hasCallInfo ||
             !lsp_inlay_source_is_document(fact->range.source, uri)) {
@@ -529,6 +666,20 @@ static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
         parameters = lsp_inlay_callable_parameters(symbol != ZR_NULL ? symbol->astNode : ZR_NULL);
         if (parameters == ZR_NULL || parameters->nodes == ZR_NULL) {
             continue;
+        }
+
+        /* 位置实参不能跟在具名实参后面，所以只有最后一个位置实参能单独改成具名。 */
+        lastPositionalIndex = 0;
+        hasPositional = ZR_FALSE;
+        for (TZrSize mappingIndex = 0; mappingIndex < query.argumentMappings->length; mappingIndex++) {
+            const SZrSemanticCallArgumentFact *mapping =
+                    (const SZrSemanticCallArgumentFact *)ZrCore_Array_Get(
+                            (SZrArray *)query.argumentMappings, mappingIndex);
+            if (mapping != ZR_NULL && !mapping->isNamed &&
+                (!hasPositional || mapping->argumentIndex > lastPositionalIndex)) {
+                lastPositionalIndex = mapping->argumentIndex;
+                hasPositional = ZR_TRUE;
+            }
         }
 
         for (TZrSize mappingIndex = 0; mappingIndex < query.argumentMappings->length; mappingIndex++) {
@@ -577,7 +728,9 @@ static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
                                        ZR_FALSE,
                                        ZR_TRUE,
                                        label,
-                                       editText)) {
+                                       mapping->argumentIndex == lastPositionalIndex
+                                               ? editText
+                                               : ZR_NULL)) {
                 return ZR_FALSE;
             }
         }

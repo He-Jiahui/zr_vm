@@ -136,7 +136,8 @@ typedef struct SZrLspProjectModuleSummary {
 } SZrLspProjectModuleSummary;
 
 /** @brief 文档内联提示；生成时以请求范围筛选，返回数组由 FreeInlayHints 释放。
- * textEdits 仅在提示本身已是精确 canonical 类型或已解析形参名时填充，供客户端插入。
+ * textEdits 仅在单独接受后仍是合法源码时填充：类型的每个组成部分都能按展示拼写写回，
+ * 形参名只给最后一个位置实参。其余提示只有标签。
  * 不能推断出精确类型的声明不生成提示，也不生成编辑。 */
 typedef struct SZrLspInlayHint {
     SZrLspPosition position;

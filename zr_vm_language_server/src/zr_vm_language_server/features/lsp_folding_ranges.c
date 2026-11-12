@@ -167,7 +167,10 @@ static void lsp_editor_folding_finish_line(const TZrChar *content,
                                            scanState,
                                            ZR_NULL,
                                            ZR_NULL);
-    if (scanState->mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+    /* 行切片不含换行；行注释和未闭合的字符串、字符字面量都在行尾结束。 */
+    if (scanState->mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT ||
+        scanState->mode == ZR_LSP_EDITOR_SCAN_STRING ||
+        scanState->mode == ZR_LSP_EDITOR_SCAN_CHAR) {
         scanState->mode = ZR_LSP_EDITOR_SCAN_CODE;
         scanState->escaped = ZR_FALSE;
     }

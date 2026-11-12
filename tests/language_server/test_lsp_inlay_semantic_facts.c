@@ -1209,10 +1209,11 @@ static void test_inlay_parameter_names_and_no_guessed_type(SZrState *state) {
     if (leftHint == ZR_NULL || rightHint == ZR_NULL ||
         leftHint->kind != ZR_LSP_INLAY_HINT_KIND_PARAMETER ||
         rightHint->kind != ZR_LSP_INLAY_HINT_KIND_PARAMETER ||
-        leftEdit == ZR_NULL || strcmp(leftEdit, "left: ") != 0 ||
+        leftEdit != ZR_NULL ||
         rightEdit == ZR_NULL || strcmp(rightEdit, "right: ") != 0) {
+        /* add(left: 1, 2) 不是合法调用，所以只有最后一个位置实参带编辑。 */
         snprintf(reason, sizeof(reason),
-                 "Expected parameter edits left:/right: on add(1, 2); count=%llu left=%s right=%s",
+                 "Expected left:/right: labels with an edit only on the last positional argument; count=%llu left=%s right=%s",
                  (unsigned long long)hints.length,
                  leftEdit != ZR_NULL ? leftEdit : "<null>",
                  rightEdit != ZR_NULL ? rightEdit : "<null>");
@@ -1291,6 +1292,117 @@ static void test_inlay_parameter_names_and_no_guessed_type(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+typedef struct SZrInlayEditExpectation {
+    TZrInt32 line;
+    const TZrChar *labelPrefix;
+    const TZrChar *editText;
+} SZrInlayEditExpectation;
+
+/* 每个带编辑的提示单独接受后都必须还是合法源码；不能按展示拼写写回的类型只保留标签。 */
+static void test_inlay_edits_only_offer_source_writable_types(SZrState *state) {
+    const TZrChar *summary = "LSP Inlay Edits Only Offer Source Writable Types";
+    const TZrChar *content =
+        "var container = import(\"zr.container\");\n"
+        "class Box<T> {\n"
+        "    pub @constructor() { }\n"
+        "}\n"
+        "struct Point {\n"
+        "    pub var x = 3;\n"
+        "}\n"
+        "fn nothing() {\n"
+        "}\n"
+        "fn ratio() {\n"
+        "    return 1.5;\n"
+        "}\n"
+        "fn count() {\n"
+        "    return 42;\n"
+        "}\n"
+        "var number = 1;\n"
+        "var text = \"a\";\n"
+        "var boxed = new Box<int>();\n"
+        "var items = [1, 2];\n"
+        "var half = 1.5;\n"
+        "var empty = null;\n"
+        "var list = new container.LinkedList<int>();\n";
+    static const SZrInlayEditExpectation expectations[] = {
+        {0, ": zr.container", ZR_NULL},
+        {5, ": object", ZR_NULL},
+        {7, ": null", ZR_NULL},
+        {9, ": double", ZR_NULL},
+        {12, ": int", ": int "},
+        {15, ": int", ": int"},
+        {16, ": string", ": string"},
+        {17, ": Box<int>", ": Box<int>"},
+        {18, ": int[]", ": int[]"},
+        {19, ": double", ZR_NULL},
+        {20, ": null", ZR_NULL},
+        {21, ": LinkedList<int>", ZR_NULL},
+    };
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrArray hints;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)"file:///inlay_source_writable_types.zr",
+                               strlen("file:///inlay_source_writable_types.zr"));
+    memset(&range, 0, sizeof(range));
+    range.end.line = 40;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 16);
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to collect type inlays");
+        return;
+    }
+
+    for (TZrSize expected = 0; expected < sizeof(expectations) / sizeof(expectations[0]); expected++) {
+        const SZrInlayEditExpectation *want = &expectations[expected];
+        SZrLspInlayHint *found = ZR_NULL;
+        const TZrChar *edit;
+
+        for (TZrSize index = 0; index < hints.length && found == ZR_NULL; index++) {
+            SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(&hints, index);
+            const TZrChar *label = hintPtr != ZR_NULL && *hintPtr != ZR_NULL
+                                       ? test_string_ptr((*hintPtr)->label)
+                                       : ZR_NULL;
+            if (label != ZR_NULL && (*hintPtr)->kind == ZR_LSP_INLAY_HINT_KIND_TYPE &&
+                strncmp(label, want->labelPrefix, strlen(want->labelPrefix)) == 0 &&
+                (want->line == 5 ? (*hintPtr)->position.line >= 5 && (*hintPtr)->position.line <= 6
+                                 : (*hintPtr)->position.line == want->line)) {
+                found = *hintPtr;
+            }
+        }
+        edit = inlay_hint_edit_text(found);
+        if (found == ZR_NULL ||
+            (want->editText == ZR_NULL ? edit != ZR_NULL
+                                       : edit == ZR_NULL || strcmp(edit, want->editText) != 0)) {
+            snprintf(reason, sizeof(reason),
+                     "Line %d expected label '%s' with edit '%s'; found=%d edit='%s'",
+                     (int)want->line,
+                     want->labelPrefix,
+                     want->editText != ZR_NULL ? want->editText : "<none>",
+                     found != ZR_NULL,
+                     edit != ZR_NULL ? edit : "<none>");
+            ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, summary, reason);
+            return;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #include "test_lsp_inlay_canonical_declaration_cases.h"
 #include "test_lsp_completion_snapshot_fact_cases.h"
 #include "test_lsp_signature_snapshot_fact_cases.h"
@@ -1322,6 +1434,7 @@ int main(void) {
     test_inlay_hint_uses_initializer_numeric_fact(state);
     test_inlay_exact_edit_and_exclusive_range(state);
     test_inlay_parameter_names_and_no_guessed_type(state);
+    test_inlay_edits_only_offer_source_writable_types(state);
     test_inlay_hint_fails_closed_without_resolved_declaration_fact(state);
     test_completion_detail_uses_initializer_numeric_fact(state);
     test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(state);

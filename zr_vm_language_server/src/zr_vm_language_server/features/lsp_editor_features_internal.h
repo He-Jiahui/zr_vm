@@ -25,12 +25,16 @@ typedef enum EZrLspEditorScanMode {
 
 /** 跨扫描区间保留的状态；分段调用者必须传递上一区间的结束状态。
  * interpolationDepth 记录尚未闭合的 `${`；每一层的 brace depth 只计插值内部的代码花括号。
- * `${` 与对应的闭合 `}` 本身不是代码结构括号。 */
+ * `${` 与对应的闭合 `}` 本身不是代码结构括号。
+ * 模板边界跟随 lexer：第一个未转义的反引号结束整个模板，哪怕它出现在插值、字符串或注释里。
+ * 插值内的嵌套模板写作转义反引号对；templateNested 与 interpolationNested 记录文本属于哪一层。 */
 typedef struct SZrLspEditorScanState {
     EZrLspEditorScanMode mode;
     TZrBool escaped;
+    TZrBool templateNested;
     TZrSize interpolationDepth;
     TZrSize interpolationBraceDepth[ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH];
+    TZrBool interpolationNested[ZR_LSP_EDITOR_INTERPOLATION_MAX_DEPTH];
 } SZrLspEditorScanState;
 
 /** 从代码态开始扫描；未写出的插值字段保持零。 */
