@@ -3376,6 +3376,23 @@ static void test_lsp_remove_unused_counts_template_interpolation(SZrState *state
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }
+
+    context = test_open_document(state, "file:///tmp/zr_lsp_unused_template_text.zr", unused, &uri);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        removedText = test_remove_unused_deletes_line(&actions, 0);
+    }
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (!keptUse || !removedText) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "template interpolation was not treated as a real alias use");
+    } else {
+        TEST_PASS(timer, summary);
+    }
 }
 
 /* 缺失导入插入的整行必须沿用文档的 CRLF；有导入段时看上一行行尾，没有时看文档第一处换行。 */
