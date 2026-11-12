@@ -452,6 +452,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
 
 /**
  * @brief 为 LSP context 创建 URI 到文件版本的状态表，默认启用 token 与声明级复用。
+ * @return URI 表初始桶分配失败时释放解析器并返回 NULL：无桶的表会拒绝之后每个新 URI 的登记。
  */
 SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     if (state == ZR_NULL) {
@@ -589,6 +590,8 @@ static TZrBool incremental_parser_update_file(
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
 
+        /* Add 返回空表示桶扩容被拒或表已失效：不发布未登记的版本，释放后报告失败。
+         * pair 节点由 GcMalloc 申请，其失败抛 MEMORY_ERROR 而不返回空，不经过此分支。 */
         SZrHashKeyValuePair *pair = ZrCore_HashSet_Add(state, &parser->uriToFileMap, &key);
         if (pair == ZR_NULL) {
             ZrLanguageServer_FileVersion_Free(state, fileVersion);
