@@ -26,19 +26,20 @@ async function withClient(serverPath, run) {
     }
 }
 
-// 为 didSave 无 text 的磁盘刷新路径创建独立真实文件，用完即删除。
+// 为 didSave 无 text 的磁盘刷新路径创建独占临时目录及其中的真实文件，用完即整体删除。
+// 该目录同时充当工作区根：未打开文档的 didSave 只对根内文件读盘。
 async function withTemporaryDiskDocument(run) {
-    // BUG: 文件名仅由 PID 决定；若该路径已存在，writeFileSync 会覆盖其内容，finally 随后删掉原文件。
-    // 该用例没有独占创建或预存检查，PID 复用即可触发测试外数据丢失。
-    const filePath = path.join(os.tmpdir(), `zr-vm-document-sync-${process.pid}.zr`);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-vm-document-sync-'));
+    const filePath = path.join(directory, 'saved.zr');
 
-    fs.writeFileSync(filePath, 'struct DidSaveRefreshesDiskDocument { pub var value: int; }', 'utf8');
     try {
-        return await run(pathToFileURL(filePath).href);
+        fs.writeFileSync(filePath, 'struct DidSaveRefreshesDiskDocument { pub var value: int; }', 'utf8');
+        return await run(pathToFileURL(filePath).href, pathToFileURL(directory).href);
     } finally {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
+        fs.rmdirSync(directory);
     }
 }
 
@@ -600,13 +601,20 @@ async function main() {
         assert(indexedDiskSymbols.some((symbol) => symbol && symbol.name === 'BaseCounter'),
                `didClose must restore an indexed file's disk snapshot, actual=${JSON.stringify(indexedDiskSymbols)}`);
     });
-    // 最后在临时真实文件上核对 didSave 无 text 的磁盘刷新分支。
-    await withTemporaryDiskDocument(async (diskUri) => {
+    // 最后在临时工作区根内的真实文件上核对 didSave 无 text 的磁盘刷新分支。
+    await withTemporaryDiskDocument(async (diskUri, rootUri) => {
         await withClient(serverPath, async (client) => {
-            await initialize(client);
+            await initialize(client, {}, rootUri);
             client.notify('textDocument/didSave', {
                 textDocument: { uri: diskUri },
             });
+            // 读盘刷新会推送该 URI 的诊断，文档符号请求自身的按需读盘不推送；
+            // 先等到推送，才能确认后面查到的符号确由 didSave 刷新而来。
+            const published = await client.waitForNotification(
+                'textDocument/publishDiagnostics',
+                RESPONSE_TIMEOUT_MS);
+            assert(published && published.uri === diskUri,
+                   `didSave without text must publish diagnostics for the refreshed disk document, actual=${JSON.stringify(published)}`);
             const diskSymbols = await queryDocumentSymbols(
                 client,
                 diskUri,

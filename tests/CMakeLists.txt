@@ -842,6 +842,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/file-path-operations-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-dispatch-self-oom-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/exception-construction-roots-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/worker-exception-forward-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/system-fs-failure-tests.cmake")
 
@@ -894,6 +895,27 @@ endif()
 if(TARGET zr_vm_compiler_w2_performance_quickening_test)
     add_test(NAME interpreter_quickening COMMAND zr_vm_compiler_w2_performance_quickening_test)
     set_tests_properties(interpreter_quickening PROPERTIES TIMEOUT 120 LABELS "core;benchmark")
+endif()
+
+if(TARGET zr_vm_cli_executable)
+    foreach(case repro callback_result cb_i literal_bound temp_local typed_callee)
+        set(expected_result 7)
+        if(case STREQUAL "cb_i")
+            set(expected_result 6)
+        endif()
+        foreach(mode interp compile binary)
+            add_test(NAME interpreter_fused_add_loop_${case}_${mode}
+                COMMAND ${CMAKE_COMMAND}
+                "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+                "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/interp_fused_add_loop/${case}.zr"
+                "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/interpreter_fused_add_loop_${case}_${mode}"
+                "-DEXECUTION_MODE=${mode}"
+                "-DEXPECTED_RESULT=${expected_result}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_inline_struct_regression.cmake")
+            set_tests_properties(interpreter_fused_add_loop_${case}_${mode} PROPERTIES
+                TIMEOUT 90 LABELS "core;quickening;fused_add_loop")
+        endforeach()
+    endforeach()
 endif()
 
 if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)

@@ -176,4 +176,92 @@ static void test_inlay_hint_nested_generic_inferred_return_uses_source_parameter
             "LSP Inlay Hint Nested Generic Inferred Return Uses Source Parameter Name");
 }
 
+/* 请求范围按 LSP 半开区间筛选：相邻分页共用的边界提示只由以它为 start 的那一页返回。 */
+static void test_inlay_hint_range_end_is_exclusive_for_adjacent_ranges(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Inlay Hint Range End Is Exclusive For Adjacent Ranges";
+    const TZrChar *uriText = "file:///inlay_range_end_exclusive.zr";
+    const TZrChar *content =
+            "fn run(): void {\n"
+            "    var inferred = 1;\n"
+            "    var explicit: int = 2;\n"
+            "}\n";
+    /* 文档只有 1:16 处一条提示；前两项是共用该边界的相邻分页，其余项固定 start/end 各自的开闭。 */
+    static const struct {
+        const TZrChar *name;
+        SZrLspRange range;
+        TZrSize expectedCount;
+    } cases[] = {
+            {"page ending at the hint", {{0, 0}, {1, 16}}, 0U},
+            {"page starting at the hint", {{1, 16}, {4, 0}}, 1U},
+            {"empty range at the hint", {{1, 16}, {1, 16}}, 0U},
+            {"range ending one column past the hint", {{0, 0}, {1, 17}}, 1U},
+            {"range starting one column past the hint", {{1, 17}, {4, 0}}, 0U},
+    };
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare range boundary fixture");
+        return;
+    }
+
+    for (TZrSize index = 0U; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        SZrArray hints;
+        SZrLspInlayHint **hintPtr;
+        const TZrChar *label;
+        TZrBool querySucceeded;
+
+        ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+        querySucceeded = ZrLanguageServer_Lsp_GetInlayHints(
+                state, context, uri, cases[index].range, &hints);
+        hintPtr = hints.length == 1U
+                ? (SZrLspInlayHint **)ZrCore_Array_Get(&hints, 0U)
+                : ZR_NULL;
+        label = hintPtr != ZR_NULL && *hintPtr != ZR_NULL && (*hintPtr)->label != ZR_NULL
+                ? test_string_ptr((*hintPtr)->label)
+                : ZR_NULL;
+        /* 命中时还须是 1:16 的同一条类型提示，防止范围筛选改放了位置或换了声明。 */
+        if (!querySucceeded || hints.length != cases[index].expectedCount ||
+            (cases[index].expectedCount == 1U &&
+             (label == ZR_NULL || strstr(label, ": int") == ZR_NULL ||
+              (*hintPtr)->position.line != 1 ||
+              (*hintPtr)->position.character != 16))) {
+            snprintf(reason,
+                     sizeof(reason),
+                     "%s [%d:%d, %d:%d): expected %llu hint(s) at 1:16; "
+                     "success=%d hintCount=%llu label=%s",
+                     cases[index].name,
+                     (int)cases[index].range.start.line,
+                     (int)cases[index].range.start.character,
+                     (int)cases[index].range.end.line,
+                     (int)cases[index].range.end.character,
+                     (unsigned long long)cases[index].expectedCount,
+                     querySucceeded,
+                     (unsigned long long)hints.length,
+                     label != ZR_NULL ? label : "<null>");
+            ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, summary, reason);
+            return;
+        }
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif

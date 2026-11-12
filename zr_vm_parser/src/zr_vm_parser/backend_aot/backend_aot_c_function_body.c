@@ -2359,17 +2359,20 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
-                if ((TZrInt64)instructionIndex + (TZrInt64)operandB1 + 1 < 0 ||
-                    (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandB1 + 1) >=
-                            entry->function->instructionsLength) {
+            {
+                /* 融合保留下一条指令。解释器 DONE_SKIP(2) 与校验器 step 2 的目标都是 pc + offset + 2。 */
+                TZrInt64 fusedTargetIndex =
+                        (TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 2;
+                if (fusedTargetIndex < 0 ||
+                    (TZrUInt32)fusedTargetIndex >= entry->function->instructionsLength) {
                     backend_aot_write_c_unsupported_instruction(file,
                                                                 entry->flatIndex,
                                                                 instructionIndex,
                                                                 instruction->instruction.operationCode);
                 } else {
-                    TZrUInt32 targetInstructionIndex =
-                            (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandB1 + 1);
+                    TZrUInt32 targetInstructionIndex = (TZrUInt32)fusedTargetIndex;
                     backend_aot_write_c_direct_iter_move_next_jump_if_false(
                             file,
                             entry->flatIndex,
@@ -2383,6 +2386,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(JUMP):
                 if ((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1 < 0 ||
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1) >=

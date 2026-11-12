@@ -724,6 +724,191 @@ static void test_source_enum_contexts_keep_distinct_source_bindings(void) {
             compile_enum_declaration, ZR_FALSE);
 }
 
+static SZrAstNode *parse_single_enum(const TZrChar *source, TZrBool isExtern) {
+    SZrAstNodeArray *declarations = parse_source(source);
+
+    TEST_ASSERT_EQUAL_UINT(1U, declarations->count);
+    if (isExtern) {
+        TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, declarations->nodes[0]->type);
+        declarations = declarations->nodes[0]->data.externBlock.declarations;
+        TEST_ASSERT_NOT_NULL(declarations);
+        TEST_ASSERT_EQUAL_UINT(1U, declarations->count);
+    }
+    TEST_ASSERT_EQUAL_INT(ZR_AST_ENUM_DECLARATION, declarations->nodes[0]->type);
+    TEST_ASSERT_NOT_NULL(declarations->nodes[0]->data.enumDeclaration.members);
+    return declarations->nodes[0];
+}
+
+static const SZrTypeValue *object_field_value(SZrObject *object, const TZrChar *fieldName) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, (TZrNativeString)fieldName);
+    SZrTypeValue key;
+
+    TEST_ASSERT_NOT_NULL(object);
+    TEST_ASSERT_NOT_NULL(name);
+    ZrCore_Value_InitAsRawObject(g_state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(name));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(g_state, object, &key);
+}
+
+static void assert_object_int_field(SZrObject *object, const TZrChar *fieldName,
+        TZrInt64 expected) {
+    const SZrTypeValue *value = object_field_value(object, fieldName);
+
+    TEST_ASSERT_NOT_NULL_MESSAGE(value, fieldName);
+    TEST_ASSERT_TRUE_MESSAGE(ZR_VALUE_IS_TYPE_SIGNED_INT(value->type), fieldName);
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(expected, value->value.nativeObject.nativeInt64, fieldName);
+}
+
+/* Enum member runtime values live in the prototype metadata object under __zr_enumMembers. */
+static SZrObject *published_enum_member_values(SZrAstNode *declaration) {
+    const SZrTypePrototypeInfo *prototype;
+    const SZrTypeValue *members;
+
+    TEST_ASSERT_EQUAL_UINT(1U, g_compiler.typePrototypes.length);
+    prototype = (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&g_compiler.typePrototypes, 0U);
+    TEST_ASSERT_NOT_NULL(prototype);
+    TEST_ASSERT_EQUAL_PTR(declaration, prototype->declarationNode);
+    TEST_ASSERT_TRUE(prototype->hasDecoratorMetadata);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, prototype->decoratorMetadataValue.type);
+    TEST_ASSERT_NOT_NULL(prototype->decoratorMetadataValue.value.object);
+    members = object_field_value(
+            ZR_CAST_OBJECT(g_state, prototype->decoratorMetadataValue.value.object),
+            "__zr_enumMembers");
+    TEST_ASSERT_NOT_NULL(members);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, members->type);
+    TEST_ASSERT_NOT_NULL(members->value.object);
+    return ZR_CAST_OBJECT(g_state, members->value.object);
+}
+
+static void assert_auto_value_overflow_error(SZrAstNode *declaration, TZrSize rejectedMemberIndex) {
+    SZrAstNodeArray *members = declaration->data.enumDeclaration.members;
+    SZrAstNode *rejectedMember;
+
+    TEST_ASSERT_TRUE(rejectedMemberIndex < members->count);
+    rejectedMember = members->nodes[rejectedMemberIndex];
+    TEST_ASSERT_NOT_NULL(rejectedMember);
+    TEST_ASSERT_TRUE(g_compiler.hasError);
+    TEST_ASSERT_NOT_NULL(g_compiler.errorMessage);
+    TEST_ASSERT_EQUAL_STRING("Enum member value cannot increment past INT64_MAX",
+            g_compiler.errorMessage);
+    /* The member that needs the unrepresentable successor is reported, not the INT64_MAX holder. */
+    TEST_ASSERT_EQUAL_UINT64(rejectedMember->location.start.offset,
+            g_compiler.errorLocation.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(rejectedMember->location.end.offset,
+            g_compiler.errorLocation.end.offset);
+}
+
+static void assert_enum_auto_value_overflow_blocks_publication(const TZrChar *source,
+        TTestDeclarationProducer producer, TZrBool isExtern, TZrSize rejectedMemberIndex) {
+    SZrAstNode *declaration = parse_single_enum(source, isExtern);
+
+    g_compiler.suppressErrorOutput = ZR_TRUE;
+    producer(&g_compiler, declaration);
+    assert_auto_value_overflow_error(declaration, rejectedMemberIndex);
+    TEST_ASSERT_EQUAL_UINT(0U, g_compiler.typePrototypes.length);
+    TEST_ASSERT_EQUAL_UINT(0U, g_compiler.typeEnv->namedTypeBindings.length);
+    TEST_ASSERT_EQUAL_UINT(0U, g_compiler.compileTimeTypeEnv->namedTypeBindings.length);
+    TEST_ASSERT_EQUAL_UINT(0U, g_compiler.semanticContext->symbols.length);
+    TEST_ASSERT_EQUAL_UINT(0U, g_compiler.semanticContext->types.length);
+}
+
+static void test_source_enum_keeps_int64_max_as_final_explicit_value(void) {
+    SZrAstNode *declaration = parse_single_enum(
+            "enum Parcel { First; Last = 9223372036854775807; }", ZR_FALSE);
+    SZrObject *values;
+
+    compile_enum_declaration(&g_compiler, declaration);
+    TEST_ASSERT_FALSE(g_compiler.hasError);
+    values = published_enum_member_values(declaration);
+    assert_object_int_field(values, "First", 0);
+    assert_object_int_field(values, "Last", INT64_MAX);
+}
+
+static void test_source_enum_auto_value_may_reach_int64_max(void) {
+    SZrAstNode *declaration = parse_single_enum(
+            "enum Parcel { Before = 9223372036854775806; Last; }", ZR_FALSE);
+    SZrObject *values;
+
+    compile_enum_declaration(&g_compiler, declaration);
+    TEST_ASSERT_FALSE(g_compiler.hasError);
+    values = published_enum_member_values(declaration);
+    assert_object_int_field(values, "Before", INT64_MAX - 1);
+    assert_object_int_field(values, "Last", INT64_MAX);
+}
+
+static void test_source_enum_explicit_value_restarts_auto_values_after_int64_max(void) {
+    SZrAstNode *declaration = parse_single_enum(
+            "enum Parcel { Last = 9223372036854775807; Zero = 0; One; }", ZR_FALSE);
+    SZrObject *values;
+
+    compile_enum_declaration(&g_compiler, declaration);
+    TEST_ASSERT_FALSE(g_compiler.hasError);
+    values = published_enum_member_values(declaration);
+    assert_object_int_field(values, "Last", INT64_MAX);
+    assert_object_int_field(values, "Zero", 0);
+    assert_object_int_field(values, "One", 1);
+}
+
+static void test_source_enum_rejects_auto_value_after_explicit_int64_max(void) {
+    assert_enum_auto_value_overflow_blocks_publication(
+            "enum Parcel { Last = 0x7fffffffffffffff; Next; }",
+            compile_enum_declaration, ZR_FALSE, 1U);
+}
+
+static void test_source_enum_rejects_auto_value_after_auto_int64_max(void) {
+    assert_enum_auto_value_overflow_blocks_publication(
+            "enum Parcel { Before = 9223372036854775806; Last; Next; }",
+            compile_enum_declaration, ZR_FALSE, 2U);
+}
+
+static void test_extern_enum_keeps_int64_max_decorator_value(void) {
+    SZrAstNode *declaration = parse_single_enum(
+            "native extern(\"fixture\") {"
+            " enum Parcel { First; #zr.ffi.value(9223372036854775807)# Last; } }",
+            ZR_TRUE);
+    SZrTypeValue descriptor;
+    SZrObject *values;
+
+    extern_compiler_register_enum_prototype(&g_compiler, declaration);
+    TEST_ASSERT_FALSE(g_compiler.hasError);
+    values = published_enum_member_values(declaration);
+    assert_object_int_field(values, "First", 0);
+    assert_object_int_field(values, "Last", INT64_MAX);
+
+    /* The FFI descriptor walks the members again and must agree with the prototype values. */
+    ZrCore_Value_ResetAsNull(&descriptor);
+    TEST_ASSERT_TRUE(extern_compiler_build_enum_descriptor_value(
+            &g_compiler, declaration, &descriptor));
+    TEST_ASSERT_FALSE(g_compiler.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, descriptor.type);
+    TEST_ASSERT_NOT_NULL(descriptor.value.object);
+    values = ZR_CAST_OBJECT(g_state, descriptor.value.object);
+    assert_object_int_field(values, "First", 0);
+    assert_object_int_field(values, "Last", INT64_MAX);
+}
+
+static void test_extern_enum_rejects_auto_value_after_int64_max_decorator(void) {
+    assert_enum_auto_value_overflow_blocks_publication(
+            "native extern(\"fixture\") {"
+            " enum Parcel { #zr.ffi.value(9223372036854775807)# Last; Next; } }",
+            extern_compiler_register_enum_prototype, ZR_TRUE, 1U);
+}
+
+static void test_extern_enum_descriptor_rejects_auto_value_after_int64_max(void) {
+    SZrAstNode *declaration = parse_single_enum(
+            "native extern(\"fixture\") {"
+            " enum Parcel { #zr.ffi.value(9223372036854775807)# Last; Next; } }",
+            ZR_TRUE);
+    SZrTypeValue descriptor;
+
+    /* Called without prototype registration so the descriptor walk guards itself. */
+    g_compiler.suppressErrorOutput = ZR_TRUE;
+    ZrCore_Value_ResetAsNull(&descriptor);
+    TEST_ASSERT_FALSE(extern_compiler_build_enum_descriptor_value(
+            &g_compiler, declaration, &descriptor));
+    assert_auto_value_overflow_error(declaration, 1U);
+}
+
 static void test_marked_union_annotation_keeps_projected_identity(void) {
     SZrAstNodeArray *statements = parse_source(
             "union Parcel { Empty; } var holder: Parcel;");
@@ -895,6 +1080,14 @@ int main(void) {
     RUN_TEST(test_mixed_site_union_remains_root_visible);
     RUN_TEST(test_extern_enum_contexts_keep_distinct_source_bindings);
     RUN_TEST(test_source_enum_contexts_keep_distinct_source_bindings);
+    RUN_TEST(test_source_enum_keeps_int64_max_as_final_explicit_value);
+    RUN_TEST(test_source_enum_auto_value_may_reach_int64_max);
+    RUN_TEST(test_source_enum_explicit_value_restarts_auto_values_after_int64_max);
+    RUN_TEST(test_source_enum_rejects_auto_value_after_explicit_int64_max);
+    RUN_TEST(test_source_enum_rejects_auto_value_after_auto_int64_max);
+    RUN_TEST(test_extern_enum_keeps_int64_max_decorator_value);
+    RUN_TEST(test_extern_enum_rejects_auto_value_after_int64_max_decorator);
+    RUN_TEST(test_extern_enum_descriptor_rejects_auto_value_after_int64_max);
     RUN_TEST(test_marked_union_annotation_keeps_projected_identity);
     RUN_TEST(test_forward_marked_union_annotation_adopts_provisional_identity);
     RUN_TEST(test_union_distinct_definition_sites_survive_table_growth);

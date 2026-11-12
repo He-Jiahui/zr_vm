@@ -192,7 +192,7 @@ static SZrString *metadata_path_leaf(SZrAstNode *node) {
            : ZR_NULL;
 }
 
-/* BUG: AttributeUsage 查找不到匹配的命名参数时仍回退到 position；第四项写成 inheritedTypo: false 会按位置当作 inherited 并成功注册，静默吞掉拼写错误。 */
+/* 已写了别的名字时，不能再把该位置的实参当成目标参数。 */
 static SZrAstNode *metadata_named_argument(
         SZrFunctionCall *call,
         const TZrChar *name,
@@ -209,6 +209,13 @@ static SZrAstNode *metadata_named_argument(
             if (argName != ZR_NULL && *argName != ZR_NULL &&
                 metadata_string_equals(*argName, name)) {
                 return call->args->nodes[index];
+            }
+        }
+        if (position < call->argNames->length) {
+            SZrString **slotName =
+                    (SZrString **)ZrCore_Array_Get(call->argNames, position);
+            if (slotName != ZR_NULL && *slotName != ZR_NULL) {
+                return ZR_NULL;
             }
         }
     }
@@ -341,6 +348,13 @@ static TZrBool metadata_parse_usage(
     retention = metadata_named_argument(attribute->call, "retention", 1U);
     repeatable = metadata_named_argument(attribute->call, "repeatable", 2U);
     inherited = metadata_named_argument(attribute->call, "inherited", 3U);
+    /* 实参恰为四个，取不到某项只会是它的位置上写了别的名字：拼错、重复，或指向已按位置给出的项。 */
+    if (targets == ZR_NULL || retention == ZR_NULL || repeatable == ZR_NULL ||
+        inherited == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs, "attributeUsage.arguments: unknown or duplicate named argument", location);
+        return ZR_FALSE;
+    }
     memset(usage, 0, sizeof(*usage));
     if (!metadata_parse_target_flags(targets, &usage->targets) || usage->targets == 0U ||
         !metadata_parse_retention(retention, &usage->retention) ||
@@ -461,8 +475,7 @@ static TZrBool metadata_project_feature_enabled(
     return ZR_FALSE;
 }
 
-/* 查找函数上的唯一 conditional 属性并读出 feature 名。 */
-/* BUG: 用户 schema decorator 解析成功时只设置 boundSchema，schema 仍为 NULL；下方条件随后解引用 schema->role。编译带合法 function-target 用户属性的普通函数即可在 conditional 扫描中空指针解引用。 */
+/* 查找函数上的唯一 conditional 属性并读出 feature 名。用户 schema 只填 boundSchema。 */
 static TZrBool metadata_find_conditional_attribute(
         SZrCompilerState *cs,
         SZrFunctionDeclaration *declaration,
@@ -479,6 +492,7 @@ static TZrBool metadata_find_conditional_attribute(
          index++) {
         SZrParsedMetadataAttribute parsed;
         if (!metadata_parse_attribute(cs, declaration->decorators->nodes[index], &parsed) ||
+            parsed.schema == ZR_NULL ||
             parsed.schema->role != ZR_PARSER_ATTRIBUTE_ROLE_CONDITIONAL) {
             continue;
         }

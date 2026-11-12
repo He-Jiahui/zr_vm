@@ -131,16 +131,17 @@ SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE
 
 ## AOT Boundary
 
-`backend_aot.c` 继续从 `SemIR` 降低，不读取 quickened ExecBC，因此：
+运行时契约声明继续从 `SemIR` 降低，因此：
 
 - AOT C 文本仍声明 `DYN_ITER_INIT` / `DYN_ITER_MOVE_NEXT`
-- AOT LLVM 文本仍声明 `@ZrCore_Object_IterInit` / `@ZrCore_Object_IterMoveNext`
-- quickening 只影响解释器热路径，不影响 AOT artifact 的稳定契约
+- AOT LLVM 文本仍声明 `@ZrLibrary_AotRuntime_IterInit` / `@ZrLibrary_AotRuntime_IterMoveNext`
 
-这条规则也限制了后续 superinstruction 扩展方向：
+函数体按 quickened ExecBC 逐条降低，所以两个后端都要识别融合指令：
 
-- 可以继续在 ExecBC 增加更细的 adaptive/superinstruction 形式
-- 不能让 AOT backend 直接依赖这些 quickened opcode
+- `SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE` 与 `SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE` 都经 `ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse` 降低
+- 假分支目标是 `pc + signed offset + 2`，与解释器 `DONE_SKIP(2)` 和字节码校验器一致
+- 不跳转时落入保留的原始 `JUMP_IF`；此时 move-next 为真，它不会跳转
+- 融合指令会写 `moveNextSlot`，AOT C 的标量局部分析必须把它当作对该槽的写入
 
 ## 当前限制
 
@@ -149,7 +150,7 @@ SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE
 - 不恢复旧的名字驱动 dynamic access quickening
 - 不把 `GET_MEMBER` / `GET_BY_INDEX` / `GET_GLOBAL` 回写成兼容 opcode
 - 不让 `SemIR` 输出 superinstruction
-- 不让 AOT backend 感知 `SUPER_*` opcode
+- 除上面两个融合迭代指令外，不让 AOT backend 感知其它 `SUPER_*` 迭代形式
 
 原因是仓库现有测试已经把“显式访问语义保留在产物中”当成硬约束，而 dynamic foreach guard fusion 目前是唯一低风险且能证明 `SemIR` 与 `ExecBC` 解耦的 quickening 切片。
 

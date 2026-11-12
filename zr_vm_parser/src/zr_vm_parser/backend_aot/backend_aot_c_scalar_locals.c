@@ -539,6 +539,8 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_integer_value_kind_befo
 
 static TZrBool backend_aot_c_scalar_locals_instruction_mentions_slot_as_operand(const TZrInstruction *instruction,
                                                                                 TZrUInt32 slot);
+static TZrBool backend_aot_c_scalar_locals_instruction_resets_slot(const TZrInstruction *instruction,
+                                                                   TZrUInt32 slot);
 static TZrBool backend_aot_c_scalar_locals_instruction_overwrites_slot(const TZrInstruction *instruction,
                                                                        TZrUInt32 slot);
 
@@ -1698,6 +1700,31 @@ static TZrBool backend_aot_c_scalar_locals_slot_is_power_operand(const SZrFuncti
     return ZR_FALSE;
 }
 
+/* A later definition cannot consume the value currently being classified. */
+static TZrBool backend_aot_c_scalar_locals_instruction_redefines_slot(const TZrInstruction *instruction,
+                                                                    TZrUInt32 slot) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (backend_aot_c_scalar_locals_instruction_resets_slot(instruction, slot)) {
+        return ZR_TRUE;
+    }
+    if (instruction->instruction.operandExtra != slot) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    return (TZrBool)(opcode == ZR_INSTRUCTION_ENUM(GET_STACK) ||
+                     opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
+                     opcode == ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+                     opcode == ZR_INSTRUCTION_ENUM(GET_BY_INDEX) ||
+                     opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) ||
+                     backend_aot_c_scalar_locals_instruction_is_call_result_write(opcode) ||
+                     backend_aot_c_scalar_locals_instruction_overwrites_slot(instruction, slot));
+}
+
 static TZrBool backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(const SZrFunction *function,
                                                                           TZrUInt32 firstInstructionIndex,
                                                                           TZrUInt32 slot) {
@@ -1717,6 +1744,9 @@ static TZrBool backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(const 
         }
 
         if (!backend_aot_c_scalar_locals_instruction_mentions_slot_as_operand(instruction, slot)) {
+            if (backend_aot_c_scalar_locals_instruction_redefines_slot(instruction, slot)) {
+                break;
+            }
             continue;
         }
 
@@ -1738,6 +1768,9 @@ static TZrBool backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(const 
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_OP_FUNCTION_RETURN) {
             return ZR_TRUE;
+        }
+        if (backend_aot_c_scalar_locals_instruction_redefines_slot(instruction, slot)) {
+            break;
         }
     }
 
@@ -2867,6 +2900,14 @@ static TZrBool backend_aot_c_scalar_locals_instruction_preserves_reaching_writes
         const SZrFunction *function,
         const TZrInstruction *instruction) {
     TZrUInt32 stepFlags = backend_aot_c_step_flags_for_instruction(function, instruction);
+
+    /* 融合迭代跳转虽属控制流，仍把 move-next 结果写进 operandExtra 帧槽；
+     * 不能让之前的标量局部写入继续到达后面残留的 JUMP_IF。 */
+    if (instruction != ZR_NULL &&
+        (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+         instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE))) {
+        return ZR_FALSE;
+    }
 
     return (TZrBool)((stepFlags &
                       (ZR_AOT_EMITTER_STEP_FLAG_CONTROL_FLOW |

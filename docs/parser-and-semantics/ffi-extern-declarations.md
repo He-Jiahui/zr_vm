@@ -276,6 +276,18 @@ semantic analyzer 和 stdio 仅投影 persistent semantic query fact，不得按
 AST/source text、message 或本地 underlying table 重建规则，也不得补发平行
 `compiler_error`。
 
+### Enum Auto Value Range
+
+未赋值成员取上一成员的整数值加一，游标按有符号 64 位整数计算。`INT64_MAX` 可以是显式成员值
+（integer literal 或 `zr.ffi.value(...)`），也可以是自动值恰好到达的值；紧随其后的未赋值成员
+没有可表示的后继，compiler 在该成员上报告
+`Enum member value cannot increment past INT64_MAX`，不发布 prototype，也不生成 descriptor。
+之后出现的显式整数值会重新设定游标。
+
+普通 `enum` 声明、extern enum 的 runtime prototype metadata 与 FFI descriptor 共用
+`extern_compiler_enum_advance_auto_value(...)` 推进游标，不各自执行 `value + 1`。
+回归覆盖在 `tests/parser/test_nominal_declaration_publication.c`。
+
 ## Semantic And Type Visibility
 
 extern 声明在编译前先经过 `ZrParser_Compiler_PredeclareExternBindings(...)` 预注册：
