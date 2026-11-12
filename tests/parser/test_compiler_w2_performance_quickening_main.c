@@ -22,6 +22,7 @@ void test_w2_set_member_slot_null_fuses_dead_null_temp(void);
 void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void);
 void test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding(void);
 void test_w2_set_member_slot_receiver_forwarding_rewrites_receiver(void);
+void test_w2_stack_load_const_add_fuses_only_representable_operands(void);
 void test_w2_null_not_equal_branch_fuses_dead_null_temp(void);
 void test_w2_get_stack_set_member_slot_value_forwards_source(void);
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
@@ -51,6 +52,7 @@ int main(void) {
     RUN_TEST(test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding);
     RUN_TEST(test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding);
     RUN_TEST(test_w2_set_member_slot_receiver_forwarding_rewrites_receiver);
+    RUN_TEST(test_w2_stack_load_const_add_fuses_only_representable_operands);
     RUN_TEST(test_w2_null_not_equal_branch_fuses_dead_null_temp);
     RUN_TEST(test_w2_get_stack_set_member_slot_value_forwards_source);
     RUN_TEST(test_w2_left_constant_add_mul_fold_to_existing_const_opcodes);

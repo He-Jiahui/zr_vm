@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use zr_vm_rust_binding::{
     CompileOptions, ExecutionMode, FunctionBuilder, GenericParameterDescriptor, ModuleBuilder,
     NativeArgumentKind, ProjectWorkspace, PrototypeType, RunOptions, RuntimeBuilder, TypeBuilder,
-    Value,
+    Value, ValueKind,
 };
 use zr_vm_rust_binding_sys::ZrRustBindingStatus;
 
@@ -811,4 +811,86 @@ fn invalid_native_function_descriptor_returns_error() {
         error.status,
         ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INTERNAL_ERROR
     );
+}
+
+// A guest `uint` crosses the C ABI as an integer, but both safe readers only
+// produce `i64`. Values above `i64::MAX` must surface as errors, not as the
+// wrapped negative number the unchecked cast used to return.
+#[test]
+fn unsigned_values_beyond_i64_are_rejected_by_as_int_and_read_int(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = acquire_test_lock();
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("unsigned_int_read_project");
+    let workspace = ProjectWorkspace::scaffold(&root, "unsigned_int_read_project")?;
+    fs::write(
+        workspace.project_root()?.join("src").join("main.zr"),
+        concat!(
+            "let host = import(\"unsigned_host\");\n",
+            "pub fn largestSigned(): uint { return <uint> 9223372036854775807; }\n",
+            "pub fn largestUnsigned(): uint { return <uint> -1; }\n",
+            "pub fn observeLargestSigned(): int { return host.observe(largestSigned()); }\n",
+            "pub fn observeLargestUnsigned(): int { return host.observe(largestUnsigned()); }\n",
+            "return 0;\n",
+        ),
+    )?;
+
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&observed);
+    let module = ModuleBuilder::new("unsigned_host")
+        .documentation("Unsigned argument-view read fixture.")
+        .module_version("1.0.0")
+        .add_function(
+            FunctionBuilder::new("observe", 1, 1, move |context| {
+                // Record the read outcome and still return normally, so the
+                // assertions below see `read_int` itself rather than how the
+                // VM reports a failed native callback.
+                let read = context.with_argument(0, |argument| {
+                    assert_eq!(argument.kind()?, NativeArgumentKind::Int);
+                    Ok(argument.read_int())
+                })?;
+                sink.lock().unwrap().push(read);
+                Value::new_int(0)
+            })
+            .parameter("value", "uint", "unsigned value read through the view")
+            .return_type("int")
+            .documentation("Records how the argument view reads an unsigned value."),
+        )
+        .build()?;
+
+    let mut runtime = RuntimeBuilder::standard().build()?;
+    let _registration = runtime.register_native_module(module)?;
+    let mut session = workspace.start_session(&mut runtime, &RunOptions::default())?;
+
+    let largest_signed = session.call_module_export("main", "largestSigned", &[])?;
+    assert_eq!(largest_signed.as_int()?, i64::MAX);
+
+    let largest_unsigned = session.call_module_export("main", "largestUnsigned", &[])?;
+    assert_eq!(largest_unsigned.kind(), ValueKind::Int);
+    let error = largest_unsigned
+        .as_int()
+        .expect_err("u64::MAX must not be read back as -1");
+    assert_eq!(
+        error.status,
+        ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT
+    );
+    assert!(error.message.contains("does not fit in int64"));
+
+    let accepted = session.call_module_export("main", "observeLargestSigned", &[])?;
+    assert_eq!(accepted.as_int()?, 0);
+    let rejected = session.call_module_export("main", "observeLargestUnsigned", &[])?;
+    assert_eq!(rejected.as_int()?, 0);
+
+    let observed = observed.lock().unwrap();
+    assert_eq!(observed.len(), 2);
+    assert_eq!(observed[0].as_ref().ok(), Some(&i64::MAX));
+    let error = observed[1]
+        .as_ref()
+        .expect_err("u64::MAX must not reach the callback as -1");
+    assert_eq!(
+        error.status,
+        ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT
+    );
+    assert!(error.message.contains("does not fit in int64"));
+    Ok(())
 }
