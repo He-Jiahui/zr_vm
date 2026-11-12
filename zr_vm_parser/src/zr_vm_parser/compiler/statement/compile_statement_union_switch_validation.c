@@ -13,6 +13,35 @@ static TZrBool switch_case_can_use_subject_union_type(SZrAstNode *caseValue) {
             caseValue->type == ZR_AST_PRIMARY_EXPRESSION);
 }
 
+/*
+ * resolver 输出的 bindings 有两种所有权：struct payload pattern 由 build_union_struct_pattern_bindings 新建独立容器，
+ * 归消费方释放；tuple payload pattern 直接返回 case AST 的 call->args，归 ZrParser_Ast_Free 释放，校验之后的
+ * lowering 还要读取它。本文件只把标识符或 primary 表达式形态的 case 交给 resolver，此时 bindings 只会随 primary
+ * 表达式输出，借用来源只有其成员里的调用实参；无法确认归属的形态按借用处理，宁可漏放也不释放 AST 的数组。
+ */
+static TZrBool switch_union_case_owns_bindings(SZrAstNode *caseValue, SZrAstNodeArray *bindings) {
+    SZrAstNodeArray *members;
+
+    if (caseValue == ZR_NULL || bindings == ZR_NULL || caseValue->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    members = caseValue->data.primaryExpression.members;
+    if (members != ZR_NULL && members->nodes != ZR_NULL) {
+        for (TZrSize index = 0; index < members->count; index++) {
+            SZrAstNode *member = members->nodes[index];
+
+            if (member != ZR_NULL &&
+                member->type == ZR_AST_FUNCTION_CALL &&
+                member->data.functionCall.args == bindings) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 /* 按 subject union 上下文解析 case，再把解析出的 variant 名与当前声明 variant 对照。 */
 static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                 SZrAstNode *caseValue,
@@ -20,28 +49,26 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                 SZrString *variantName) {
     SZrString *caseVariantName = ZR_NULL;
     SZrAstNodeArray *bindings = ZR_NULL;
+    TZrBool resolved;
+    TZrBool covers;
 
     if (cs == ZR_NULL || caseValue == ZR_NULL || variantName == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
 
     if (switchUnionTypeName != ZR_NULL && switch_case_can_use_subject_union_type(caseValue)) {
-        if (!try_resolve_union_variant_pattern_for_type(cs,
-                                                        caseValue,
-                                                        switchUnionTypeName,
-                                                        &caseVariantName,
-                                                        &bindings,
-                                                        ZR_NULL)) {
-            ZrParser_AstNodeArray_Free(cs->state, bindings);
-            return ZR_FALSE;
-        }
-    } else if (!try_resolve_union_variant_pattern_expression(cs,
+        resolved = try_resolve_union_variant_pattern_for_type(cs,
                                                               caseValue,
+                                                              switchUnionTypeName,
                                                               &caseVariantName,
                                                               &bindings,
-                                                              ZR_NULL)) {
-        ZrParser_AstNodeArray_Free(cs->state, bindings);
-        return ZR_FALSE;
+                                                              ZR_NULL);
+    } else {
+        resolved = try_resolve_union_variant_pattern_expression(cs,
+                                                                caseValue,
+                                                                &caseVariantName,
+                                                                &bindings,
+                                                                ZR_NULL);
     }
 
     /*
@@ -51,12 +78,13 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
      * 并统一 resolver、覆盖校验、lowering 与 CFG 使用的 variant identity。
      */
     /* resolver 的 true 既可能表示 pattern 已识别，也可能表示已报告诊断；须同时检查 error 状态和输出名。 */
-    {
-        TZrBool covers = (TZrBool)(!cs->hasError && caseVariantName != ZR_NULL &&
-                                   ZrCore_String_Equal(caseVariantName, variantName));
+    covers = (TZrBool)(resolved && !cs->hasError && caseVariantName != ZR_NULL &&
+                       ZrCore_String_Equal(caseVariantName, variantName));
+    /* 校验只比较名称；struct pattern 的独立容器在此配对释放，duplicate 与 exhaustiveness 两轮扫描都经过这里。 */
+    if (switch_union_case_owns_bindings(caseValue, bindings)) {
         ZrParser_AstNodeArray_Free(cs->state, bindings);
-        return covers;
     }
+    return covers;
 }
 
 void compile_switch_validate_union_duplicate_cases(SZrCompilerState *cs,
