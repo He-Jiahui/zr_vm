@@ -674,11 +674,176 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
     ZrCore_GlobalState_Free(state->global);
 }
 
+static void test_aot_prepared_vm_call_preserves_native_caller_reserved_frame(void) {
+    enum {
+        callerSlotCount = 6u,
+        loweredTopSlot = 7u,
+        reservedMarkerSlot = 8u,
+        nativeReservedSlotCount = ZR_STACK_NATIVE_CALL_RESERVED_MIN,
+        allocatedSlotCount = 64u,
+        rootStackSize = 37u
+    };
+    const TZrInt64 marker = (TZrInt64)0x12345678;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project project = {0};
+    SZrFunction *callerFunction;
+    SZrFunction *calleeFunction;
+    SZrFunction *rootFunction;
+    SZrFunction *functionTable[2];
+    TZrUInt32 frameSlotCounts[2];
+    FZrAotEntryThunk functionPointers[2] = {
+            aot_llvm_receiver_alias_test_thunk,
+            aot_llvm_receiver_alias_test_thunk};
+    SZrAotCodeRegistration codeRegistration = {0};
+    SZrAotLlvmReceiverAliasTestLoadedModule record = {0};
+    ZrAotGeneratedFrame frame = {0};
+    ZrAotGeneratedDirectCall directCall = {0};
+    SZrCallInfo *callerCallInfo;
+    SZrClosureNative *callerClosure;
+    SZrClosureNative *calleeClosure;
+    TZrStackValuePointer callerFunctionBase;
+    TZrStackValuePointer callerFrameBase;
+    SZrFunctionStackAnchor callerTopAnchor;
+    TZrBool prepared;
+    TZrBool calleeOutsideCaller = ZR_FALSE;
+    TZrBool markerPreservedOnPrepare = ZR_FALSE;
+    TZrBool rootPreservedOnPrepare = ZR_FALSE;
+    TZrBool finished = ZR_FALSE;
+    TZrBool callerRestored = ZR_FALSE;
+    TZrBool markerPreservedOnFinish = ZR_FALSE;
+    TZrBool rootSurvivedCollection = ZR_FALSE;
+
+    TEST_ASSERT_NOT_NULL(state);
+    callerFunction = ZrCore_Function_New(state);
+    calleeFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+    TEST_ASSERT_NOT_NULL(calleeFunction);
+    callerFunction->stackSize = callerSlotCount;
+    calleeFunction->stackSize = 1u;
+    calleeFunction->parameterCount = 0u;
+    functionTable[0] = callerFunction;
+    functionTable[1] = calleeFunction;
+    frameSlotCounts[0] = (TZrUInt32)ZrCore_Function_GetFrameStorageSlotCount(callerFunction);
+    frameSlotCounts[1] = (TZrUInt32)ZrCore_Function_GetFrameStorageSlotCount(calleeFunction);
+    codeRegistration.functionCount = 2u;
+    codeRegistration.functionPointers = functionPointers;
+    record.backendKind = ZR_AOT_BACKEND_KIND_LLVM;
+    record.codeRegistration = &codeRegistration;
+    record.moduleFunction = callerFunction;
+    record.functionTable = functionTable;
+    record.functionCount = 2u;
+    record.functionCapacity = 2u;
+    record.generatedFrameSlotCounts = frameSlotCounts;
+
+    state->global->userData = &project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(
+            state->global, ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM, ZR_FALSE));
+    callerFunctionBase = ZrCore_Function_CheckStackAndGc(
+            state, allocatedSlotCount, state->stackTop.valuePointer);
+    TEST_ASSERT_NOT_NULL(callerFunctionBase);
+    for (TZrUInt32 slot = 0u; slot < allocatedSlotCount; slot++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callerFunctionBase + slot));
+    }
+    callerFrameBase = callerFunctionBase + 1u;
+    callerClosure = ZrCore_ClosureNative_New(state, 0u);
+    calleeClosure = ZrCore_ClosureNative_New(state, 0u);
+    TEST_ASSERT_NOT_NULL(callerClosure);
+    TEST_ASSERT_NOT_NULL(calleeClosure);
+    callerClosure->aotShimFunction = callerFunction;
+    calleeClosure->aotShimFunction = calleeFunction;
+    ZrCore_Stack_SetRawObjectValue(state, callerFunctionBase,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(callerClosure));
+    ZrCore_Stack_SetRawObjectValue(state, callerFrameBase,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(calleeClosure));
+    callerFunctionBase->value.type = ZR_VALUE_TYPE_CLOSURE;
+    callerFunctionBase->value.isNative = ZR_TRUE;
+    callerFrameBase->value.type = ZR_VALUE_TYPE_CLOSURE;
+    callerFrameBase->value.isNative = ZR_TRUE;
+    rootFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(rootFunction);
+    rootFunction->stackSize = rootStackSize;
+    ZrCore_Stack_SetRawObjectValue(state, callerFrameBase + 1u,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(rootFunction));
+    ZrCore_Value_InitAsInt(state,
+                          ZrCore_Stack_GetValue(callerFrameBase + reservedMarkerSlot),
+                          marker);
+
+    callerCallInfo = &state->baseCallInfo;
+    memset(callerCallInfo, 0, sizeof(*callerCallInfo));
+    callerCallInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
+    callerCallInfo->functionBase.valuePointer = callerFunctionBase;
+    callerCallInfo->functionTop.valuePointer = callerFrameBase + nativeReservedSlotCount;
+    state->callInfoList = callerCallInfo;
+    /* Spread expansion publishes its argument tail below the native reserve. */
+    state->stackTop.valuePointer = callerFrameBase + loweredTopSlot;
+    ZrCore_Function_StackAnchorInit(state, callerCallInfo->functionTop.valuePointer,
+                                  &callerTopAnchor);
+    frame.recordHandle = &record;
+    frame.function = callerFunction;
+    frame.callInfo = callerCallInfo;
+    frame.slotBase = callerFrameBase;
+    frame.functionIndex = 0u;
+    frame.generatedFrameSlotCount = frameSlotCounts[0];
+    frame.functionTable = functionTable;
+    frame.functionCount = 2u;
+    frame.codeRegistration = &codeRegistration;
+    frame.functionThunks = functionPointers;
+    frame.functionThunkCount = 2u;
+
+    prepared = ZrLibrary_AotRuntime_PrepareStaticDirectCall(
+            state, &frame, 2u, 0u, 0u, 1u, &directCall);
+    if (prepared && directCall.prepared && directCall.calleeCallInfo != ZR_NULL) {
+        SZrTypeValue *rootValue;
+        SZrTypeValue *markerValue;
+
+        calleeOutsideCaller = (TZrBool)(directCall.calleeCallInfo->functionBase.valuePointer >=
+                ZrCore_Function_StackAnchorRestore(state, &callerTopAnchor));
+        callerFrameBase = callerCallInfo->functionBase.valuePointer + 1u;
+        rootValue = ZrCore_Stack_GetValue(callerFrameBase + 1u);
+        markerValue = ZrCore_Stack_GetValue(callerFrameBase + reservedMarkerSlot);
+        rootPreservedOnPrepare = (TZrBool)(rootValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                rootValue->isGarbageCollectable && rootValue->value.object != ZR_NULL &&
+                ((SZrFunction *)rootValue->value.object)->stackSize == rootStackSize);
+        markerPreservedOnPrepare = (TZrBool)(markerValue->type == ZR_VALUE_TYPE_INT64 &&
+                markerValue->value.nativeObject.nativeInt64 == marker);
+        finished = ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &directCall, 0u);
+        if (finished) {
+            callerRestored = (TZrBool)(state->callInfoList == callerCallInfo &&
+                    state->stackTop.valuePointer ==
+                            ZrCore_Function_StackAnchorRestore(state, &callerTopAnchor));
+            callerFrameBase = callerCallInfo->functionBase.valuePointer + 1u;
+            markerValue = ZrCore_Stack_GetValue(callerFrameBase + reservedMarkerSlot);
+            markerPreservedOnFinish = (TZrBool)(markerValue->type == ZR_VALUE_TYPE_INT64 &&
+                    markerValue->value.nativeObject.nativeInt64 == marker);
+            ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+            callerFrameBase = callerCallInfo->functionBase.valuePointer + 1u;
+            rootValue = ZrCore_Stack_GetValue(callerFrameBase + 1u);
+            rootSurvivedCollection = (TZrBool)(rootValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                    rootValue->isGarbageCollectable && rootValue->value.object != ZR_NULL &&
+                    ((SZrFunction *)rootValue->value.object)->stackSize == rootStackSize);
+        }
+    }
+
+    ZrLibrary_AotRuntime_FreeProjectState(state, &project);
+    state->global->userData = ZR_NULL;
+    ZrTests_Runtime_State_Destroy(state);
+    TEST_ASSERT_TRUE(prepared);
+    TEST_ASSERT_TRUE_MESSAGE(calleeOutsideCaller,
+            "prepared VM frame must start at or above the native caller functionTop");
+    TEST_ASSERT_TRUE(markerPreservedOnPrepare);
+    TEST_ASSERT_TRUE(rootPreservedOnPrepare);
+    TEST_ASSERT_TRUE(finished);
+    TEST_ASSERT_TRUE(callerRestored);
+    TEST_ASSERT_TRUE(markerPreservedOnFinish);
+    TEST_ASSERT_TRUE(rootSurvivedCollection);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_llvm_default_preserves_generated_function_symbols);
     RUN_TEST(test_aot_llvm_strip_generated_symbols_renames_private_function_symbols);
     RUN_TEST(test_aot_llvm_writer_fails_and_removes_output_that_cannot_be_flushed);
     RUN_TEST(test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage);
+    RUN_TEST(test_aot_prepared_vm_call_preserves_native_caller_reserved_frame);
     return UNITY_END();
 }
