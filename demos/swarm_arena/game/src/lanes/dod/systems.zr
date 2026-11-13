@@ -12,7 +12,7 @@ let director = import("director");
 pub fn steer(w: world.World, p: player.Bot, g: grid.Grid): void {
     var px = w.px; var py = w.py; var vx = w.vx; var vy = w.vy;
     var ax = w.ax; var ay = w.ay;
-    var starts = g.starts; var slots = g.slots; var speeds = w.speed; var ids = w.id;
+    var starts = g.starts; var counts = g.counts; var slots = g.slots; var speeds = w.speed; var ids = w.id;
     var i = 0;
     while (i < w.count) {
         var dx = p.x - px[i]; var dy = p.y - py[i];
@@ -25,7 +25,7 @@ pub fn steer(w: world.World, p: player.Bot, g: grid.Grid): void {
         while (row <= last / 64) {
             var col = first % 64;
             while (col <= last % 64) {
-                var cell = row * 64 + col; var j = starts[cell]; var end = starts[cell + 1];
+                var cell = row * 64 + col; var j = starts[cell]; var end = j + counts[cell];
                 while (j < end) {
                     var other = slots[j];
                     if (other != i) {
@@ -93,7 +93,7 @@ pub fn collide(w: world.World, b: bullet_store.Bullets, g: grid.Grid,
                q: events.EventQueue, p: player.Bot, frame: int): void {
     var ex = w.px; var ey = w.py; var ids = w.id;
     var motion = b.motion;
-    var bx = motion.px; var by = motion.py; var starts = g.starts; var slots = g.slots;
+    var bx = motion.px; var by = motion.py; var starts = g.starts; var counts = g.counts; var slots = g.slots;
     var radii = w.radius;
     var i = 0;
     while (i < motion.count) {
@@ -103,7 +103,7 @@ pub fn collide(w: world.World, b: bullet_store.Bullets, g: grid.Grid,
         while (row <= last / 64 && b.pierce[i] > 0) {
             var col = first % 64;
             while (col <= last % 64 && b.pierce[i] > 0) {
-                var cell = row * 64 + col; var j = starts[cell]; var end = starts[cell + 1];
+                var cell = row * 64 + col; var j = starts[cell]; var end = j + counts[cell];
                 while (j < end && b.pierce[i] > 0) {
                     var slot = slots[j]; var dx = ex[slot] - bx[i]; var dy = ey[slot] - by[i];
                     var radius = radii[slot] + 2.0;

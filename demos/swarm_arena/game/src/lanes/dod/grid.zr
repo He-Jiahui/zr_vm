@@ -18,42 +18,60 @@ pub class Grid {
     pub var starts: zr.container.Array<int>;
     pub var cursor: zr.container.Array<int>;
     pub var slots: zr.container.Array<int>;
+    pri var occupied: zr.container.Array<int>;
+    pri var cellBySlot: zr.container.Array<int>;
+    pri var occupiedCount: int = 0;
     pub @constructor(capacity: int) {
         this.counts = new container.Array<int>(); this.starts = new container.Array<int>();
         this.cursor = new container.Array<int>(); this.slots = new container.Array<int>();
+        this.occupied = new container.Array<int>(); this.cellBySlot = new container.Array<int>();
         var i = 0;
         while (i < 4096) {
             this.counts.add(0); this.starts.add(0); this.cursor.add(0); i += 1;
         }
-        this.starts.add(0);
         i = 0;
-        while (i < capacity) { this.slots.add(0); i += 1; }
+        while (i < capacity) {
+            this.slots.add(0); this.cellBySlot.add(0);
+            if (i < 4096) { this.occupied.add(0); }
+            i += 1;
+        }
     }
     pub fn build(enemies: world.World): void {
         var counts = this.counts; var starts = this.starts;
         var cursor = this.cursor; var slots = this.slots;
         var px = enemies.px; var py = enemies.py;
+        var occupied = this.occupied; var cellBySlot = this.cellBySlot;
+        var used = this.occupiedCount;
         var i = 0;
-        while (i < 4096) { counts[i] = 0; i += 1; }
+        // Invalidate exactly the previous occupied cells, including cells that
+        // become empty after movement or the final enemy's removal.
+        while (i < used) {
+            var c = occupied[i]; counts[c] = 0; starts[c] = 0; i += 1;
+        }
+        used = 0;
         i = 0;
         while (i < enemies.count) {
             var c = this.cell(px[i], py[i]);
+            cellBySlot[i] = c;
+            if (counts[c] == 0) { occupied[used] = c; used += 1; }
             counts[c] = counts[c] + 1;
             i += 1;
         }
         var sum = 0;
         i = 0;
-        while (i < 4096) {
-            starts[i] = sum; cursor[i] = sum;
-            sum += counts[i]; i += 1;
+        // Cell blocks need not follow cell-ID order. Consumers use each cell's
+        // start + count; ascending dense-slot scatter preserves candidate order.
+        while (i < used) {
+            var c = occupied[i]; starts[c] = sum; cursor[c] = sum;
+            sum += counts[c]; i += 1;
         }
-        starts[4096] = sum;
         i = 0;
         while (i < enemies.count) {
-            var c = this.cell(px[i], py[i]);
+            var c = cellBySlot[i];
             slots[cursor[c]] = i;
             cursor[c] = cursor[c] + 1;
             i += 1;
         }
+        this.occupiedCount = used;
     }
 }

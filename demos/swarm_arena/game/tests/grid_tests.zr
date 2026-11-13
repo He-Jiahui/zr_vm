@@ -12,19 +12,20 @@ fn boundaryCells(): void {
 }
 
 #zr.testing.test#
-fn stableCountingSortAndEmptyRebuild(): void {
+fn stableCellRangesAndEmptyRebuild(): void {
     var e = new world.World(4);
     e.add(65.0, 0.0, 10); e.add(1.0, 0.0, 11);
     e.add(66.0, 0.0, 12); e.add(4095.0, 4095.0, 13);
     var g = new grid.Grid(4);
     g.build(e);
     testing.assert(g.counts[0] == 1 && g.counts[1] == 2 && g.counts[4095] == 1);
-    testing.assert(g.starts[0] == 0 && g.starts[1] == 1 && g.starts[4096] == 4);
-    testing.assert(g.slots[0] == 1 && g.slots[1] == 0 && g.slots[2] == 2 && g.slots[3] == 3);
+    testing.assert(g.slots[g.starts[0]] == 1);
+    testing.assert(g.slots[g.starts[1]] == 0 && g.slots[g.starts[1] + 1] == 2);
+    testing.assert(g.slots[g.starts[4095]] == 3);
     e.count = 0;
     g.build(e);
     testing.assert(g.counts[0] == 0 && g.counts[1] == 0 && g.counts[4095] == 0);
-    testing.assert(g.starts[4096] == 0);
+    testing.assert(g.starts[0] == 0 && g.starts[1] == 0 && g.starts[4095] == 0);
 }
 
 #zr.testing.test#
@@ -43,5 +44,5 @@ fn denseSwapRemoveKeepsAllColumns(): void {
     testing.assert(e.find(10) == -1 && e.find(12) == 0 && e.find(11) == 1);
     var g = new grid.Grid(3);
     g.build(e);
-    testing.assert(g.starts[4096] == 2 && g.slots[0] == 0 && g.slots[1] == 1);
+    testing.assert(g.counts[0] == 2 && g.slots[g.starts[0]] == 0 && g.slots[g.starts[0] + 1] == 1);
 }

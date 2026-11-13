@@ -27,6 +27,8 @@ doc_type: category-index
 
 ## 当前文档
 
+- [swarm-grid-performance.md](swarm-grid-performance.md)
+  - Swarm DOD 空间网格的稳定候选顺序、稀疏重建与直接使用当前源码的测量方法。
 - `wsl-profile-benchmark-validation-report.md`
   - `2026-04-09` 的最新 WSL Release `profile` 报告
   - 覆盖 clang Release 主链路和 gcc Release 交叉复核

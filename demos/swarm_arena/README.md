@@ -123,13 +123,14 @@ the same CSV columns. Its GC options are inert because it has no managed heap;
 managed counters stay zero, and native allocations are explicitly unmeasured.
 CLI drive continues to support DOD only.
 
-The demo CTests retain the 77 GD-C5 checks and add `demo_host_smoke_c` and
-`demo_lane_equivalence`, for 79 total. The four
-`demo_cli_host_<scenario>_dod` gates retain their completion/parity checks. Release
+The demo CTests retain the 77 GD-C5 checks and add `demo_host_smoke_c`,
+`demo_lane_equivalence` and the focused `demo_grid` / `demo_grid_game_units` gates,
+for 81 total. The four `demo_cli_host_<scenario>_dod` gates retain their
+completion/parity checks. Release
 runs each new scenario for 1800 frames with CLI and host. Stress builds use
 four-frame scenario checks alongside full 120-frame smoke and twenty ZR units.
 The new Release pair runs may execute together; stress pairs and CTests run
-sequentially. Every gate checks committed hashes and final state, plus host
+sequentially. Scenario gates check committed hashes and final state, plus host
 schema/CSV consistency. Smoke still repeats three times per interpreter/binary
 mode; the binary runner removes every copied script before fresh execution.
 The invalid-input gate covers fourteen cases per mode. Host checks cover
@@ -143,5 +144,9 @@ still bridges the stock CLI's source discovery to `game/tests`.
 Demos remain off by default with CTest label `demo`. Core inventory stays 515;
 use `-LE demo -E '^performance_report$'` to inspect it. Native plugins share
 `libzrgame_runtime.so` and load from `ZR_VM_NATIVE_PATH`. OOP/Hybrid lanes, `sweep`,
-software/GL rendering, images, interactive input, performance harnesses and all
-GD-H2+ / M milestones remain deferred. The null backend writes no image.
+software/GL rendering, images, interactive input and full GD-H2+ / M milestone
+acceptance remain deferred. The null backend writes no image.
+
+The [DOD grid performance note](../../docs/benchmarks/swarm-grid-performance.md)
+describes cell-range invariants, the focused grid test and a repeatable host
+comparison tool that reads the actual checkout without staging source copies.

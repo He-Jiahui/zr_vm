@@ -98,6 +98,25 @@ if (BUILD_TESTS)
     target_link_libraries(zrgame_native_tests PRIVATE zrgame_runtime)
     add_test(NAME demo_native_runtime COMMAND zrgame_native_tests)
     set_tests_properties(demo_native_runtime PROPERTIES LABELS "demo;native" TIMEOUT 10)
+    # Compile the actual test file in the actual game's project context. No
+    # source staging is needed for the grid-only unit boundary.
+    add_executable(zr_swarm_grid_tests "${PROJECT_SOURCE_DIR}/tests/benchmarks/swarm_grid_runner.c")
+    foreach(component zr_vm_core zr_vm_common zr_vm_library zr_vm_parser
+            zr_vm_lib_container zr_vm_lib_math zr_vm_lib_system zr_vm_lib_testing)
+        target_include_directories(zr_swarm_grid_tests PRIVATE "${PROJECT_SOURCE_DIR}/${component}/include")
+    endforeach()
+    target_link_libraries(zr_swarm_grid_tests PRIVATE zr_vm_parser_shared zr_vm_lib_container_shared
+        zr_vm_lib_math_shared zr_vm_lib_system_shared zr_vm_lib_testing_shared
+        zr_vm_library_shared zr_vm_core_shared)
+    add_test(NAME demo_grid COMMAND zr_swarm_grid_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/swarm_arena.zrp"
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/projects/swarm_grid/src/grid_tests.zr"
+        stableCandidatesAcrossCellsAndRebuilds everyCellAndSingleDenseCell zeroCapacityAndClampedBoundaries)
+    add_test(NAME demo_grid_game_units COMMAND zr_swarm_grid_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/swarm_arena.zrp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/game/tests/grid_tests.zr"
+        boundaryCells stableCellRangesAndEmptyRebuild denseSwapRemoveKeepsAllColumns)
+    set_tests_properties(demo_grid demo_grid_game_units PROPERTIES LABELS "demo;game" TIMEOUT 120)
     foreach(mode interp binary)
         add_test(NAME demo_native_smoke_${mode}
             COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_native_smoke.py"
