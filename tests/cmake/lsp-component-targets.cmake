@@ -1,3 +1,4 @@
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-declaration-signatures-tests.cmake)
     zr_vm_add_support_target(
             zr_vm_language_server_lsp_capability_registry_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_capability_registry.c

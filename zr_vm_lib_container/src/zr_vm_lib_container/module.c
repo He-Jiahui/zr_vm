@@ -7392,8 +7392,12 @@ static TZrBool zr_container_linked_list_get_iterator(ZrLibCallContext *context, 
 static const ZrLibParameterDescriptor kArrayValueParameter[] = {{"value", "T", ZR_NULL}};
 /* 插入与 SET_ITEM 的 index/value 顺序契约。 */
 static const ZrLibParameterDescriptor kArrayInsertParameters[] = {{"index", "int", ZR_NULL}, {"value", "T", ZR_NULL}};
-/* 索引参数；当前构造器也借用它，capacity 命名差异见元方法 TODO。 */
+/* 索引参数，不与构造器的容量参数混用。 */
 static const ZrLibParameterDescriptor kArrayIndexParameter[] = {{"index", "int", ZR_NULL}};
+/* Array 构造器的可选初始容量。 */
+static const ZrLibParameterDescriptor kArrayCapacityParameter[] = {
+        {"capacity", "int", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}
+};
 /* Map 读取/查找/删除的 K 参数契约。 */
 static const ZrLibParameterDescriptor kMapKeyParameter[] = {{"key", "K", ZR_NULL}};
 /* Map 写入键 K 与值 V 的参数顺序契约。 */
@@ -7481,11 +7485,9 @@ static const ZrLibMethodDescriptor kArrayMethods[] = {
 };
 /* Array 构造和下标回调表；GET_ITEM 标注只读接收者，不限制隐藏缓存维护。 */
 static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
-        /* TODO: 此构造参数实际作为 capacity 读取，却复用名为 index 的元数据；
-         * 需检查命名实参、签名帮助与 LSP 是否向用户暴露错误参数名。
-         */
-        /* 绑定 Array<T> 构造器，建立空 backing 与指定公开容量。 0..1参，返回已初始化Array<T>；可选参数实际capacity>=0，但元数据复用index名称；本项无GET_ITEM只读flag。 */
-        {ZR_META_CONSTRUCTOR, 0, 1, zr_container_array_constructor, "Array<T>", ZR_NULL, kArrayIndexParameter, 1},
+        /* 绑定 Array<T> 构造器，建立空 backing 与指定公开容量。0..1参，capacity>=0；本项无GET_ITEM只读flag。 */
+        {ZR_META_CONSTRUCTOR, 0, 1, zr_container_array_constructor, "Array<T>", ZR_NULL,
+         kArrayCapacityParameter, ZR_ARRAY_COUNT(kArrayCapacityParameter)},
         /* 绑定 Array GET_ITEM，从有效下标复制元素，越界返回 null。 恰1参 index:int，READONLY_RECEIVER；结果目标由绑定层初始化，复制元素保留Value_Copy ownership语义。 */
         {ZR_META_GET_ITEM, 1, 1, zr_container_array_get_item, "T", ZR_NULL,
          kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,

@@ -337,9 +337,29 @@ static TZrBool zr_network_tcp_stream_remote_port(ZrLibCallContext *context, SZrT
 }
 
 /* 函数表同时规定脚本导出名、参数区间和 native 回调入口。 */
+static const ZrLibParameterDescriptor g_tcp_endpoint_parameters[] = {
+        {"host", "string", "TCP endpoint host.", 0},
+        {"port", "int", "TCP endpoint port.", 0},
+};
+static const ZrLibParameterDescriptor g_tcp_connect_parameters[] = {
+        {"host", "string", "TCP endpoint host.", 0},
+        {"port", "int", "TCP endpoint port.", 0},
+        {"timeoutMs", "int", "Optional connection timeout in milliseconds.", 0},
+};
+static const ZrLibParameterDescriptor g_tcp_timeout_parameters[] = {
+        {"timeoutMs", "int", "Wait timeout in milliseconds.", 0},
+};
+static const ZrLibParameterDescriptor g_tcp_read_parameters[] = {
+        {"maxBytes", "int", "Maximum number of bytes to read.", 0},
+        {"timeoutMs", "int", "Read timeout in milliseconds.", 0},
+};
+static const ZrLibParameterDescriptor g_tcp_write_parameters[] = {
+        {"text", "string", "Text to write to the stream.", 0},
+};
+
 static const ZrLibFunctionDescriptor g_tcp_functions[] = {
-        {"listen", 2, 2, zr_network_tcp_listen, "TcpListener", "Bind and listen on a TCP endpoint.", ZR_NULL, 0},
-        {"connect", 2, 3, zr_network_tcp_connect, "TcpStream", "Connect to a TCP endpoint.", ZR_NULL, 0},
+        {"listen", 2, 2, zr_network_tcp_listen, "TcpListener", "Bind and listen on a TCP endpoint.", g_tcp_endpoint_parameters, ZR_ARRAY_COUNT(g_tcp_endpoint_parameters)},
+        {"connect", 2, 3, zr_network_tcp_connect, "TcpStream", "Connect to a TCP endpoint.", g_tcp_connect_parameters, ZR_ARRAY_COUNT(g_tcp_connect_parameters)},
 };
 
 /* BUG: accept 回调和 API 文档支持省略 timeoutMs，但 minArgumentCount=1 令
@@ -347,7 +367,7 @@ static const ZrLibFunctionDescriptor g_tcp_functions[] = {
  * 证据：zr_network_read_timeout_arg、native_binding_dispatch.c 的 arity check。 */
 static const ZrLibMethodDescriptor g_tcp_listener_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("accept", 1, 1, zr_network_tcp_listener_accept, "TcpStream",
-                                      "Accept a client connection or return null on timeout.", ZR_FALSE, ZR_NULL, 0),
+                                      "Accept a client connection or return null on timeout.", ZR_FALSE, g_tcp_timeout_parameters, ZR_ARRAY_COUNT(g_tcp_timeout_parameters)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("close", 0, 0, zr_network_tcp_listener_close, "null",
                                       "Close the TCP listener.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("isClosed", 0, 0, zr_network_tcp_listener_is_closed, "bool",
@@ -362,9 +382,9 @@ static const ZrLibMethodDescriptor g_tcp_listener_methods[] = {
  * 默认无限等待分支不可达。证据：zr_network_read_timeout_arg 与 dispatch arity check。 */
 static const ZrLibMethodDescriptor g_tcp_stream_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("read", 2, 2, zr_network_tcp_stream_read, "string",
-                                      "Read bytes from the stream or return null on timeout/EOF.", ZR_FALSE, ZR_NULL, 0),
+                                      "Read bytes from the stream or return null on timeout/EOF.", ZR_FALSE, g_tcp_read_parameters, ZR_ARRAY_COUNT(g_tcp_read_parameters)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("write", 1, 1, zr_network_tcp_stream_write, "int",
-                                      "Write a UTF-8 string to the stream.", ZR_FALSE, ZR_NULL, 0),
+                                      "Write a UTF-8 string to the stream.", ZR_FALSE, g_tcp_write_parameters, ZR_ARRAY_COUNT(g_tcp_write_parameters)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("close", 0, 0, zr_network_tcp_stream_close, "null",
                                       "Close the TCP stream.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("isClosed", 0, 0, zr_network_tcp_stream_is_closed, "bool",

@@ -14,6 +14,9 @@ const ZrLibTypeDescriptor *ZrMath_QuaternionRegistry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("z", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("w", "float", ZR_NULL),
     };
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {{"x", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"y", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"z", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"w", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kOtherParameters[] = {{"other", "Quaternion", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kSlerpParameters[] = {{"other", "Quaternion", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"factor", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("length", 0, 0, ZrMath_Quaternion_Length, "float", ZR_NULL, ZR_FALSE,
                                           ZR_NULL, 0),
@@ -25,20 +28,19 @@ const ZrLibTypeDescriptor *ZrMath_QuaternionRegistry_GetType(void) {
                                           ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("inverse", 0, 0, ZrMath_Quaternion_Inverse, "Quaternion", ZR_NULL,
                                           ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Quaternion_Dot, "float", ZR_NULL, ZR_FALSE, ZR_NULL,
-                                          0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Quaternion_Dot, "float", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mul", 1, 1, ZrMath_Quaternion_Mul, "Quaternion", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
+                                          kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("slerp", 2, 2, ZrMath_Quaternion_Slerp, "Quaternion", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
+                                          kSlerpParameters, ZR_ARRAY_COUNT(kSlerpParameters)),
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR,4,4,ZrMath_Quaternion_Construct,"Quaternion",ZR_NULL,ZR_NULL,0},
-            {ZR_META_ADD,1,1,ZrMath_Quaternion_MetaAdd,"Quaternion",ZR_NULL,ZR_NULL,0},
-            {ZR_META_SUB,1,1,ZrMath_Quaternion_MetaSub,"Quaternion",ZR_NULL,ZR_NULL,0},
-            {ZR_META_MUL,1,1,ZrMath_Quaternion_MetaMul,"Quaternion",ZR_NULL,ZR_NULL,0},
+            {ZR_META_CONSTRUCTOR,4,4,ZrMath_Quaternion_Construct,"Quaternion",ZR_NULL,kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_ADD,1,1,ZrMath_Quaternion_MetaAdd,"Quaternion",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_SUB,1,1,ZrMath_Quaternion_MetaSub,"Quaternion",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_MUL,1,1,ZrMath_Quaternion_MetaMul,"Quaternion",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_NEG,0,0,ZrMath_Quaternion_MetaNeg,"Quaternion",ZR_NULL,ZR_NULL,0},
-            {ZR_META_COMPARE,1,1,ZrMath_Quaternion_MetaCompare,"int",ZR_NULL,ZR_NULL,0},
+            {ZR_META_COMPARE,1,1,ZrMath_Quaternion_MetaCompare,"int",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_TO_STRING,0,0,ZrMath_Quaternion_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
     static const ZrLibTypeDescriptor kType = ZR_LIB_TYPE_DESCRIPTOR_INIT(

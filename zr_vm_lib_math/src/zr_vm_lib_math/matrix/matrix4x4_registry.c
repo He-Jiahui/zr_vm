@@ -51,17 +51,52 @@ const ZrLibTypeDescriptor *ZrMath_Matrix4x4Registry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m33", "float", ZR_NULL),
     };
     /* 首六项是 static factories，后五项是 instance methods；每行宏记录脚本名、arity、callback、返回类型和 static 标志。 */
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {
+            {"m00", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m01", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m02", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m03", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m10", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m11", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m12", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m13", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m20", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m21", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m22", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m23", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m30", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m31", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m32", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m33", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kVectorParameters[] = {
+            {"vector", "Vector4", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kMulParameters[] = {
+            {"other", "object", "Vector4 or Matrix4x4 operand accepted by @mul.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kMatrixParameters[] = {
+            {"matrix", "Matrix4x4", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kCoordinatesParameters[] = {
+            {"x", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"y", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"z", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kAngleParameters[] = {
+            {"angle", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("translation", 3, 3, ZrMath_Matrix4x4_Translation, "Matrix4x4", ZR_NULL,
-                                          ZR_TRUE, ZR_NULL, 0),
+                                          ZR_TRUE, kCoordinatesParameters, ZR_ARRAY_COUNT(kCoordinatesParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("scale", 3, 3, ZrMath_Matrix4x4_Scale, "Matrix4x4", ZR_NULL, ZR_TRUE,
-                                          ZR_NULL, 0),
+                                          kCoordinatesParameters, ZR_ARRAY_COUNT(kCoordinatesParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("rotationX", 1, 1, ZrMath_Matrix4x4_RotationX, "Matrix4x4", ZR_NULL,
-                                          ZR_TRUE, ZR_NULL, 0),
+                                          ZR_TRUE, kAngleParameters, ZR_ARRAY_COUNT(kAngleParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("rotationY", 1, 1, ZrMath_Matrix4x4_RotationY, "Matrix4x4", ZR_NULL,
-                                          ZR_TRUE, ZR_NULL, 0),
+                                          ZR_TRUE, kAngleParameters, ZR_ARRAY_COUNT(kAngleParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("rotationZ", 1, 1, ZrMath_Matrix4x4_RotationZ, "Matrix4x4", ZR_NULL,
-                                          ZR_TRUE, ZR_NULL, 0),
+                                          ZR_TRUE, kAngleParameters, ZR_ARRAY_COUNT(kAngleParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("identity", 0, 0, ZrMath_Matrix4x4_Identity, "Matrix4x4", ZR_NULL,
                                           ZR_TRUE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("transpose", 0, 0, ZrMath_Matrix4x4_Transpose, "Matrix4x4", ZR_NULL,
@@ -71,14 +106,14 @@ const ZrLibTypeDescriptor *ZrMath_Matrix4x4Registry_GetType(void) {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("inverse", 0, 0, ZrMath_Matrix4x4_Inverse, "Matrix4x4", ZR_NULL, ZR_FALSE,
                                           ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mulVector", 1, 1, ZrMath_Matrix4x4_MulVector, "Vector4", ZR_NULL,
-                                          ZR_FALSE, ZR_NULL, 0),
+                                          ZR_FALSE, kVectorParameters, ZR_ARRAY_COUNT(kVectorParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mulMatrix", 1, 1, ZrMath_Matrix4x4_MulMatrix, "Matrix4x4", ZR_NULL,
-                                          ZR_FALSE, ZR_NULL, 0),
+                                          ZR_FALSE, kMatrixParameters, ZR_ARRAY_COUNT(kMatrixParameters)),
     };
     /* constructor 0..16、乘法 1 参数、字符串 0 参数；meta dispatcher 按 kind/name 取 callback。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR,0,16,ZrMath_Matrix4x4_Construct,"Matrix4x4",ZR_NULL,ZR_NULL,0},
-            {ZR_META_MUL,1,1,ZrMath_Matrix4x4_MetaMul,"object",ZR_NULL,ZR_NULL,0},
+            {ZR_META_CONSTRUCTOR,0,16,ZrMath_Matrix4x4_Construct,"Matrix4x4",ZR_NULL,kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_MUL,1,1,ZrMath_Matrix4x4_MetaMul,"object",ZR_NULL,kMulParameters, ZR_ARRAY_COUNT(kMulParameters)},
             {ZR_META_TO_STRING,0,0,ZrMath_Matrix4x4_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
     /* 描述符只引用本函数内静态表，聚合器借用其地址直到 provider image 卸载。 */

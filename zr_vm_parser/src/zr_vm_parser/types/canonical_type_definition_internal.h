@@ -13,6 +13,7 @@ typedef struct SZrCanonicalTypeDefinitionRecord {
     EZrCanonicalGcScanKind gcScanKind;
     TZrTypeId projectionTypeId;
     SZrArray constructors; // internal constructor records
+    TZrBool allowsNativeZeroInit;
 } SZrCanonicalTypeDefinitionRecord;
 
 SZrCanonicalTypeDefinitionRecord *ZrParser_CanonicalTypeDefinition_FindRecord(
@@ -23,5 +24,11 @@ const SZrCanonicalTypeDefinitionRecord *ZrParser_CanonicalTypeDefinition_Resolve
         const SZrSemanticContext *context,
         TZrTypeId typeId,
         const SZrCanonicalTypeNode **outInstantiation);
+
+/* Preserve default value initialization for a native struct with a zero-argument
+ * form when its descriptor also advertises a typed constructor. */
+TZrBool ZrParser_CanonicalTypeDefinition_AllowNativeZeroInit(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId);
 
 #endif // ZR_VM_PARSER_CANONICAL_TYPE_DEFINITION_INTERNAL_H

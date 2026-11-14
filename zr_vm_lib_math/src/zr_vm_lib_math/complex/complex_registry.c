@@ -18,6 +18,8 @@ const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) { /* 返回模�
             ZR_LIB_FIELD_DESCRIPTOR_INIT("real", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("imag", "float", ZR_NULL),
     };
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {{"real", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"imag", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kOtherParameters[] = {{"other", "Complex", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
     static const ZrLibMethodDescriptor kMethods[] = { /* arity 只计显式实参，不含 receiver；零参回调仍读取 self 字段。 */
             ZR_LIB_METHOD_DESCRIPTOR_INIT("magnitude", 0, 0, ZrMath_Complex_Magnitude, "float", ZR_NULL, ZR_FALSE,
                                           ZR_NULL, 0),
@@ -29,12 +31,12 @@ const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) { /* 返回模�
                                           ZR_FALSE, ZR_NULL, 0),
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = { /* arity 只计显式操作数，不含 self；标签与字段校验由回调执行。 */
-            {ZR_META_CONSTRUCTOR,2,2,ZrMath_Complex_Construct,"Complex",ZR_NULL,ZR_NULL,0},
-            {ZR_META_ADD,1,1,ZrMath_Complex_MetaAdd,"Complex",ZR_NULL,ZR_NULL,0},
-            {ZR_META_SUB,1,1,ZrMath_Complex_MetaSub,"Complex",ZR_NULL,ZR_NULL,0},
-            {ZR_META_MUL,1,1,ZrMath_Complex_MetaMul,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_CONSTRUCTOR,2,2,ZrMath_Complex_Construct,"Complex",ZR_NULL,kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_ADD,1,1,ZrMath_Complex_MetaAdd,"Complex",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_SUB,1,1,ZrMath_Complex_MetaSub,"Complex",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_MUL,1,1,ZrMath_Complex_MetaMul,"Complex",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_NEG,0,0,ZrMath_Complex_MetaNeg,"Complex",ZR_NULL,ZR_NULL,0},
-            {ZR_META_COMPARE,1,1,ZrMath_Complex_MetaCompare,"int",ZR_NULL,ZR_NULL,0},
+            {ZR_META_COMPARE,1,1,ZrMath_Complex_MetaCompare,"int",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_TO_STRING,0,0,ZrMath_Complex_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
     static const ZrLibTypeDescriptor kType = ZR_LIB_TYPE_DESCRIPTOR_INIT( /* 聚合静态嵌套表，不复制或拥有 VM 值。 */

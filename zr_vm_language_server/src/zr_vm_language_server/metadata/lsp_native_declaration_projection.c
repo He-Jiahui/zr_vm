@@ -18,20 +18,19 @@ typedef struct SZrLspVirtualBuilder {
     TZrInt32 column;
 } SZrLspVirtualBuilder;
 
-/* 缺少精确类型时保留显式占位符，避免投影凭空承诺某个具体类型。 */
+/* 仅未登记或未解析的类型使用占位符；object 是有效的显式类型契约。 */
 static const TZrChar *virtual_documents_missing_exact_type_identifier(void) {
     return "ZrMissingExactType";
 }
 
-static TZrBool virtual_documents_type_text_is_specific(const TZrChar *typeText) {
+static TZrBool virtual_documents_type_text_is_known(const TZrChar *typeText) {
     return typeText != ZR_NULL && typeText[0] != '\0' &&
            strcmp(typeText, virtual_documents_missing_exact_type_identifier()) != 0 &&
-           strcmp(typeText, "object") != 0 &&
            strcmp(typeText, "unknown") != 0;
 }
 
 static const TZrChar *virtual_documents_type_text_or_placeholder(const TZrChar *typeText) {
-    return virtual_documents_type_text_is_specific(typeText)
+    return virtual_documents_type_text_is_known(typeText)
                ? typeText
                : virtual_documents_missing_exact_type_identifier();
 }
@@ -234,6 +233,8 @@ static void virtual_documents_format_generic_parameters(const ZrLibGenericParame
 /* 参数名称与类型优先取 descriptor；缺失类型以相同的显式占位符呈现。 */
 static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *parameters,
                                                 TZrSize count,
+                                                TZrUInt16 minArgumentCount,
+                                                TZrUInt16 maxArgumentCount,
                                                 TZrChar *buffer,
                                                 TZrSize bufferSize) {
     TZrSize used = 0;
@@ -243,13 +244,20 @@ static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *
     }
 
     buffer[0] = '\0';
+    /* A range wider than one slot can be noncontiguous (e.g. matrix constructors accept zero or every component). */
+    if (parameters != ZR_NULL && count == maxArgumentCount && count > 1 && minArgumentCount == 0) {
+        used += (TZrSize)snprintf(buffer, bufferSize, "/* zero-argument form also available */ ");
+    }
     for (TZrSize index = 0; parameters != ZR_NULL && index < count && used + 1 < bufferSize; index++) {
         const ZrLibParameterDescriptor *parameter = &parameters[index];
         const TZrChar *separator = index > 0 ? ", " : "";
         const TZrChar *name = parameter->name != ZR_NULL ? parameter->name : "arg";
         const TZrChar *typeName = virtual_documents_type_text_or_placeholder(parameter->typeName);
+        const TZrChar *optional = count == maxArgumentCount && index == minArgumentCount && count == index + 1
+                                       ? " /* optional */"
+                                       : "";
 
-        used += (TZrSize)snprintf(buffer + used, bufferSize - used, "%s%s: %s", separator, name, typeName);
+        used += (TZrSize)snprintf(buffer + used, bufferSize - used, "%s%s: %s%s", separator, name, typeName, optional);
     }
 }
 
@@ -333,7 +341,7 @@ static void virtual_documents_format_parameters_with_arity(const ZrLibParameterD
                                                            const TZrChar *signatureHint,
                                                            TZrChar *buffer,
                                                            TZrSize bufferSize) {
-    virtual_documents_format_parameters(parameters, parameterCount, buffer, bufferSize);
+    virtual_documents_format_parameters(parameters, parameterCount, minArgumentCount, maxArgumentCount, buffer, bufferSize);
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
     }
@@ -364,40 +372,32 @@ static void virtual_documents_format_parameters_with_arity(const ZrLibParameterD
     }
 }
 
-/* 继承关系仅供虚拟文档展示；声明身份仍由 typeDescriptor 指针确定。 */
-static void virtual_documents_format_type_tail(const ZrLibTypeDescriptor *typeDescriptor,
-                                               TZrChar *buffer,
-                                               TZrSize bufferSize) {
-    TZrSize used = 0;
+/* Only class and interface declarations accept a colon list in the ZR grammar. */
+static void virtual_documents_append_type_tail(SZrLspVirtualBuilder *builder,
+                                               const ZrLibTypeDescriptor *typeDescriptor) {
+    TZrBool hasBase = typeDescriptor->extendsTypeName != ZR_NULL && typeDescriptor->extendsTypeName[0] != '\0';
+    TZrBool hasInterfaces = typeDescriptor->implementsTypeNames != ZR_NULL && typeDescriptor->implementsTypeCount > 0;
+    TZrBool hasInheritanceSyntax = typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS ||
+                                  typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE;
 
-    if (buffer == ZR_NULL || bufferSize == 0) {
+    if (!hasBase && !hasInterfaces) {
         return;
     }
 
-    buffer[0] = '\0';
-    if (typeDescriptor == ZR_NULL) {
-        return;
+    virtual_builder_append_text(builder, hasInheritanceSyntax ? ": " : (hasBase ? " /* native bases: " : " /* interfaces: "));
+    if (hasBase) {
+        virtual_builder_append_text(builder, virtual_documents_type_text_or_placeholder(typeDescriptor->extendsTypeName));
     }
-
-    if (typeDescriptor->extendsTypeName != ZR_NULL && typeDescriptor->extendsTypeName[0] != '\0') {
-        used += (TZrSize)snprintf(buffer + used,
-                                  bufferSize - used,
-                                  " extends %s",
-                                  typeDescriptor->extendsTypeName);
-    }
-
-    if (typeDescriptor->implementsTypeNames != ZR_NULL && typeDescriptor->implementsTypeCount > 0 &&
-        used + 1 < bufferSize) {
-        used += (TZrSize)snprintf(buffer + used, bufferSize - used, " implements ");
-        for (TZrSize index = 0; index < typeDescriptor->implementsTypeCount && used + 1 < bufferSize; index++) {
-            const TZrChar *implementsName = typeDescriptor->implementsTypeNames[index];
-
-            used += (TZrSize)snprintf(buffer + used,
-                                      bufferSize - used,
-                                      "%s%s",
-                                      index > 0 ? ", " : "",
-                                      virtual_documents_type_text_or_placeholder(implementsName));
+    if (hasInterfaces) {
+        for (TZrSize index = 0; index < typeDescriptor->implementsTypeCount; index++) {
+            if (hasBase || index > 0) {
+                virtual_builder_append_text(builder, ", ");
+            }
+            virtual_builder_append_text(builder, virtual_documents_type_text_or_placeholder(typeDescriptor->implementsTypeNames[index]));
         }
+    }
+    if (!hasInheritanceSyntax) {
+        virtual_builder_append_text(builder, " */");
     }
 }
 
@@ -485,7 +485,7 @@ static void virtual_documents_append_functions(SZrLspVirtualBuilder *builder,
                  parameters,
                  virtual_documents_type_text_or_placeholder(functionDescriptor->returnTypeName));
         virtual_builder_append_identifier_line(builder,
-                                               "    pub ",
+                                               "    pub fn ",
                                                ZR_LSP_VIRTUAL_DECLARATION_FUNCTION,
                                                functionDescriptor,
                                                ZR_NULL,
@@ -534,7 +534,7 @@ static void virtual_documents_append_type_methods(SZrLspVirtualBuilder *builder,
                                                         sizeof(parameters));
         snprintf(prefix,
                  sizeof(prefix),
-                 "        pub %s",
+                 "        pub %sfn ",
                  methodDescriptor->isStatic ? "static " : "");
         snprintf(suffix,
                  sizeof(suffix),
@@ -588,9 +588,7 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
 static void virtual_documents_append_type_declaration(SZrLspVirtualBuilder *builder,
                                                       const ZrLibTypeDescriptor *typeDescriptor) {
     TZrChar genericParameters[ZR_LSP_TEXT_BUFFER_LENGTH];
-    TZrChar typeTail[ZR_LSP_DOCUMENTATION_BUFFER_LENGTH];
     TZrChar prefix[ZR_LSP_TEXT_BUFFER_LENGTH];
-    TZrChar suffix[ZR_LSP_DOCUMENTATION_BUFFER_LENGTH];
 
     if (builder == ZR_NULL || typeDescriptor == ZR_NULL || typeDescriptor->name == ZR_NULL) {
         return;
@@ -600,17 +598,17 @@ static void virtual_documents_append_type_declaration(SZrLspVirtualBuilder *buil
                                                 typeDescriptor->genericParameterCount,
                                                 genericParameters,
                                                 sizeof(genericParameters));
-    virtual_documents_format_type_tail(typeDescriptor, typeTail, sizeof(typeTail));
     snprintf(prefix, sizeof(prefix), "    pub %s ", virtual_documents_type_keyword(typeDescriptor->prototypeType));
-    snprintf(suffix, sizeof(suffix), "%s%s {\n", genericParameters, typeTail);
     virtual_builder_append_identifier_line(builder,
                                            prefix,
                                            ZR_LSP_VIRTUAL_DECLARATION_TYPE,
                                            typeDescriptor,
                                            ZR_NULL,
                                            typeDescriptor->name,
-                                           suffix,
+                                           genericParameters,
                                            ZR_NULL);
+    virtual_documents_append_type_tail(builder, typeDescriptor);
+    virtual_builder_append_text(builder, " {\n");
     virtual_documents_append_type_fields(builder, typeDescriptor);
     virtual_documents_append_type_methods(builder, typeDescriptor);
     virtual_documents_append_type_meta_methods(builder, typeDescriptor);

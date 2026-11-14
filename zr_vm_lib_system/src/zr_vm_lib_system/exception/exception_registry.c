@@ -41,6 +41,12 @@
  * `ZrSystem_Exception_Constructor` 是构造器描述符引用的 callback。
  */
 const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
+    static const ZrLibParameterDescriptor kMessageParameters[] = {
+            {"message", "any", "Optional exception message or payload.", 0},
+    };
+    static const ZrLibParameterDescriptor kHandlerParameters[] = {
+            {"handler", "function", "Unhandled exception observer callback.", 0},
+    };
     /**
      * ## Summary
      * 声明异常实例共享的动态字段布局；类型描述符引用这些名称和值类别，构造器/异常规范化负责实际写值。
@@ -87,7 +93,7 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
      * `kTypes` 中 Error 与 6 个派生类引用本表。
      */
     static const ZrLibMetaMethodDescriptor kExceptionConstructors[] = {
-            {ZR_META_CONSTRUCTOR, 0, 1, ZrSystem_Exception_Constructor, "null", "Initialize an exception instance.", ZR_NULL, 0},
+            {ZR_META_CONSTRUCTOR, 0, 1, ZrSystem_Exception_Constructor, "null", "Initialize an exception instance.", kMessageParameters, ZR_ARRAY_COUNT(kMessageParameters)},
     };
     /**
      * ## Summary
@@ -161,8 +167,8 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZrSystem_Exception_RegisterUnhandledException,
              "null",
              "Register a single global unhandled exception observer.",
-             ZR_NULL,
-             0},
+             kHandlerParameters,
+             ZR_ARRAY_COUNT(kHandlerParameters)},
     };
     /**
      * ## Summary

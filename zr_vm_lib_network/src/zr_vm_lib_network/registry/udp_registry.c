@@ -220,8 +220,22 @@ static TZrBool zr_network_udp_receive(ZrLibCallContext *context, SZrTypeValue *r
 }
 
 /* 绑定函数的脚本名和参数数由原生注册表统一分派。 */
+static const ZrLibParameterDescriptor g_udp_endpoint_parameters[] = {
+        {"host", "string", "UDP socket host.", 0},
+        {"port", "int", "UDP socket port.", 0},
+};
+static const ZrLibParameterDescriptor g_udp_send_parameters[] = {
+        {"host", "string", "Destination host.", 0},
+        {"port", "int", "Destination port.", 0},
+        {"payload", "string", "Datagram payload.", 0},
+};
+static const ZrLibParameterDescriptor g_udp_receive_parameters[] = {
+        {"maxBytes", "int", "Maximum datagram size to receive.", 0},
+        {"timeoutMs", "int", "Receive timeout in milliseconds.", 0},
+};
+
 static const ZrLibFunctionDescriptor g_udp_functions[] = {
-        {"bind", 2, 2, zr_network_udp_bind, "UdpSocket", "Bind a UDP socket.", ZR_NULL, 0},
+        {"bind", 2, 2, zr_network_udp_bind, "UdpSocket", "Bind a UDP socket.", g_udp_endpoint_parameters, ZR_ARRAY_COUNT(g_udp_endpoint_parameters)},
 };
 
 /* BUG: receive 回调允许缺省 timeoutMs，但描述符的 2..2 参数区间使
@@ -229,9 +243,9 @@ static const ZrLibFunctionDescriptor g_udp_functions[] = {
  * zr_network_read_timeout_arg 与 native_binding_dispatch.c 的 arity check。 */
 static const ZrLibMethodDescriptor g_udp_socket_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("send", 3, 3, zr_network_udp_send, "int",
-                                      "Send a UDP datagram to host/port.", ZR_FALSE, ZR_NULL, 0),
+                                      "Send a UDP datagram to host/port.", ZR_FALSE, g_udp_send_parameters, ZR_ARRAY_COUNT(g_udp_send_parameters)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("receive", 2, 2, zr_network_udp_receive, "UdpPacket",
-                                      "Receive a UDP datagram or return null on timeout.", ZR_FALSE, ZR_NULL, 0),
+                                      "Receive a UDP datagram or return null on timeout.", ZR_FALSE, g_udp_receive_parameters, ZR_ARRAY_COUNT(g_udp_receive_parameters)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("close", 0, 0, zr_network_udp_close, "null",
                                       "Close the UDP socket.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("isClosed", 0, 0, zr_network_udp_is_closed, "bool",

@@ -6256,7 +6256,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
                 state, context, consoleModuleUri, &consoleDeclarationText) ||
         consoleDeclarationText == ZR_NULL ||
         !lsp_find_utf16_position_for_substring(test_string_ptr(consoleDeclarationText),
-                "pub printLine", 0U, 4, &printLineDeclarationPosition)) {
+                "pub fn printLine", 0U, 7, &printLineDeclarationPosition)) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6738,9 +6738,9 @@ static void test_lsp_native_console_virtual_document_prefers_descriptor_signatur
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
         strstr(renderedText, "native extern(\"zr.system.console\")") == ZR_NULL ||
-        strstr(renderedText, "pub print(value: any): null;") == ZR_NULL ||
-        strstr(renderedText, "pub printLine(value: any): null;") == ZR_NULL ||
-        strstr(renderedText, "pub readLine(): string?;") == ZR_NULL ||
+        strstr(renderedText, "pub fn print(value: any): null;") == ZR_NULL ||
+        strstr(renderedText, "pub fn printLine(value: any): null;") == ZR_NULL ||
+        strstr(renderedText, "pub fn readLine(): string?;") == ZR_NULL ||
         strstr(renderedText, "/* arity 1 */") != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,

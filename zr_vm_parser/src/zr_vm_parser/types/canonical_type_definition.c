@@ -48,6 +48,19 @@ SZrCanonicalTypeDefinitionRecord *ZrParser_CanonicalTypeDefinition_FindRecord(
     return ZR_NULL;
 }
 
+TZrBool ZrParser_CanonicalTypeDefinition_AllowNativeZeroInit(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId) {
+    SZrCanonicalTypeDefinitionRecord *definition =
+            ZrParser_CanonicalTypeDefinition_FindRecord(context, typeId);
+    if (definition == ZR_NULL ||
+        (definition->capabilityFlags & ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE) == 0U) {
+        return ZR_FALSE;
+    }
+    definition->allowsNativeZeroInit = ZR_TRUE;
+    return ZR_TRUE;
+}
+
 static TZrBool canonical_type_ids_are_valid(
         const SZrSemanticContext *context,
         const TZrTypeId *typeIds,
@@ -230,6 +243,7 @@ static TZrBool canonical_type_register_definition(
     definition.capabilityFlags = capabilityFlags;
     definition.gcScanKind = gcScanKind;
     definition.projectionTypeId = projectionTypeId;
+    definition.allowsNativeZeroInit = ZR_FALSE;
     ZrCore_Array_Init(
             context->state,
             &definition.constructors,
@@ -1050,6 +1064,10 @@ EZrValueConstructorResolution ZrParser_CanonicalType_ResolveValueConstructorCont
                 ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
     if (match == ZR_SEMANTIC_ID_INVALID) {
+        if (!inaccessibleMatch && argumentCount == 0U && definition->allowsNativeZeroInit) {
+            *outConstructorSymbolId = ZR_CANONICAL_SYNTHESIZED_DEFAULT_CONSTRUCTOR_ID;
+            return ZR_VALUE_CONSTRUCTOR_RESOLVED;
+        }
         return inaccessibleMatch
                        ? ZR_VALUE_CONSTRUCTOR_INACCESSIBLE
                        : ZR_VALUE_CONSTRUCTOR_NO_MATCH;

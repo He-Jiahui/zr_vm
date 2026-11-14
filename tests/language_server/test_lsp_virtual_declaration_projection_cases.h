@@ -16,9 +16,9 @@ static void test_native_virtual_definition_selects_rendered_declaration(
     };
     const TZrChar *names[] = {"sqrt", "PI", "zr.math", "Vector2"};
     const TZrChar *declarationPrefixes[] = {
-        "pub sqrt", "pub const PI", "native extern(\"zr.math", "struct Vector2"
+        "pub fn sqrt", "pub const PI", "native extern(\"zr.math", "struct Vector2"
     };
-    const TZrInt32 prefixLengths[] = {4, 10, 15, 7};
+    const TZrInt32 prefixLengths[] = {7, 10, 15, 7};
     const TZrChar *content =
             "var math = import(\"zr.math\");\n"
             "var value = math.sqrt(math.PI);\n"
@@ -138,7 +138,7 @@ static void test_native_declaration_projection_preserves_descriptor_identity(SZr
                         state, &descriptor, uri, ZR_LSP_VIRTUAL_DECLARATION_FUNCTION,
                         &functions[index], &ranges[index]) ||
                 ranges[index].start.line != (TZrInt32)index + 2 ||
-                ranges[index].start.column != 9 ||
+                ranges[index].start.column != 12 ||
                 ranges[index].end.offset - ranges[index].start.offset != strlen(functions[index].name) ||
                 strncmp(ZrCore_String_GetNativeString(rendered) + ranges[index].start.offset,
                         functions[index].name, strlen(functions[index].name)) != 0) {
@@ -147,7 +147,7 @@ static void test_native_declaration_projection_preserves_descriptor_identity(SZr
             lspRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, ranges[index]);
             if (lspRange.start.line != (TZrInt32)index + 1 ||
                 lspRange.end.line != (TZrInt32)index + 1 ||
-                lspRange.start.character != 8 || lspRange.end.character != 18) {
+                lspRange.start.character != 11 || lspRange.end.character != 21) {
                 failure = "unopened virtual document coordinates must use UTF16 columns";
                 goto cleanup;
             }

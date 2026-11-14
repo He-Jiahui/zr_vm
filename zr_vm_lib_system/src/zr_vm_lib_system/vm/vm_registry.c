@@ -10,6 +10,11 @@
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
+    static const ZrLibParameterDescriptor kCallModuleExportParameters[] = {
+            {"moduleName", "string", "Name of the module to call.", 0},
+            {"exportName", "string", "Export name within the module.", 0},
+            {"args", "array", "Arguments passed to the export.", 0},
+    };
     /* 脚本结构布局契约；字段来源横跨当前线程和共享 global，具体采样/写入由 vm.c 执行。 */
     static const ZrLibFieldDescriptor kVmStateFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("loadedModuleCount", "int", "Number of currently loaded modules."),
@@ -56,7 +61,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"loadedModules", 0, 0, ZrSystem_Vm_LoadedModules, "SystemLoadedModuleInfo[]", "Return metadata for all loaded modules.", ZR_NULL, 0},
             {"state", 0, 0, ZrSystem_Vm_State, "SystemVmState", "Return a snapshot of VM execution state.", ZR_NULL, 0},
-            {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module.", ZR_NULL, 0},
+            {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module.", kCallModuleExportParameters, ZR_ARRAY_COUNT(kCallModuleExportParameters)},
     };
     /* 供模块元信息与工具消费的签名提示；导出名和类型名须与 runtime descriptor 一致，不能替代 callback 参数检查。 */
     static const ZrLibTypeHintDescriptor kHints[] = {

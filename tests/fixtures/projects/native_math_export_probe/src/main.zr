@@ -5,4 +5,13 @@ let system = import("zr.system");
 var byName = system.vm.callModuleExport("zr.math", "sqrt", [4.0]);
 var direct = math.Matrix4x4.scale(2.0, 3.0, 4.0);
 
+// Registering the component names must preserve both the zero-init and the native constructor forms.
+var zero = init math.Matrix4x4();
+var identity = new math.Matrix4x4();
+var components = init math.Matrix4x4(1.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0,
+                                   0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0);
+if (zero.m00 != 0.0 || identity.m00 != 1.0 || components.m33 != 4.0) {
+    throw "Matrix4x4 constructor forms changed";
+}
+
 return byName + direct.m11 + direct.m22;

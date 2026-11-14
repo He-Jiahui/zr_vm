@@ -3759,7 +3759,7 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     pluginUri = test_native_virtual_document_uri(state, context, mainUri, pluginUri);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, firstUsagePosition, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 8, 2, 14)) {
+        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 11, 2, 17)) {
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -3771,8 +3771,8 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
-    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, pluginUri, (SZrLspPosition){2, 8}, &definitions) ||
-        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 8, 2, 14)) {
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, pluginUri, (SZrLspPosition){2, 11}, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, pluginUri, 2, 11, 2, 17)) {
         describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
@@ -3787,7 +3787,7 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_Lsp_FindReferences(state, context, mainUri, firstUsagePosition, ZR_TRUE, &references) ||
         references.length < 4 ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 2, 8, 2, 14) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 2, 11, 2, 17) ||
         !location_array_contains_uri_and_range(&references,
                                                mainUri,
                                                firstUsagePosition.line,
@@ -3820,11 +3820,11 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     if (!ZrLanguageServer_Lsp_FindReferences(state,
                                              context,
                                              pluginUri,
-                                             (SZrLspPosition){2, 8},
+                                             (SZrLspPosition){2, 11},
                                              ZR_TRUE,
                                              &references) ||
         references.length < 4 ||
-        !location_array_contains_uri_and_range(&references, pluginUri, 2, 8, 2, 14) ||
+        !location_array_contains_uri_and_range(&references, pluginUri, 2, 11, 2, 17) ||
         !location_array_contains_uri_and_range(&references,
                                                mainUri,
                                                firstUsagePosition.line,
@@ -3967,8 +3967,8 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
     fieldDeclStartCharacter = 16;
     fieldDeclEndCharacter = 17;
     methodDeclStartLine = methodDeclEndLine = 9;
-    methodDeclStartCharacter = 12;
-    methodDeclEndCharacter = 17;
+    methodDeclStartCharacter = 15;
+    methodDeclEndCharacter = 20;
     fieldDeclarationPosition.line = fieldDeclStartLine;
     fieldDeclarationPosition.character = fieldDeclStartCharacter;
     methodDeclarationPosition.line = methodDeclStartLine;
@@ -4426,8 +4426,8 @@ static void test_lsp_descriptor_plugin_project_local_definition_overrides_stale_
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_Lsp_FindReferences(state, context, floatMainUri, floatUsagePosition, ZR_TRUE, &references) ||
-        !location_array_contains_uri_and_range(&references, floatPluginUri, 2, 8, 2, 14) ||
-        location_array_contains_uri_and_range(&references, intPluginUri, 2, 8, 2, 14)) {
+        !location_array_contains_uri_and_range(&references, floatPluginUri, 2, 11, 2, 17) ||
+        location_array_contains_uri_and_range(&references, intPluginUri, 2, 11, 2, 17)) {
         free(intMainContent);
         free(floatMainContent);
         ZrCore_Array_Free(state, &references);

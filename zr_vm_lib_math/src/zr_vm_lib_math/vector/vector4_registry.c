@@ -27,6 +27,9 @@ const ZrLibTypeDescriptor *ZrMath_Vector4Registry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("z", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("w", "float", ZR_NULL),
     };
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {{"x", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"y", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"z", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"w", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kOtherParameters[] = {{"other", "Vector4", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kLerpParameters[] = {{"other", "Vector4", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"factor", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
     /* 固定 arity 与 callback 地址存入 descriptor；dispatcher 在每次运行调用前校验实参数量。 */
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("length", 0, 0, ZrMath_Vector4_Length, "float", ZR_NULL, ZR_FALSE, ZR_NULL,
@@ -35,19 +38,18 @@ const ZrLibTypeDescriptor *ZrMath_Vector4Registry_GetType(void) {
                                           ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("normalized", 0, 0, ZrMath_Vector4_Normalized, "Vector4", ZR_NULL,
                                           ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Vector4_Dot, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Vector4_Dot, "float", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("distance", 1, 1, ZrMath_Vector4_Distance, "float", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("lerp", 2, 2, ZrMath_Vector4_Lerp, "Vector4", ZR_NULL, ZR_FALSE, ZR_NULL,
-                                          0),
+                                          kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("lerp", 2, 2, ZrMath_Vector4_Lerp, "Vector4", ZR_NULL, ZR_FALSE, kLerpParameters, ZR_ARRAY_COUNT(kLerpParameters)),
     };
     /* constructor 需四个 VM 参数；meta 运算符的固定参数数同样由调用期 dispatcher 检查。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR,4,4,ZrMath_Vector4_Construct,"Vector4",ZR_NULL,ZR_NULL,0},
-            {ZR_META_ADD,1,1,ZrMath_Vector4_MetaAdd,"Vector4",ZR_NULL,ZR_NULL,0},
-            {ZR_META_SUB,1,1,ZrMath_Vector4_MetaSub,"Vector4",ZR_NULL,ZR_NULL,0},
+            {ZR_META_CONSTRUCTOR,4,4,ZrMath_Vector4_Construct,"Vector4",ZR_NULL,kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_ADD,1,1,ZrMath_Vector4_MetaAdd,"Vector4",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_SUB,1,1,ZrMath_Vector4_MetaSub,"Vector4",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_NEG,0,0,ZrMath_Vector4_MetaNeg,"Vector4",ZR_NULL,ZR_NULL,0},
-            {ZR_META_COMPARE,1,1,ZrMath_Vector4_MetaCompare,"int",ZR_NULL,ZR_NULL,0},
+            {ZR_META_COMPARE,1,1,ZrMath_Vector4_MetaCompare,"int",ZR_NULL,kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_TO_STRING,0,0,ZrMath_Vector4_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
     /* 返回的总表只借用上方静态数组；字符串签名和 callback 地址也随 provider image 有效。 */

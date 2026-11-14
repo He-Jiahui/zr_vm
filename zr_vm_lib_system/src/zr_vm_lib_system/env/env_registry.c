@@ -11,9 +11,12 @@
 
 /* module.c 在注册阶段借用该静态描述符；嵌套表和 callback 指针依赖 provider image 持续驻留，浅拷贝 descriptor 不延长其寿命。 */
 const ZrLibModuleDescriptor *ZrSystem_EnvRegistry_GetModule(void) {
+    static const ZrLibParameterDescriptor kNameParameters[] = {
+            {"name", "string", "Environment variable name.", 0},
+    };
     /* BUG: 缺失变量会由 callback 正常返回 null，且提示签名声明 string?；描述符的非空 string 却被 runtime metadata、parser 与 LSP 当作返回契约发布。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"getVariable", 1, 1, ZrSystem_Env_GetVariable, "string", "Read an environment variable by name.", ZR_NULL, 0},
+            {"getVariable", 1, 1, ZrSystem_Env_GetVariable, "string", "Read an environment variable by name.", kNameParameters, ZR_ARRAY_COUNT(kNameParameters)},
     };
     /* 面向工具的签名保留可空返回值；它与函数描述符独立发布，不能覆盖 runtime metadata 所读的 returnTypeName。 */
     static const ZrLibTypeHintDescriptor kHints[] = {

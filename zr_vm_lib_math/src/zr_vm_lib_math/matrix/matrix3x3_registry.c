@@ -31,6 +31,26 @@ const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("m22", "float", ZR_NULL),
     };
     /* 实例/静态标志、arity 和返回类型由 VM 元数据消费者读取；identity 是静态方法，其余为实例方法。 */
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {
+            {"m00", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m01", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m02", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m10", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m11", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m12", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m20", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m21", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"m22", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kVectorParameters[] = {
+            {"vector", "Vector3", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kMulParameters[] = {
+            {"other", "object", "Vector3 or Matrix3x3 operand accepted by @mul.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
+    static const ZrLibParameterDescriptor kMatrixParameters[] = {
+            {"matrix", "Matrix3x3", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("identity", 0, 0, ZrMath_Matrix3x3_Identity, "Matrix3x3", ZR_NULL,
                                           ZR_TRUE, ZR_NULL, 0),
@@ -41,14 +61,14 @@ const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("inverse", 0, 0, ZrMath_Matrix3x3_Inverse, "Matrix3x3", ZR_NULL,
                                           ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mulVector", 1, 1, ZrMath_Matrix3x3_MulVector, "Vector3", ZR_NULL,
-                                          ZR_FALSE, ZR_NULL, 0),
+                                          ZR_FALSE, kVectorParameters, ZR_ARRAY_COUNT(kVectorParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mulMatrix", 1, 1, ZrMath_Matrix3x3_MulMatrix, "Matrix3x3", ZR_NULL,
-                                          ZR_FALSE, ZR_NULL, 0),
+                                          ZR_FALSE, kMatrixParameters, ZR_ARRAY_COUNT(kMatrixParameters)),
     };
     /* constructor callback 实际只接受 0 或 9；descriptor 的 0..9 区间会把 1..8 也送入 callback。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR, 0, 9, ZrMath_Matrix3x3_Construct, "Matrix3x3", ZR_NULL, ZR_NULL, 0},
-            {ZR_META_MUL, 1, 1, ZrMath_Matrix3x3_MetaMul, "object", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_CONSTRUCTOR, 0, 9, ZrMath_Matrix3x3_Construct, "Matrix3x3", ZR_NULL, kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_MUL, 1, 1, ZrMath_Matrix3x3_MetaMul, "object", ZR_NULL, kMulParameters, ZR_ARRAY_COUNT(kMulParameters)},
             {ZR_META_TO_STRING, 0, 0, ZrMath_Matrix3x3_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
     /* 聚合 descriptor 与其三张表均为静态只读对象，返回值不能释放或改写。 */

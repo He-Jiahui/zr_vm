@@ -10,12 +10,15 @@
 
 /** 返回静态只读 module descriptor；不分配、不转移嵌套数组或 provider image 的所有权。 */
 const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
+    static const ZrLibParameterDescriptor kValueParameters[] = {
+            {"value", "any", "Value to print after conversion to text.", 0},
+    };
     /* 回调表约束脚本可见名称、元数和 callback 地址；提示表给编译器/工具投影相同 API。静态嵌套数据借用本 provider image。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"print", 1, 1, ZrSystem_Console_Print, "null", "Print text to stdout without a trailing newline.", ZR_NULL, 0},
-            {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline.", ZR_NULL, 0},
-            {"printError", 1, 1, ZrSystem_Console_PrintError, "null", "Print text to stderr without a trailing newline.", ZR_NULL, 0},
-            {"printErrorLine", 1, 1, ZrSystem_Console_PrintErrorLine, "null", "Print text to stderr with a trailing newline.", ZR_NULL, 0},
+            {"print", 1, 1, ZrSystem_Console_Print, "null", "Print text to stdout without a trailing newline.", kValueParameters, ZR_ARRAY_COUNT(kValueParameters)},
+            {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline.", kValueParameters, ZR_ARRAY_COUNT(kValueParameters)},
+            {"printError", 1, 1, ZrSystem_Console_PrintError, "null", "Print text to stderr without a trailing newline.", kValueParameters, ZR_ARRAY_COUNT(kValueParameters)},
+            {"printErrorLine", 1, 1, ZrSystem_Console_PrintErrorLine, "null", "Print text to stderr with a trailing newline.", kValueParameters, ZR_ARRAY_COUNT(kValueParameters)},
             {"read", 0, 0, ZrSystem_Console_Read, "string?", "Read one UTF-8 code point from stdin and return null on EOF.", ZR_NULL, 0},
             {"readLine", 0, 0, ZrSystem_Console_ReadLine, "string?", "Read one UTF-8 line from stdin and return null on EOF before any bytes.", ZR_NULL, 0},
     };

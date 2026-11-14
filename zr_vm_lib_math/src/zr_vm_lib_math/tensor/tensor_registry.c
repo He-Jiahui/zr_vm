@@ -13,34 +13,39 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("rank", "int", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("size", "int", ZR_NULL),
     };
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {{"shape", "array", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"data", "array", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kShapeParameters[] = {{"shape", "array", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kValueParameters[] = {{"value", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kIndicesParameters[] = {{"indices", "array", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kSetParameters[] = {{"indices", "array", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"value", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kOtherParameters[] = {{"other", "Tensor", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kFactorParameters[] = {{"factor", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
     static const ZrLibMethodDescriptor kMethods[] = { /* 固定顺序；arity 计显式参数，不含 receiver。 */
             ZR_LIB_METHOD_DESCRIPTOR_INIT("clone", 0, 0, ZrMath_Tensor_Clone, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL,
                                           0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("reshape", 1, 1, ZrMath_Tensor_Reshape, "Tensor", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("fill", 1, 1, ZrMath_Tensor_Fill, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("get", 1, 1, ZrMath_Tensor_Get, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("set", 2, 2, ZrMath_Tensor_Set, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+                                          kShapeParameters, ZR_ARRAY_COUNT(kShapeParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("fill", 1, 1, ZrMath_Tensor_Fill, "Tensor", ZR_NULL, ZR_FALSE, kValueParameters, ZR_ARRAY_COUNT(kValueParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("get", 1, 1, ZrMath_Tensor_Get, "float", ZR_NULL, ZR_FALSE, kIndicesParameters, ZR_ARRAY_COUNT(kIndicesParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("set", 2, 2, ZrMath_Tensor_Set, "Tensor", ZR_NULL, ZR_FALSE, kSetParameters, ZR_ARRAY_COUNT(kSetParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("sum", 0, 0, ZrMath_Tensor_Sum, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mean", 0, 0, ZrMath_Tensor_Mean, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("transpose2D", 0, 0, ZrMath_Tensor_Transpose2D, "Tensor", ZR_NULL,
                                           ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("matmul", 1, 1, ZrMath_Tensor_Matmul, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL,
-                                          0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("add", 1, 1, ZrMath_Tensor_Add, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("sub", 1, 1, ZrMath_Tensor_Sub, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("matmul", 1, 1, ZrMath_Tensor_Matmul, "Tensor", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("add", 1, 1, ZrMath_Tensor_Add, "Tensor", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("sub", 1, 1, ZrMath_Tensor_Sub, "Tensor", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("mulScalar", 1, 1, ZrMath_Tensor_MulScalar, "Tensor", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
+                                          kFactorParameters, ZR_ARRAY_COUNT(kFactorParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("toArray", 0, 0, ZrMath_Tensor_ToArray, "array", ZR_NULL, ZR_FALSE, ZR_NULL,
                                           0),
     };
-    /* 构造器参数类型元数据为空，不能据此断言编译器会依签名文字静态拒绝数组。 */
+    /* 构造器参数精确声明 shape/data 数组，供 native metadata 与语言服务展示。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = { /* constructor 与 toString 由 VM 的元方法入口派发。 */
-            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Tensor_Construct, "Tensor", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Tensor_Construct, "Tensor", ZR_NULL, kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
             {ZR_META_TO_STRING, 0, 0, ZrMath_Tensor_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
-    /* BUG: 导出 signature 写 fillValue: float，但 Construct 对第二个参数调用 ReadArray，pipeline 也传 data 数组；
-     * 这是 metadata 文本与实际 callback 输入不符；kMeta 参数类型为空，不据此声称 dispatcher 会静态拒绝。 */
+    /* 构造器 callback 的第二个输入是 data 数组，与上方参数表和 signature 保持一致。 */
     static const ZrLibTypeDescriptor kType = ZR_LIB_TYPE_DESCRIPTOR_INIT("Tensor",
                                                                          ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
                                                                          kFields,
@@ -58,7 +63,7 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
                                                                          ZR_NULL,
                                                                          ZR_TRUE,
                                                                          ZR_TRUE,
-                                                                         "Tensor(shape: array, fillValue: float)",
+                                                                         "Tensor(shape: array, data: array)",
                                                                          ZR_NULL,
                                                                          0);
     return &kType;

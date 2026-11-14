@@ -13,6 +13,9 @@ const ZrLibTypeDescriptor *ZrMath_Vector2Registry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),
     };
     /* descriptor 固定 arity 在运行时 callback 前由 dispatcher 校验；binary methods 接收对象 rhs。 */
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {{"x", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"y", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kOtherParameters[] = {{"other", "Vector2", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
+    static const ZrLibParameterDescriptor kLerpParameters[] = {{"other", "Vector2", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}, {"factor", "float", ZR_NULL, ZR_LIB_PARAMETER_PASSING_MODE_VALUE}};
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("length", 0, 0, ZrMath_Vector2_Length, "float", ZR_NULL, ZR_FALSE, ZR_NULL,
                                           0),
@@ -20,19 +23,18 @@ const ZrLibTypeDescriptor *ZrMath_Vector2Registry_GetType(void) {
                                           ZR_FALSE, ZR_NULL, 0),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("normalized", 0, 0, ZrMath_Vector2_Normalized, "Vector2", ZR_NULL,
                                           ZR_FALSE, ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Vector2_Dot, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("dot", 1, 1, ZrMath_Vector2_Dot, "float", ZR_NULL, ZR_FALSE, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
             ZR_LIB_METHOD_DESCRIPTOR_INIT("distance", 1, 1, ZrMath_Vector2_Distance, "float", ZR_NULL, ZR_FALSE,
-                                          ZR_NULL, 0),
-            ZR_LIB_METHOD_DESCRIPTOR_INIT("lerp", 2, 2, ZrMath_Vector2_Lerp, "Vector2", ZR_NULL, ZR_FALSE, ZR_NULL,
-                                          0),
+                                          kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("lerp", 2, 2, ZrMath_Vector2_Lerp, "Vector2", ZR_NULL, ZR_FALSE, kLerpParameters, ZR_ARRAY_COUNT(kLerpParameters)),
     };
     /* meta dispatcher 运行时按下方 descriptor 的固定 arity 预检，再派发 callback。 */
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Vector2_Construct, "Vector2", ZR_NULL, ZR_NULL, 0},
-            {ZR_META_ADD, 1, 1, ZrMath_Vector2_MetaAdd, "Vector2", ZR_NULL, ZR_NULL, 0},
-            {ZR_META_SUB, 1, 1, ZrMath_Vector2_MetaSub, "Vector2", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Vector2_Construct, "Vector2", ZR_NULL, kConstructorParameters, ZR_ARRAY_COUNT(kConstructorParameters)},
+            {ZR_META_ADD, 1, 1, ZrMath_Vector2_MetaAdd, "Vector2", ZR_NULL, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
+            {ZR_META_SUB, 1, 1, ZrMath_Vector2_MetaSub, "Vector2", ZR_NULL, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_NEG, 0, 0, ZrMath_Vector2_MetaNeg, "Vector2", ZR_NULL, ZR_NULL, 0},
-            {ZR_META_COMPARE, 1, 1, ZrMath_Vector2_MetaCompare, "int", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_COMPARE, 1, 1, ZrMath_Vector2_MetaCompare, "int", ZR_NULL, kOtherParameters, ZR_ARRAY_COUNT(kOtherParameters)},
             {ZR_META_TO_STRING, 0, 0, ZrMath_Vector2_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
     /* 默认 descriptor 的 protocolMask 为零；该 struct 不是 REF_LIKE。fast lane 只浅复制 self 值槽，

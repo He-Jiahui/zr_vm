@@ -47,15 +47,21 @@
  * `ZrVmLibSystem_Register` 调用此 getter；原生注册表在 `native_binding_support.c` 保存 descriptor 借用指针。
  */
 const ZrLibModuleDescriptor *ZrSystem_ProcessRegistry_GetModule(void) {
+    static const ZrLibParameterDescriptor kMillisecondsParameters[] = {
+            {"milliseconds", "int", "Number of milliseconds to sleep.", 0},
+    };
+    static const ZrLibParameterDescriptor kCodeParameters[] = {
+            {"code", "int", "Process exit code.", 0},
+    };
     /* arguments 是 VM 数组常量的静态声明；CLI 在 project/inline/REPL 入口执行前写入入口标识及用户参数。 */
     static const ZrLibConstantDescriptor kConstants[] = {
             {"arguments", ZR_LIB_CONSTANT_KIND_ARRAY, 0, 0.0, ZR_NULL, ZR_FALSE, "Process argument list.", "string[]"},
     };
-    /* 两个回调各固定一个参数；parameters=NULL 表示此表只给出元数，不提供参数描述符。
-     * 类型提示另存于 kHints；未显式初始化的尾部字段为零，dispatchFlags=0 采用分派器 GC-aware 默认模式。 */
+    /* 两个回调各固定一个参数；结构化参数表与类型提示分别供 runtime metadata 和工具侧使用。
+     * 未显式初始化的尾部字段为零，dispatchFlags=0 采用分派器 GC-aware 默认模式。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"sleepMilliseconds", 1, 1, ZrSystem_Process_SleepMilliseconds, "null", "Sleep for the requested number of milliseconds.", ZR_NULL, 0},
-            {"exit", 1, 1, ZrSystem_Process_Exit, "null", "Terminate the process with the given exit code.", ZR_NULL, 0},
+            {"sleepMilliseconds", 1, 1, ZrSystem_Process_SleepMilliseconds, "null", "Sleep for the requested number of milliseconds.", kMillisecondsParameters, ZR_ARRAY_COUNT(kMillisecondsParameters)},
+            {"exit", 1, 1, ZrSystem_Process_Exit, "null", "Terminate the process with the given exit code.", kCodeParameters, ZR_ARRAY_COUNT(kCodeParameters)},
     };
     /* 可读签名作为独立 hint 元数据导出；它们不替代回调描述符的元数检查/ReadInt 转换契约。
      * TODO: parser 当前只将 symbolKind=property 的 hint 加入导入类型成员；确认这些 function 签名

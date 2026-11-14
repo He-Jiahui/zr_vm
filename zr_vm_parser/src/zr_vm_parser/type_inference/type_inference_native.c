@@ -6,6 +6,7 @@
 #include "semantic/receiver_call.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/canonical_type.h"
+#include "types/canonical_type_definition_internal.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic.h"
 #include "compiler_internal.h"
@@ -1658,6 +1659,26 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
     native_module_info_copy_parameter_types(cs, moduleName, &memberInfo, parametersArray);
     ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
+}
+
+/* Before an optional native constructor had parameter metadata, `init T()` used
+ * the default value path. Keep that path available alongside the typed form. */
+static TZrBool native_module_info_register_default_struct_init(SZrCompilerState *cs,
+                                                              SZrTypePrototypeInfo *prototype) {
+    if (cs->semanticContext == ZR_NULL || prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        !prototype->allowValueConstruction) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0U; index < prototype->members.length; index++) {
+        const SZrTypeMemberInfo *member = (const SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
+        if (member != ZR_NULL && member->isMetaMethod && member->metaType == ZR_META_CONSTRUCTOR &&
+            member->accessModifier == ZR_ACCESS_PUBLIC && member->minArgumentCount == 0U &&
+            member->parameterCount > 0U && member->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
+            TZrTypeId typeId = ZrParser_CanonicalType_FromName(cs->semanticContext, prototype->name);
+            return ZrParser_CanonicalTypeDefinition_AllowNativeZeroInit(cs->semanticContext, typeId);
+        }
+    }
+    return ZR_TRUE;
 }
 
 static void native_module_info_add_generic_parameter(SZrState *state,
@@ -3768,6 +3789,9 @@ translate_module_info:
         }
         if (!native_module_info_register_canonical_constructor_contracts(
                    cs, &typePrototype)) {
+            goto cleanup;
+        }
+        if (!native_module_info_register_default_struct_init(cs, &typePrototype)) {
             goto cleanup;
         }
         {

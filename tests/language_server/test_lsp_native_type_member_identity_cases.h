@@ -66,7 +66,7 @@ static void test_native_type_member_projection_preserves_descriptor_identity(
         member.methodDescriptor = methods ? &methodRows[index] : ZR_NULL;
         failure = "selected descriptor row must determine the declaration range";
         if (!find_position(ZrCore_String_GetNativeString(rendered),
-                    methods ? "pub run" : "pub var value", index, methods ? 4 : 8, &expected)) {
+                    methods ? "pub fn run" : "pub var value", index, methods ? 7 : 8, &expected)) {
             goto cleanup;
         }
         if (reverse) {
