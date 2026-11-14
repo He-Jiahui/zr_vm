@@ -16,7 +16,8 @@ concurrency:
 jobs:
   linux-full:
     name: Linux Debug full build (${{ matrix.compiler }})
-    runs-on: ubuntu-latest
+    # Playwright 1.58.2 has Chromium builds for Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -80,7 +81,7 @@ jobs:
               'union_switch_binding_lifetime', 'aot_llvm_specialized_cast_fusion',
               'rust_binding_api', 'zr_vm_rust_binding_cargo_check', 'zr_vm_rust_binding_cargo_test',
               'ssa_batch_vectorization', 'core_exception_worker_forward',
-              'function_instruction_verify', 'fused_add_operand_packing',
+              'function_instruction_verify', 'source_parameter_binding', 'source_parameter_binding_project', 'fused_add_operand_packing',
               'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary',
 
 
@@ -136,7 +137,7 @@ jobs:
         run: >-
           ctest --test-dir "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
           --output-on-failure --no-tests=error
-          -R '^(language_pipeline|language_server|debug_metadata|debug_hook_core|debug_library|core_runtime|interpreter_quickening|lexer_diagnostics|expression_fragment_parser|macro_token_stream_limits|writer_output_failure|macro_callable_return_inference|async_function_access_modifier|language_server_stdio_diagnostic_publication|language_server_stdio_document_close|language_server_stdio_document_sync_conformance|property_consumer_contracts|macro_parser_primary_budget|aot_llvm_symbol_stripping|aot_backend_adapters|language_server_lsp_semantic_snapshot|language_server_wasm_response|language_server_wasm_exports|project_run_module_failure|language_server_canonical_hover_format|macro_nominal_declaration_publication|union_switch_binding_lifetime|aot_llvm_specialized_cast_fusion|rust_binding_api|zr_vm_rust_binding_cargo_check|zr_vm_rust_binding_cargo_test|ssa_batch_vectorization|core_exception_worker_forward|function_instruction_verify|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary|language_server_stdio_protocol_conformance|language_server_lsp_array_oom_(cache_new|symbol_table_new|reference_tracker_new|symbol_new|add_reference|add_reference_symbol|symbol_reference|snapshot_capture|external_highlight_locations|incremental_parser_new|incremental_parser_insert|incremental_parser_insert_open))$'
+          -R '^(language_pipeline|language_server|debug_metadata|debug_hook_core|debug_library|core_runtime|interpreter_quickening|lexer_diagnostics|expression_fragment_parser|macro_token_stream_limits|writer_output_failure|macro_callable_return_inference|async_function_access_modifier|language_server_stdio_diagnostic_publication|language_server_stdio_document_close|language_server_stdio_document_sync_conformance|property_consumer_contracts|macro_parser_primary_budget|aot_llvm_symbol_stripping|aot_backend_adapters|language_server_lsp_semantic_snapshot|language_server_wasm_response|language_server_wasm_exports|project_run_module_failure|language_server_canonical_hover_format|macro_nominal_declaration_publication|union_switch_binding_lifetime|aot_llvm_specialized_cast_fusion|rust_binding_api|zr_vm_rust_binding_cargo_check|zr_vm_rust_binding_cargo_test|ssa_batch_vectorization|core_exception_worker_forward|function_instruction_verify|source_parameter_binding|source_parameter_binding_project|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary|language_server_stdio_protocol_conformance|language_server_lsp_array_oom_(cache_new|symbol_table_new|reference_tracker_new|symbol_new|add_reference|add_reference_symbol|symbol_reference|snapshot_capture|external_highlight_locations|incremental_parser_new|incremental_parser_insert|incremental_parser_insert_open))$'
       - name: Run unregistered regression executables
         working-directory: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/bin
         run: |
@@ -200,14 +201,14 @@ jobs:
         run: |
           $listed = ctest --test-dir $env:BUILD_DIR -C Debug --show-only=json-v1 | ConvertFrom-Json
           $actual = @($listed.tests | ForEach-Object { $_.name })
-          $required = @('expression_fragment_parser', 'async_function_access_modifier', 'function_instruction_verify', 'aot_llvm_specialized_cast_fusion', 'fused_add_operand_packing', 'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary')
+          $required = @('expression_fragment_parser', 'async_function_access_modifier', 'function_instruction_verify', 'aot_llvm_specialized_cast_fusion', 'source_parameter_binding', 'source_parameter_binding_project', 'fused_add_operand_packing', 'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary')
           $missing = @($required | Where-Object { $_ -notin $actual })
           if ($missing.Count) { throw "Missing required CTest registrations: $($missing -join ', ')" }
       - name: Run Windows parser, CLI, and fused-add regressions
         run: >-
           ctest --test-dir "D:/cargo-targets/zr-ci"
           -C Debug --output-on-failure --no-tests=error
-          -R '^(expression_fragment_parser|async_function_access_modifier|function_instruction_verify|aot_llvm_specialized_cast_fusion|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary)$'
+          -R '^(expression_fragment_parser|async_function_access_modifier|function_instruction_verify|aot_llvm_specialized_cast_fusion|source_parameter_binding|source_parameter_binding_project|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary)$'
       - name: Run Windows resolver regression executable
         working-directory: D:/cargo-targets/zr-ci\bin\Debug
         run: .\zr_vm_project_import_resolver_test.exe

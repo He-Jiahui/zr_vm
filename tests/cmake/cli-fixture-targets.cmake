@@ -76,6 +76,13 @@ if (TARGET zr_vm_cli_executable)
             "-DZR_VM_CLI=$<TARGET_FILE:zr_vm_cli_executable>"
             -P "${CMAKE_SOURCE_DIR}/tests/cli/source_parameter_binding.cmake"
     )
+    add_test(
+            NAME source_parameter_binding_project
+            COMMAND ${CMAKE_COMMAND}
+            "-DZR_VM_CLI=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DZR_VM_TEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/source_parameter_binding_project"
+            -P "${CMAKE_SOURCE_DIR}/tests/cli/source_parameter_binding_project.cmake"
+    )
 endif ()
 
 if (TARGET zr_vm_cli_executable AND
