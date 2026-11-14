@@ -23,7 +23,7 @@ import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
-import { activeWorkspaceFolder, onDidChangeSelectedProject, resolveSelectedProjectUri } from './workspaceProjects';
+import { onDidChangeSelectedProject, rememberedSelectedProjectUri } from './workspaceProjects';
 
 // 桌面宿主与路径解析器共用配置命名空间，避免读取和重启监听落在不同设置树下。
 const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
@@ -139,8 +139,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
     );
 
-    // BUG: 初次启动发布 client 前发生的选项目事件会传入 undefined 而丢失；
-    // selectedProjectSync 不会在发布后自动重放该事件，服务端可能留在旧项目。
+    // 握手期间尚未发布 client 时，发布后的后台同步会重新读取当前项目选择。
     // BUG: 已发布时该 void 异步通知若项目扫描或发送失败，会形成未处理拒绝。
     context.subscriptions.push(
         onDidChangeSelectedProject(() => {
@@ -177,7 +176,7 @@ async function enqueueRestart(context: vscode.ExtensionContext, requestedByUser:
 
 /**
  * 为一个 session 启动桌面 stdio 客户端。资源在取得后立即交给 session，
- * 仅在启动、跟踪和首次项目通知完成且会话仍有效时发布请求客户端。
+ * 初始化与跟踪完成后发布请求客户端；完整项目发现和首次通知在后台继续。
  */
 async function startClient(
     context: vscode.ExtensionContext,
@@ -232,15 +231,14 @@ async function startClient(
     const fileEvents = session.own(vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}'));
     const outputChannel = session.own(vscode.window.createOutputChannel('Zr Language Server'));
 
-    // 初始化选项让服务端在第一批项目请求前获得无交互的项目选择。
-    const selectedProjectUri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
-    session.assertActive();
+    // 握手只使用记忆中的选择，避免全工作区扫描耗尽服务端启动期限。
+    const selectedProjectUri = rememberedSelectedProjectUri(context);
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannel,
         initializationOptions: {
-            zrSelectedProjectUri: selectedProjectUri?.toString() ?? null,
+            zrSelectedProjectUri: selectedProjectUri ?? null,
         },
         synchronize: {
             configurationSection: CONFIG_SECTION,
@@ -261,9 +259,6 @@ async function startClient(
     await session.startClient(nextClient);
     await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
     session.assertActive();
-    // 首次通知在发布前直达本次客户端，避免发送到上次会话；变化事件仍使用全局 client。
-    await sendZrSelectedProjectToLanguageServer(context, nextClient);
-    session.assertActive();
     // 只有完全启动的客户端可以供视图请求；旧 session 的清理不得清空后继实例。
     client = nextClient;
     session.addCleanup(() => {
@@ -273,6 +268,12 @@ async function startClient(
         }
     });
     setLanguageClientRequestClient(nextClient);
+    // 项目扫描可能远慢于协议握手；失败只影响项目同步，不撤销已可用的语言服务。
+    void sendZrSelectedProjectToLanguageServer(context, nextClient, session.signal).catch((error) => {
+        if (!session.retired) {
+            console.warn('[zr-extension] initial project synchronization failed:', error);
+        }
+    });
     refreshStructureViewsAsync();
 
     if (requestedByUser) {

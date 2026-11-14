@@ -61,6 +61,12 @@ export interface WorkspaceProject {
  */
 export const onDidChangeSelectedProject = onDidChangeSelectedProjectEmitter.event;
 
+/** 启动时只读取记忆中的 URI；有效性由后台项目发现重新核对，不在握手前扫描工作区。 */
+export function rememberedSelectedProjectUri(context: vscode.ExtensionContext): string | undefined {
+    const stored = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
+    return typeof stored === 'string' && stored.length > 0 ? stored : undefined;
+}
+
 /**
  * ## Summary
  * 扫描 VS Code 工作区中的 `.zrp`，构造有效项目并给选择器、项目操作和结构视图提供共享候选集。

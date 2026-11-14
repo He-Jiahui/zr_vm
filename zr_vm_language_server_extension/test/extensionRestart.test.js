@@ -30,6 +30,42 @@ function assertAttemptReleased(host) {
     assert.equal(host.requestClient(), undefined);
 }
 
+test('native startup publishes its client while project discovery is still pending', async () => {
+    const discovery = deferred();
+    const synchronized = [];
+    const remembered = 'file:///workspace/selected.zrp';
+    const host = loadExtensionHost('native', {
+        startupTimeoutMs: 20,
+        projectDiscovery: discovery.promise,
+        rememberedSelectedProjectUri: remembered,
+        onProjectSynchronized: client => synchronized.push(client),
+    });
+    try {
+        await within(host.activate(host.extensionContext));
+        assert.equal(host.errors.length, 0, 'Project discovery must not consume the startup deadline');
+        assert.equal(host.requestClient(), host.clients[0]);
+        assert.equal(host.clients[0].options.initializationOptions.zrSelectedProjectUri, remembered);
+        assert.equal(synchronized.length, 0);
+        discovery.resolve();
+        await nextTurn();
+        assert.deepEqual(synchronized, [host.clients[0]]);
+    } finally {
+        discovery.resolve();
+        await host.deactivate();
+    }
+});
+
+test('native project synchronization failure leaves the initialized client running', async () => {
+    const host = loadExtensionHost('native', { projectSyncError: new Error('Project discovery failed') });
+    try {
+        await within(host.activate(host.extensionContext));
+        await nextTurn();
+        assert.equal(host.errors.length, 0);
+        assert.equal(host.requestClient(), host.clients[0]);
+        assert.equal(host.clients[0].state, 2);
+    } finally { await host.deactivate(); }
+});
+
 for (const kind of ['native', 'web']) {
     // SDK 自动恢复不经过 controller.restart，退役后的迟到完成仍须由 start 覆盖收尾。
     test(`${kind} retirement also releases a pending SDK automatic restart`, async () => {

@@ -143,10 +143,21 @@ function loadExtensionHost(host, options = {}) {
         './structure': { registerZrStructureViews: controller },
         './virtualDocuments': { registerVirtualDocumentSupport: () => resource('virtual-documents') },
         './zrpSupport': { createDocumentSelector: () => [], registerZrpJsonSupport: () => resource('zrp-support') },
-        './selectedProjectSync': { sendZrSelectedProjectToLanguageServer: async () => {} }, // 本批隔离项目通知，只验收会话重启。
+        './selectedProjectSync': {
+            sendZrSelectedProjectToLanguageServer: async (_context, client, signal) => {
+                if (options.projectDiscovery) { await options.projectDiscovery; }
+                if (signal?.aborted) { return; }
+                if (options.projectSyncError) { throw options.projectSyncError; }
+                options.onProjectSynchronized?.(client);
+            },
+        },
         './workspaceProjects': {
             activeWorkspaceFolder: () => undefined,
-            resolveSelectedProjectUri: async () => undefined,
+            rememberedSelectedProjectUri: () => options.rememberedSelectedProjectUri,
+            resolveSelectedProjectUri: async () => {
+                if (options.projectDiscovery) { await options.projectDiscovery; }
+                return undefined;
+            },
             onDidChangeSelectedProject: () => resource('project-listener'),
         },
         './languageClientRequests': {

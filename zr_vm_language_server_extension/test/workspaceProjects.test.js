@@ -97,6 +97,16 @@ test('project discovery reads unopened UTF-8 manifests without creating editor d
     assert.equal(host.diskReads(), 1);
 });
 
+test('startup can read its remembered project URI without discovering projects', () => {
+    const host = projectHost();
+    const remembered = 'file:///workspace/demo.zrp';
+    assert.equal(host.api.rememberedSelectedProjectUri({ workspaceState: {
+        get: key => { assert.equal(key, 'zr.selectedProjectUri'); return remembered; },
+    } }), remembered);
+    assert.equal(host.api.rememberedSelectedProjectUri({ workspaceState: { get: () => undefined } }), undefined);
+    assert.equal(host.diskReads(), 0);
+});
+
 /** 断言项目标签取自编辑器未保存文本且磁盘零读取；两份清单的源码根相同，本例不验证源码根变化。 */
 test('project discovery preserves unsaved manifest text instead of reading its disk version', async () => {
     const host = projectHost(manifest('unsaved'));

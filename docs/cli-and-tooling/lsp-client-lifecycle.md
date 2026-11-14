@@ -5,19 +5,23 @@ related_code:
   - zr_vm_language_server_extension/src/extension.ts
   - zr_vm_language_server_extension/src/browser.ts
   - zr_vm_language_server_extension/src/workspaceProjects.ts
+  - zr_vm_language_server_extension/src/selectedProjectSync.ts
 implementation_files:
   - zr_vm_language_server_extension/src/languageServerSession.ts
   - zr_vm_language_server_extension/src/languageClientLifecycle.ts
   - zr_vm_language_server_extension/src/extension.ts
   - zr_vm_language_server_extension/src/browser.ts
   - zr_vm_language_server_extension/src/workspaceProjects.ts
+  - zr_vm_language_server_extension/src/selectedProjectSync.ts
 plan_sources:
   - .codex/plans/20260926-lsp-experience-repair.md
+  - .codex/plans/20261115-vsix-startup-timeout.md
 tests:
   - zr_vm_language_server_extension/test/extensionRestart.test.js
   - zr_vm_language_server_extension/test/helpers/extensionHost.js
   - zr_vm_language_server_extension/test/languageClientLifecycle.test.js
   - zr_vm_language_server_extension/test/workspaceProjects.test.js
+  - zr_vm_language_server_extension/test/selectedProjectSync.test.js
 doc_type: module-detail
 ---
 
@@ -54,6 +58,23 @@ unsaved changes, and reads unopened manifests through the workspace filesystem.
 Discovery does not open documents merely to parse JSON. This avoids triggering
 other language extensions while the server is starting and keeps editor document
 state independent of background project discovery.
+
+Desktop startup reads only the remembered project URI for initialization options.
+It does not wait for workspace discovery before connecting or before publishing
+the initialized request client. Once the native handshake and trace setup finish,
+the client is available and project discovery reconciles the selection in the
+background. This keeps a slow workspace scan, including repeated scans by views,
+outside the 30-second startup deadline. Discovery failures are logged without
+retiring the healthy client. The initial synchronization receives the session's
+abort signal and checks it before discovery and before sending a notification;
+a completed scan cannot notify a retired client. The signal does not cancel the
+underlying workspace search.
+
+Regression coverage keeps discovery unresolved past the shortened startup budget
+and verifies the client is already published, then checks the eventual project
+notification. It also covers discovery failure and retirement while discovery is
+pending. The real VS Code host reproduction and repaired-host checks are recorded
+under `E:/cargo-targets/zr_vm/reports/vsix-reinstall-20261115/`.
 
 Both host clients override the public `start` method to pass every start promise
 through the session observer. This includes SDK automatic recovery after a
