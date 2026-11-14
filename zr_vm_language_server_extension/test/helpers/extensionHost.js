@@ -135,6 +135,15 @@ function loadExtensionHost(host, options = {}) {
         './debug/configProvider': { registerDesktopDebugSupport: () => [] },
         './debug/webSupport': { registerWebDebugSupportUnavailable: () => [] },
         './nativeAssets': { LANGUAGE_SERVER_CONFIG_SECTION: 'zr.languageServer', resolveNativeLanguageServerPath: () => 'server' }, // 固定可用路径以进入 native 启动链。
+        './diagnosticWorkers': { createDiagnosticWorkers: () => {
+            const pool = resource('diagnostic-workers');
+            pool.notifications = [];
+            return {
+                createMiddleware: () => ({ provideDiagnostics: async () => ({ kind: 'full', items: [] }) }),
+                notify: (method, params) => pool.notifications.push({ method, params }),
+                async dispose() { pool.dispose(); if (options.diagnosticStopPending) { await options.diagnosticStopPending; } },
+            };
+        } },
         './projectActions': { registerDesktopProjectActions: () => [] },
         './projectActionsWeb': { registerWebProjectActionsUnavailable: () => [] },
         './organizeImports': { registerOrganizeImportsCommand: () => resource('command') },
@@ -152,6 +161,7 @@ function loadExtensionHost(host, options = {}) {
             },
         },
         './workspaceProjects': {
+            registerWorkspaceProjectDiscoveryInvalidation: () => {},
             activeWorkspaceFolder: () => undefined,
             rememberedSelectedProjectUri: () => options.rememberedSelectedProjectUri,
             resolveSelectedProjectUri: async () => {

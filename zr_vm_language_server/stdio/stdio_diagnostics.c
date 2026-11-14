@@ -95,6 +95,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     if (server == ZR_NULL || uri == ZR_NULL) {
         return;
     }
+    if (server->deferDiagnostics) { return; }
 
     ZrCore_Array_Init(server->state,
                       &diagnostics,

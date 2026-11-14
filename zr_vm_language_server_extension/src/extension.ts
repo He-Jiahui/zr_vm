@@ -12,6 +12,7 @@ import {
     isLanguageClientNotRunningError,
 } from './languageClientLifecycle';
 import { LanguageServerController, LanguageServerSession, StartupCancelled } from './languageServerSession';
+import { createDiagnosticWorkers } from './diagnosticWorkers';
 import { registerDesktopDebugSupport } from './debug/configProvider';
 import { sendLanguageServerRequest, setLanguageClientRequestClient } from './languageClientRequests';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
@@ -23,7 +24,7 @@ import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
-import { onDidChangeSelectedProject, rememberedSelectedProjectUri } from './workspaceProjects';
+import { onDidChangeSelectedProject, rememberedSelectedProjectUri, registerWorkspaceProjectDiscoveryInvalidation } from './workspaceProjects';
 
 // 桌面宿主与路径解析器共用配置命名空间，避免读取和重启监听落在不同设置树下。
 const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
@@ -43,10 +44,22 @@ const serverLifecycle = new LanguageServerController();
 class ZrLanguageClient extends LanguageClient {
     constructor(
         private readonly session: LanguageServerSession,
+        private readonly diagnosticWorkers: ReturnType<typeof createDiagnosticWorkers>,
         serverOptions: ServerOptions,
         clientOptions: LanguageClientOptions,
     ) {
         super('zr-language-server', 'Zr Language Server', serverOptions, clientOptions);
+    }
+
+    /** Workers receive the same project, configuration and disk invalidations as the main server. */
+    override sendNotification(type: any, params?: any): Promise<void> {
+        const method = typeof type === 'string' ? type : type.method;
+        if (['zr/selectedProject', 'workspace/didChangeWatchedFiles',
+            'workspace/didChangeWorkspaceFolders', 'workspace/didChangeConfiguration',
+            'workspace/didCreateFiles', 'workspace/didRenameFiles', 'workspace/didDeleteFiles'].includes(method)) {
+            this.diagnosticWorkers.notify(method, params);
+        }
+        return super.sendNotification(type, params);
     }
 
     /** 初次启动与 SDK 自动恢复均须经过同一个超时和迟到清理边界。 */
@@ -106,6 +119,7 @@ function refreshStructureViewsAsync(): void {
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     if (!vscode.workspace.isTrusted) { return; }
+    registerWorkspaceProjectDiscoveryInvalidation(context);
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerDesktopDebugSupport(context));
     context.subscriptions.push(...registerDesktopProjectActions(context));
@@ -140,10 +154,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     // 握手期间尚未发布 client 时，发布后的后台同步会重新读取当前项目选择。
-    // BUG: 已发布时该 void 异步通知若项目扫描或发送失败，会形成未处理拒绝。
     context.subscriptions.push(
         onDidChangeSelectedProject(() => {
-            void sendZrSelectedProjectToLanguageServer(context, client);
+            void sendZrSelectedProjectToLanguageServer(context, client).catch(error => {
+                console.warn('[zr-extension] project synchronization failed:', error);
+            });
         }),
     );
 
@@ -229,22 +244,29 @@ async function startClient(
 
     // 监听器和输出通道属于本次启动；重启要释放旧订阅后才创建新的一组。
     const fileEvents = session.own(vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}'));
+    const lintConfigurationEvents = session.own(vscode.workspace.createFileSystemWatcher('**/{zrtool,lint.plugin}.json'));
     const outputChannel = session.own(vscode.window.createOutputChannel('Zr Language Server'));
 
     // 握手只使用记忆中的选择，避免全工作区扫描耗尽服务端启动期限。
     const selectedProjectUri = rememberedSelectedProjectUri(context);
+    const diagnosticWorkers = createDiagnosticWorkers(serverPath, outputChannel, () => rememberedSelectedProjectUri(context));
+    session.addCleanup(() => diagnosticWorkers.dispose());
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannel,
         initializationOptions: {
             zrSelectedProjectUri: selectedProjectUri ?? null,
+            zrDeferDiagnostics: true,
         },
         synchronize: {
             configurationSection: CONFIG_SECTION,
-            fileEvents,
+            fileEvents: [fileEvents, lintConfigurationEvents],
         },
-        middleware: richHoverController?.createMiddleware(),
+        middleware: {
+            ...richHoverController?.createMiddleware(),
+            ...diagnosticWorkers.createMiddleware(() => nextClient),
+        },
     };
     // 先放入 SDK 错误策略，再绑定实际客户端；崩溃恢复是否继续由 session 退休状态约束。
     const lifecycle = session.own(createTransportAwareLanguageClientLifecycle<LanguageClient>(undefined, () => session.retired));
@@ -252,6 +274,7 @@ async function startClient(
 
     const nextClient = new ZrLanguageClient(
         session,
+        diagnosticWorkers,
         serverOptions,
         clientOptions,
     );

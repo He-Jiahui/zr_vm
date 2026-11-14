@@ -138,9 +138,11 @@ doc_type: category-index
 - [lsp-workspace-file-operation-contract.md](lsp-workspace-file-operation-contract.md)
   - file operation 注册、版本化重命名编辑和过期磁盘快照拒绝
 - `lsp-pull-push-diagnostics.md`
-  - native/WASM 共享的 structured diagnostic resultId 与 dependency identity
+  - native lint 与 WASM semantic store 的 diagnostic resultId 与 dependency identity
   - workspace indexed-source coverage、invalid params 和 push/pull coexistence
   - browser worker 只消费 WASM bridge，不维护 TypeScript diagnostics hash
+- [lsp-loading-performance.md](lsp-loading-performance.md)
+  - 项目发现、侧栏发布、诊断进程池及 corelib 实测
 - [lsp-wasm-error-contract.md](lsp-wasm-error-contract.md)
   - WASM JSON-RPC error codes and browser `ResponseError` propagation
 - `lsp-uri-native-path-boundary.md`

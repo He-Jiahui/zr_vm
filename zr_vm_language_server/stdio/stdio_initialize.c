@@ -290,5 +290,8 @@ SZrLspHandlerResult handle_initialize_request(SZrStdioServer *server, const cJSO
      * 失败请求留下的项目选择，后续项目发现会读取该路径。 */
     apply_initialization_workspace_folders(server, params);
     apply_initialization_selected_project(server, params);
+    /* Desktop diagnostic workers pull explicitly, leaving document synchronization cheap. */
+    server->deferDiagnostics = cJSON_IsTrue((cJSON *)get_object_item(
+            get_object_item(params, ZR_LSP_FIELD_INITIALIZATION_OPTIONS), "zrDeferDiagnostics"));
     return response;
 }

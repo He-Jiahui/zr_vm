@@ -6,6 +6,9 @@ related_code:
   - zr_vm_language_server_extension/src/browser.ts
   - zr_vm_language_server_extension/src/workspaceProjects.ts
   - zr_vm_language_server_extension/src/selectedProjectSync.ts
+  - zr_vm_language_server_extension/src/structure.ts
+  - zr_vm_language_server_extension/src/diagnosticWorkers.ts
+  - zr_vm_language_server_extension/src/diagnosticWorkerProcess.ts
 implementation_files:
   - zr_vm_language_server_extension/src/languageServerSession.ts
   - zr_vm_language_server_extension/src/languageClientLifecycle.ts
@@ -14,6 +17,7 @@ implementation_files:
   - zr_vm_language_server_extension/src/workspaceProjects.ts
   - zr_vm_language_server_extension/src/selectedProjectSync.ts
 plan_sources:
+  - .codex/sessions/20261115-vsix-loading-slow.md
   - .codex/plans/20260926-lsp-experience-repair.md
   - .codex/plans/20261115-vsix-startup-timeout.md
 tests:
@@ -22,6 +26,8 @@ tests:
   - zr_vm_language_server_extension/test/languageClientLifecycle.test.js
   - zr_vm_language_server_extension/test/workspaceProjects.test.js
   - zr_vm_language_server_extension/test/selectedProjectSync.test.js
+  - zr_vm_language_server_extension/test/structureReadiness.test.js
+  - zr_vm_language_server_extension/test/diagnosticWorkers.test.js
 doc_type: module-detail
 ---
 
@@ -69,6 +75,32 @@ retiring the healthy client. The initial synchronization receives the session's
 abort signal and checks it before discovery and before sending a notification;
 a completed scan cannot notify a retired client. The signal does not cancel the
 underlying workspace search.
+
+Discovery shares one in-flight search and a completed manifest snapshot between
+views, project actions and selection synchronization. Manifest reads are bounded
+to 16 concurrent operations. Generated `.codex/snapshots` are excluded alongside
+build outputs and dependencies; vanished manifests are skipped, while other I/O
+errors remain observable. Editor changes, external manifest changes and workspace
+folder changes invalidate the snapshot. An older in-flight search cannot publish
+its result into a newer generation. Active manifest selection can read the open
+manifest directly, preserving unsaved text without waiting for workspace search.
+
+The structure controller publishes current-file placeholders, project actions and
+the static builtin catalog immediately. Document symbols and project roots load
+independently and publish when each completes. Refresh bursts share the current
+operation and request at most one follow-up pass, preventing an unbounded queue
+of duplicate symbol and project requests. The native parser still owns one shared
+context and handles requests serially; these changes parallelize independent view
+and filesystem work without accessing that context from multiple threads.
+
+The desktop attempt also owns a lazy diagnostic process pool. The interactive
+process synchronizes documents and serves editor requests. It negotiates
+`initializationOptions.zrDeferDiagnostics` to omit synchronous lint on document
+notifications. The SDK's pull middleware uses separate native processes for lint;
+each owns its VM and parser. The session waits for those children to exit during
+restart or deactivation. The Web client continues using its existing transport.
+See [loading performance](lsp-loading-performance.md) for the worker scheduler
+and corelib measurements.
 
 Regression coverage keeps discovery unresolved past the shortened startup budget
 and verifies the client is already published, then checks the eventual project

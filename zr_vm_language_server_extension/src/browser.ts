@@ -18,6 +18,7 @@ import { registerRichHoverSupport, type ZrRichHoverController } from './richHove
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
+import { registerWorkspaceProjectDiscoveryInvalidation } from './workspaceProjects';
 
 // 两个宿主监听同一语言服务配置树；Web 的不支持项由本入口作明确选择。
 const CONFIG_SECTION = 'zr.languageServer';
@@ -71,6 +72,7 @@ function refreshStructureViewsAsync(): void {
  * 再启动语言服务；首次失败后重启命令仍能重新尝试。
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    registerWorkspaceProjectDiscoveryInvalidation(context);
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerWebDebugSupportUnavailable());
     context.subscriptions.push(...registerWebProjectActionsUnavailable(context));

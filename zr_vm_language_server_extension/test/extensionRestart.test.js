@@ -20,7 +20,7 @@ async function within(promise) {
 
 /** 对同一次宿主尝试的公开资源、监听器和客户端发布状态做共同验收。 */
 function assertAttemptReleased(host) {
-    for (const resource of host.resources.filter((item) => ['watcher', 'channel', 'diagnostics'].includes(item.kind))) {
+    for (const resource of host.resources.filter((item) => ['watcher', 'channel', 'diagnostics', 'diagnostic-workers'].includes(item.kind))) {
         assert.ok(resource.disposals > 0, `${resource.kind} was not released`);
         if (resource.kind !== 'diagnostics') { assert.equal(resource.disposals, 1, resource.kind); }
     }
@@ -45,6 +45,8 @@ test('native startup publishes its client while project discovery is still pendi
         assert.equal(host.errors.length, 0, 'Project discovery must not consume the startup deadline');
         assert.equal(host.requestClient(), host.clients[0]);
         assert.equal(host.clients[0].options.initializationOptions.zrSelectedProjectUri, remembered);
+        assert.equal(host.clients[0].options.initializationOptions.zrDeferDiagnostics, true);
+        assert.equal(typeof host.clients[0].options.middleware.provideDiagnostics, 'function');
         assert.equal(synchronized.length, 0);
         discovery.resolve();
         await nextTurn();
@@ -53,6 +55,24 @@ test('native startup publishes its client while project discovery is still pendi
         discovery.resolve();
         await host.deactivate();
     }
+});
+
+test('native restarts wait for diagnostic processes to exit and forward workspace invalidation', async () => {
+    const stop = deferred();
+    const host = loadExtensionHost('native', { diagnosticStopPending: stop.promise });
+    try {
+        await host.activate(host.extensionContext);
+        await host.clients[0].sendNotification('zr/selectedProject', { uri: 'file:///new.zrp' });
+        const pool = host.resources.find(item => item.kind === 'diagnostic-workers');
+        assert.equal(pool.notifications[0].method, 'zr/selectedProject');
+        const restart = host.commands.get('zr.restartLanguageServer')();
+        await nextTurn();
+        assert.equal(host.clients.length, 1, 'no replacement before diagnostic processes exit');
+        stop.resolve();
+        await within(restart);
+        assert.equal(host.clients.length, 2);
+    } finally { stop.resolve(); await host.deactivate(); }
+    assertAttemptReleased(host);
 });
 
 test('native project synchronization failure leaves the initialized client running', async () => {

@@ -10,12 +10,131 @@ import {
 
 /** 工作区发现传给 VS Code 的包含模式；不递归越过 workspace 搜索边界。 */
 const ZR_PROJECT_GLOB = '**/*.zrp';
-/** 排除构建输出、依赖、Git 元数据与 VS Code 测试夹具目录。 */
-const ZR_PROJECT_EXCLUDE_GLOB = '**/{build,bin,node_modules,.git,.vscode-test}/**';
+/** 排除构建输出、依赖、Git/VS Code 元数据与工具生成的快照目录。 */
+const ZR_PROJECT_EXCLUDE_GLOB = '**/{build,bin,node_modules,.git,.vscode-test,.codex/snapshots}/**';
+/** Bound concurrent manifest reads so large workspaces do not exhaust file handles. */
+const ZR_PROJECT_READ_CONCURRENCY = 16;
 /** 持久化当前项目 URI 字符串的 workspaceState 键；键存在不代表项目文件仍有效。 */
 const ZR_SELECTED_PROJECT_KEY = 'zr.selectedProjectUri';
 /** 扩展模块级的变更广播源；订阅者释放各自事件租约，本模块只在状态更新后 fire。 */
 const onDidChangeSelectedProjectEmitter = new vscode.EventEmitter<vscode.Uri | undefined>();
+
+// Project discovery is consumed by the status bar, structure view, project actions,
+// and debug configuration paths in quick succession. Share both a completed snapshot
+// and an in-flight scan so those consumers do not repeat the workspace-wide search.
+let cachedWorkspaceProjects: WorkspaceProject[] | undefined;
+let discoveryInFlight: Promise<WorkspaceProject[]> | undefined;
+let discoveryInFlightGeneration = -1;
+let discoveryGeneration = 0;
+let discoveryInvalidationListenersRegistered = false;
+let discoveryFileWatcherRegistered = false;
+let discoveryInvalidationDisposables: vscode.Disposable[] = [];
+
+function invalidateWorkspaceProjectDiscovery(): void {
+    discoveryGeneration += 1;
+    cachedWorkspaceProjects = undefined;
+}
+
+function registerDiscoveryInvalidationListeners(context?: vscode.ExtensionContext): void {
+    if (discoveryInvalidationListenersRegistered) {
+        if (context) {
+            context.subscriptions.push(createDiscoveryInvalidationDisposer());
+        }
+        return;
+    }
+    discoveryInvalidationListenersRegistered = true;
+    const workspace = vscode.workspace as typeof vscode.workspace & {
+        onDidCreateFiles?: (listener: (event: { files?: readonly vscode.Uri[] }) => unknown) => vscode.Disposable;
+        onDidDeleteFiles?: (listener: (event: { files?: readonly vscode.Uri[] }) => unknown) => vscode.Disposable;
+        onDidRenameFiles?: (listener: (event: { files?: readonly { oldUri: vscode.Uri; newUri: vscode.Uri }[] }) => unknown) => vscode.Disposable;
+        onDidChangeTextDocument?: (listener: (event: { document?: vscode.TextDocument }) => unknown) => vscode.Disposable;
+        onDidSaveTextDocument?: (listener: (document: vscode.TextDocument) => unknown) => vscode.Disposable;
+        onDidCloseTextDocument?: (listener: (document: vscode.TextDocument) => unknown) => vscode.Disposable;
+        onDidChangeWorkspaceFolders?: (listener: () => unknown) => vscode.Disposable;
+    };
+    // Some unit-test hosts expose only the subset of the VS Code API they exercise.
+    // Register each available event independently so discovery remains usable there.
+    const disposables: vscode.Disposable[] = [];
+    const add = (disposable: vscode.Disposable | undefined) => {
+        if (disposable) {
+            disposables.push(disposable);
+        }
+    };
+    add(workspace.onDidCreateFiles?.((event) => {
+        if (event.files?.some(isZrpUri)) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    add(workspace.onDidDeleteFiles?.((event) => {
+        if (event.files?.some(isZrpUri)) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    add(workspace.onDidRenameFiles?.((event) => {
+        if (event.files?.some(({ oldUri, newUri }) => isZrpUri(oldUri) || isZrpUri(newUri))) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    add(workspace.onDidChangeWorkspaceFolders?.(() => invalidateWorkspaceProjectDiscovery()));
+    add(workspace.onDidChangeTextDocument?.((event) => {
+        if (event.document && isZrpUri(event.document.uri)) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    add(workspace.onDidSaveTextDocument?.((document) => {
+        if (isZrpUri(document.uri)) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    add(workspace.onDidCloseTextDocument?.((document) => {
+        if (isZrpUri(document.uri)) {
+            invalidateWorkspaceProjectDiscovery();
+        }
+    }));
+    discoveryInvalidationDisposables = disposables;
+    if (context) {
+        context.subscriptions.push(createDiscoveryInvalidationDisposer());
+    }
+}
+
+function createDiscoveryInvalidationDisposer(): vscode.Disposable {
+    return {
+        dispose: () => {
+            for (const disposable of discoveryInvalidationDisposables) {
+                disposable.dispose();
+            }
+            discoveryInvalidationDisposables = [];
+            discoveryInvalidationListenersRegistered = false;
+            discoveryFileWatcherRegistered = false;
+            invalidateWorkspaceProjectDiscovery();
+        },
+    };
+}
+
+/** Register external `.zrp` file change invalidation for the extension lifetime. */
+export function registerWorkspaceProjectDiscoveryInvalidation(
+    context: vscode.ExtensionContext,
+): void {
+    registerDiscoveryInvalidationListeners(context);
+    if (discoveryFileWatcherRegistered) {
+        return;
+    }
+    const createFileSystemWatcher = (vscode.workspace as typeof vscode.workspace & {
+        createFileSystemWatcher?: (glob: string) => vscode.FileSystemWatcher;
+    }).createFileSystemWatcher;
+    if (!createFileSystemWatcher) {
+        return;
+    }
+    const watcher = createFileSystemWatcher('**/*.zrp');
+    const invalidate = () => invalidateWorkspaceProjectDiscovery();
+    context.subscriptions.push(
+        watcher,
+        watcher.onDidCreate(invalidate),
+        watcher.onDidChange(invalidate),
+        watcher.onDidDelete(invalidate),
+    );
+    discoveryFileWatcherRegistered = true;
+}
 
 /**
  * ## Summary
@@ -75,19 +194,66 @@ export function rememberedSelectedProjectUri(context: vscode.ExtensionContext): 
  * @returns 按 `relativePath` 比较结果排序的项目数组；无匹配或所有清单无效时为空数组。返回数组和项目模型由调用方持有。
  *
  * ## Constraints and lifecycle
- * 查询使用模块级 include/exclude glob；每个 URI 由 `createWorkspaceProject` 异步解析，未能得到模型的 `undefined` 项会过滤掉。读取/解码或创建期间任一 Promise 拒绝会使整体 `Promise.all` 拒绝，函数不会局部吞掉读取失败，也不提供取消或固定工作区快照。
+ * 查询使用模块级 include/exclude glob；结果按模块级缓存和 in-flight promise 复用，并在项目文件或工作区变更时失效。清单按有限并发批次解析；在读取前消失的文件会跳过，其他读取错误仍会向调用方传播。
  *
  * ## References
  * `resolveSelectedProjectUri`、`resolveSelectedWorkspaceProject`、`selectWorkspaceProject` 和 `hasWorkspaceProjects` 调用本扫描入口；`createWorkspaceProject` 实施单清单解析。
  */
 export async function discoverWorkspaceProjects(): Promise<WorkspaceProject[]> {
-    const uris = await vscode.workspace.findFiles(ZR_PROJECT_GLOB, ZR_PROJECT_EXCLUDE_GLOB);
-    // 保留 Promise.all 的整体拒绝边界；单个 readFile 失败会传播到发现调用方，见下方 read-file-failure BUG。
-    const projects = await Promise.all(uris.map(async (uri) => createWorkspaceProject(uri)));
+    registerDiscoveryInvalidationListeners();
+    if (cachedWorkspaceProjects) {
+        return cachedWorkspaceProjects;
+    }
+    if (discoveryInFlight && discoveryInFlightGeneration === discoveryGeneration) {
+        return discoveryInFlight;
+    }
 
-    return projects
-        .filter((project): project is WorkspaceProject => project !== undefined)
-        .sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+    const generationAtStart = discoveryGeneration;
+    const scan = (async () => {
+        const uris = await vscode.workspace.findFiles(ZR_PROJECT_GLOB, ZR_PROJECT_EXCLUDE_GLOB);
+        const projects: Array<WorkspaceProject | undefined> = [];
+        for (let offset = 0; offset < uris.length; offset += ZR_PROJECT_READ_CONCURRENCY) {
+            const batch = uris.slice(offset, offset + ZR_PROJECT_READ_CONCURRENCY);
+            const batchProjects = await Promise.all(batch.map(async (uri) => {
+                try {
+                    return await createWorkspaceProject(uri);
+                } catch (error) {
+                    if (isMissingProjectFileError(error)) {
+                        return undefined;
+                    }
+                    throw error;
+                }
+            }));
+            projects.push(...batchProjects);
+        }
+        return projects
+            .filter((project): project is WorkspaceProject => project !== undefined)
+            .sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+    })();
+    discoveryInFlight = scan;
+    discoveryInFlightGeneration = generationAtStart;
+    scan.then((projects) => {
+        if (generationAtStart === discoveryGeneration) {
+            cachedWorkspaceProjects = projects;
+        }
+        if (discoveryInFlight === scan) {
+            discoveryInFlight = undefined;
+        }
+    }, () => {
+        if (discoveryInFlight === scan) {
+            discoveryInFlight = undefined;
+        }
+    });
+    return scan;
+}
+
+function isMissingProjectFileError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+    const code = (error as { code?: unknown }).code;
+    const name = (error as { name?: unknown }).name;
+    return code === 'FileNotFound' || code === 'ENOENT' || name === 'FileNotFound';
 }
 
 /**
@@ -113,8 +279,8 @@ export async function createWorkspaceProject(uri: vscode.Uri): Promise<Workspace
     }
 
     const document = vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri.toString());
-    // BUG: findFiles 返回后清单若被删除或拒绝读取，readFile 的拒绝会沿 Promise.all
-    // 使 discoverWorkspaceProjects 整体失败；单个坏文件不应阻断其他项目的选择。
+    // A manifest may disappear between findFiles and readFile; the discovery caller
+    // treats the corresponding FileNotFound error as a stale candidate.
     const text = document?.getText() ?? new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
     const manifest = parseProjectManifestText(text, uri.fsPath || uri.path);
     if (!manifest) {
@@ -244,7 +410,7 @@ export async function resolveProjectUri(
  * @returns 选择的清单 URI；没有有效候选、无匹配选择且不允许提示或用户取消时返回 `undefined`。活动匹配、唯一候选及空工作区分支可能更新 workspaceState 并发出选择事件。
  *
  * ## Constraints and lifecycle
- * 每次调用都会完整运行 `discoverWorkspaceProjects`。仅 `file` scheme 活动 URI 参与自动归属；活动 `.zrp` 精确匹配清单 URI，其他活动文件按最长源码根匹配。活跃项目匹配优先于记忆选择，因此事件触发后的重入可能覆盖用户刚选的另一项目（附近 `BUG`）。发现、持久化和选择器错误向调用方传播；记忆值必须匹配本轮发现候选的 ID，匹配后不再另作文件存在性探测。
+ * 调用优先验证活动或记忆中的清单 URI，随后复用缓存的发现快照。仅 `file` scheme 活动 URI 参与自动归属；活动 `.zrp` 精确匹配清单 URI，其他活动文件按最长源码根匹配。发现、持久化和选择器错误向调用方传播。
  *
  * ## References
  * 桌面 `extension.startClient`、`selectedProjectSync`、项目操作、调试提供器和 Web 不可用提示走此入口；`selectWorkspaceProject` 实施交互分支，`setSelectedProjectUri` 负责状态写入与广播。
@@ -253,10 +419,38 @@ export async function resolveSelectedProjectUri(
     context: vscode.ExtensionContext,
     folder: vscode.WorkspaceFolder | undefined,
     allowPrompt: boolean,
+    preloadedProjects?: WorkspaceProject[],
 ): Promise<vscode.Uri | undefined> {
-    const projects = await discoverWorkspaceProjects();
     const storedId = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
     const activeUri = vscode.window.activeTextEditor?.document.uri;
+
+    // An active manifest is already an unambiguous project choice. Parse it directly
+    // so opening a .zrp does not trigger a workspace-wide search before selection.
+    if (!preloadedProjects && activeUri?.scheme === 'file' && isZrpUri(activeUri)) {
+        try {
+            if (await createWorkspaceProject(activeUri)) {
+                await setSelectedProjectUri(context, activeUri);
+                return activeUri;
+            }
+        } catch {
+            // A concurrently deleted or unreadable manifest falls through to discovery.
+        }
+    }
+
+    // With no active editor, a remembered URI is equally specific. Validate its
+    // current (possibly unsaved) contents directly and only scan when it is stale.
+    if (!preloadedProjects && !activeUri && storedId) {
+        try {
+            const rememberedUri = vscode.Uri.parse(storedId);
+            if (await createWorkspaceProject(rememberedUri)) {
+                return rememberedUri;
+            }
+        } catch {
+            // Fall through to a fresh workspace discovery for stale state.
+        }
+    }
+
+    const projects = preloadedProjects ?? await discoverWorkspaceProjects();
 
     if (projects.length === 0) {
         await setSelectedProjectUri(context, undefined);
@@ -317,10 +511,8 @@ export async function resolveSelectedWorkspaceProject(
     folder: vscode.WorkspaceFolder | undefined,
     allowPrompt: boolean,
 ): Promise<WorkspaceProject | undefined> {
-    // TODO: 两次独立 discover 之间候选集可能变化；核查工作区变动时结构视图
-    // 是否会因选中 URI 不在第一次快照而短暂显示空项目。
     const projects = await discoverWorkspaceProjects();
-    const selectedUri = await resolveSelectedProjectUri(context, folder, allowPrompt);
+    const selectedUri = await resolveSelectedProjectUri(context, folder, allowPrompt, projects);
     if (!selectedUri) {
         return undefined;
     }

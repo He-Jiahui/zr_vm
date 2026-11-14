@@ -150,6 +150,7 @@ typedef struct SZrStdioServer {
     EZrStdioPositionEncoding positionEncoding;
     TZrBool supportsInlineCompletion;
     TZrBool supportsRangesFormatting;
+    TZrBool deferDiagnostics;
     EZrStdioTraceLevel traceLevel;
     EZrStdioServerFaultPoint faultPoint;
     SZrStdioLifecycle lifecycle;

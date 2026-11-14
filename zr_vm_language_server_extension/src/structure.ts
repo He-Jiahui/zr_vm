@@ -152,7 +152,9 @@ class ZrStructureService implements ZrStructureController {
     private readonly filesView: vscode.TreeView<TreeNode>;
     private readonly projectView: vscode.TreeView<TreeNode>;
     private readonly builtinView: vscode.TreeView<TreeNode>;
-    private refreshChain: Promise<void> = Promise.resolve();
+    private refreshChain: Promise<void> | undefined;
+    private refreshRequested = false;
+    private disposed = false;
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
     private filesRoots: TreeNode[] = [];
     private projectRoots: TreeNode[] = [];
@@ -172,6 +174,13 @@ class ZrStructureService implements ZrStructureController {
             treeDataProvider: this.builtinProvider,
             showCollapseAll: true,
         });
+        // 静态库和当前文件骨架立即发布，不依赖项目扫描或语义查询。
+        this.builtinRoots = buildBuiltinLibraryRoots();
+        this.builtinProvider.setRoots(this.builtinRoots);
+        this.filesRoots = buildCurrentFileRoots(vscode.window.activeTextEditor?.document);
+        this.filesProvider.setRoots(this.filesRoots);
+        this.projectRoots = createProjectActionNodes();
+        this.projectProvider.setRoots(this.projectRoots);
 
         this.disposables.push(
             this.filesProvider,
@@ -236,26 +245,30 @@ class ZrStructureService implements ZrStructureController {
         // TODO: 激活入口还把控制器本身加入 context.subscriptions；核实 VS Code 对视图、
         // 命令和事件订阅的重复 dispose 契约，避免关闭时重复释放这些子资源。
         context.subscriptions.push(...this.disposables);
-        // BUG: 首次刷新若因符号提供器或项目请求拒绝而失败，这个 Promise 被丢弃，
-        // 产生未处理的拒绝，初始结构树也不会发布；事件定时刷新有同类风险。
-        void this.refresh();
+        void this.refresh().catch(reportStructureRefreshError);
     }
 
-    /** 串行化各个入口发起的完整刷新，避免旧异步任务在较新任务之后覆盖树根。 */
+    /** 每轮期间的连发请求合并为下一轮，避免为每次编辑堆积完整刷新。 */
     async refresh(): Promise<void> {
-        this.refreshChain = this.refreshChain.then(
-            async () => {
-                await this.performRefresh();
-            },
-            async () => {
-                await this.performRefresh();
-            },
-        );
+        if (this.disposed) { return; }
+        this.refreshRequested = true;
+        if (!this.refreshChain) {
+            this.refreshChain = this.drainRefreshes().finally(() => { this.refreshChain = undefined; });
+        }
         await this.refreshChain;
+    }
+
+    private async drainRefreshes(): Promise<void> {
+        while (this.refreshRequested && !this.disposed) {
+            this.refreshRequested = false;
+            await this.performRefresh();
+        }
     }
 
     /** 停止后续定时刷新并释放注册资源；已开始的异步请求尚不能取消。 */
     dispose(): void {
+        this.disposed = true;
+        this.refreshRequested = false;
         if (this.refreshTimer !== undefined) {
             clearTimeout(this.refreshTimer);
             this.refreshTimer = undefined;
@@ -275,24 +288,38 @@ class ZrStructureService implements ZrStructureController {
 
         this.refreshTimer = setTimeout(() => {
             this.refreshTimer = undefined;
-            // BUG: 删除清单与读取竞态或符号提供器拒绝时 refresh 会拒绝，定时器丢弃
-            // Promise，产生未处理的拒绝，且本次结构树不会更新；事件入口无法报告失败。
-            void this.refresh();
+            void this.refresh().catch(reportStructureRefreshError);
         }, REFRESH_DEBOUNCE_MS);
     }
 
-    /** 在相同刷新任务中计算三个视图，Web 用明确的不可用节点代替项目扫描。 */
+    /** 文件符号和项目索引独立发布，任一慢查询都不阻塞其他树。 */
     private async performRefresh(): Promise<void> {
-        this.filesRoots = await buildCurrentFileRoots();
-        this.projectRoots = this.projectIndexAvailable
-            ? await buildProjectRoots(this.context)
-            : [createInfoNode('project:unavailable:web',
-                'Project indexing is unavailable in VS Code Web. Open a Zr file to use language features.')];
-        this.builtinRoots = buildBuiltinLibraryRoots();
+        const document = vscode.window.activeTextEditor?.document;
+        this.filesRoots = buildCurrentFileRoots(document);
         this.filesProvider.setRoots(this.filesRoots);
-        this.projectProvider.setRoots(this.projectRoots);
-        this.builtinProvider.setRoots(this.builtinRoots);
+        await Promise.all([
+            (async () => {
+                if (!document || document.languageId !== 'zr') { return; }
+                const symbols = await loadDocumentSymbols(document.uri);
+                if (this.disposed || vscode.window.activeTextEditor?.document !== document) { return; }
+                this.filesRoots = buildCurrentFileRoots(document, symbols);
+                this.filesProvider.setRoots(this.filesRoots);
+            })().catch(reportStructureRefreshError),
+            (async () => {
+                const roots = this.projectIndexAvailable
+                    ? await buildProjectRoots(this.context)
+                    : [createInfoNode('project:unavailable:web',
+                        'Project indexing is unavailable in VS Code Web. Open a Zr file to use language features.')];
+                if (this.disposed) { return; }
+                this.projectRoots = roots;
+                this.projectProvider.setRoots(this.projectRoots);
+            })().catch(reportStructureRefreshError),
+        ]);
     }
+}
+
+function reportStructureRefreshError(error: unknown): void {
+    console.warn('[zr-extension] structure refresh failed:', error);
 }
 
 /** 把静态内置库快照变为可浏览目录；Web 无需语言服务器即可展示相同列表。 */
@@ -346,10 +373,7 @@ function buildBuiltinLibraryRoots(): TreeNode[] {
 }
 
 /** 当前编辑器优先使用 VS Code 符号提供器，文本回退只承担模块名与导入列表。 */
-async function buildCurrentFileRoots(): Promise<TreeNode[]> {
-    const editor = vscode.window.activeTextEditor;
-    const document = editor?.document;
-
+function buildCurrentFileRoots(document: vscode.TextDocument | undefined, symbols: vscode.DocumentSymbol[] = []): TreeNode[] {
     if (!document || document.languageId !== 'zr') {
         return [
             createInfoNode(
@@ -361,7 +385,6 @@ async function buildCurrentFileRoots(): Promise<TreeNode[]> {
 
     const moduleName = parseModuleName(document);
     const imports = parseImports(document);
-    const symbols = await loadDocumentSymbols(document.uri);
     const importsGroup = createGroupNode(
         `current-file:${document.uri.toString()}:imports`,
         'Imports',
@@ -393,11 +416,7 @@ async function buildCurrentFileRoots(): Promise<TreeNode[]> {
 /** 按当前已选清单展示来源分类；LSP 不可用时仍保留项目操作和入口回退。 */
 async function buildProjectRoots(context: vscode.ExtensionContext): Promise<TreeNode[]> {
     const selectedProject = await resolveSelectedWorkspaceProject(context, activeWorkspaceFolder(), false);
-    const actionNodes = [
-        createActionNode('project-action:select', 'Select Project', 'zr.selectProject', 'list-selection'),
-        createActionNode('project-action:run', 'Run Selected Project', 'zr.runSelectedProject', 'play'),
-        createActionNode('project-action:debug', 'Debug Selected Project', 'zr.debugSelectedProject', 'debug-alt-small'),
-    ];
+    const actionNodes = createProjectActionNodes();
 
     if (!selectedProject) {
         return [
@@ -475,6 +494,14 @@ function createGroupNode(id: string, label: string, children: TreeNode[]): TreeN
 }
 
 /** 结构树复用已注册的项目命令，点击后由项目操作控制器处理。 */
+function createProjectActionNodes(): TreeNode[] {
+    return [
+        createActionNode('project-action:select', 'Select Project', 'zr.selectProject', 'list-selection'),
+        createActionNode('project-action:run', 'Run Selected Project', 'zr.runSelectedProject', 'play'),
+        createActionNode('project-action:debug', 'Debug Selected Project', 'zr.debugSelectedProject', 'debug-alt-small'),
+    ];
+}
+
 function createActionNode(
     id: string,
     label: string,
