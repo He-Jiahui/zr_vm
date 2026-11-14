@@ -55,13 +55,19 @@ SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName)
 ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompilerState *cs,
                                                                      SZrFunctionCall *call,
                                                                      SZrAstNodeArray *paramList) {
-    if (cs == ZR_NULL || call == ZR_NULL ||
-        call->args == ZR_NULL || call->argNames == ZR_NULL || paramList == ZR_NULL) {
+    if (call == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (cs == ZR_NULL || paramList == ZR_NULL) {
         return call->args;
     }
+    const TZrSize argumentCount = call->args != ZR_NULL ? call->args->count : 0u;
     
     // 创建参数映射表：参数名 -> 参数索引
     TZrSize paramCount = paramList->count;
+    if (paramCount == 0u && argumentCount == 0u) {
+        return call->args;
+    }
     SZrString **paramNames = ZrCore_Memory_RawMallocWithType(cs->state->global, 
                                                        sizeof(SZrString*) * paramCount, 
                                                        ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -114,9 +120,10 @@ ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompiler
     
     // 处理位置参数（在命名参数之前）
     TZrSize positionalCount = 0;
-    for (TZrSize i = 0; i < call->args->count; i++) {
-        SZrString **namePtr = (SZrString**)ZrCore_Array_Get(call->argNames, i);
-        if (namePtr != ZR_NULL && *namePtr == ZR_NULL) {
+    for (TZrSize i = 0; i < argumentCount; i++) {
+        SZrString **namePtr = call->argNames != ZR_NULL
+                ? (SZrString **)ZrCore_Array_Get(call->argNames, i) : ZR_NULL;
+        if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
             // 位置参数
             if (positionalCount < paramCount) {
                 reorderedArgs->nodes[positionalCount] = call->args->nodes[i];
@@ -137,7 +144,7 @@ ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompiler
     }
     
     // 处理命名参数
-    for (TZrSize i = 0; i < call->args->count; i++) {
+    for (TZrSize i = 0; call->argNames != ZR_NULL && i < argumentCount; i++) {
         SZrString **namePtr = (SZrString**)ZrCore_Array_Get(call->argNames, i);
         if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
             // 命名参数

@@ -128,11 +128,12 @@ var [first, second] = pair;
 
 ```
 function-declaration ::= [decorator] [access] ["async"] "fn" identifier
-                         [generic-declaration] "(" [parameter-list] ["," "..." parameter] ")"
+                         [generic-declaration] "(" [rest | parameter-list ["," rest]] ")"
                          [":" TypeRef] [where-clauses] block
 parameter            ::= ["const"] identifier [":"]
                          ["in" | "out" | "ref" | "scoped"] TypeRef
                          ["=" expression]
+rest                 ::= "..." ["const"] identifier ":" TypeRef "[" "]"
 ```
 
 当前函数声明强制使用 `fn` 和冒号返回类型分隔符：
@@ -144,16 +145,17 @@ pub fn clamp(value: int, low: int = 0, high: int = 100): int {
     return value;
 }
 
-fn fold(values: in Span<int>, ...rest: int): int {
-    return 0;
+fn count(first: int = 7, ...rest: int[]): int {
+    return first + rest.length;
 }
 ~~~
 
 `in`、`out`、`ref`、`scoped` 是参数的 source passing form，不是函数体内的普通变量
 修饰词。源码通常写成 `value: out int`；passing mode 位于冒号之后、类型之前，
 因此 `out value: int` 不是同一 grammar production。它们被存入 `SZrParameter.passingMode`、`sourcePassingForm` 和位置范围，供
-canonical type、借用检查、native descriptor 和 AOT contract 共用。可变参数只能有一个，
-并且必须放在参数列表最后。
+canonical type、借用检查、native descriptor 和 AOT contract 共用。普通参数用 `= expression`
+设置默认值。可变参数只能有一个，必须放在最后，按值接收 `T[]`，不能有默认值。
+`count()` 的 `first` 为 `7`，`rest` 为空数组。
 
 `async` 是上下文识别的 identifier，而不是 lexer 的独立关键字；`async fn` 的
 `SZrFunctionDeclaration.isAsync` 会被 compiler 转成 task effect。当前语义要求 async

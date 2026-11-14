@@ -84,6 +84,7 @@ TZrBool compiler_validate_spread_call_signature(
         const SZrFunctionCall *call,
         const SZrArray *parameterTypes,
         const SZrArray *parameterPassingModes,
+        TZrBool isVariadic,
         SZrFileRange location) {
     SZrAstNode *spreadNode;
     SZrAstNode *spreadExpression;
@@ -112,7 +113,7 @@ TZrBool compiler_validate_spread_call_signature(
                 cs, "Spread argument requires an expression", location);
         return ZR_FALSE;
     }
-    if (prefixCount > parameterCount) {
+    if (!isVariadic && prefixCount > parameterCount) {
         ZrParser_Compiler_Error(
                 cs, "Spread call has too many fixed arguments", location);
         return ZR_FALSE;
@@ -146,7 +147,8 @@ TZrBool compiler_validate_spread_call_signature(
         hasKnownSpreadCount = ZR_TRUE;
     }
     if (hasKnownSpreadCount &&
-        prefixCount + knownSpreadCount != parameterCount) {
+        (isVariadic ? prefixCount + knownSpreadCount < parameterCount
+                    : prefixCount + knownSpreadCount != parameterCount)) {
         ZrParser_Compiler_Error(
                 cs,
                 "Spread argument count does not match the callable signature",

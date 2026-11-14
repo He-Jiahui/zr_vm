@@ -366,6 +366,11 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (!compiler_register_rest_parameter(cs, lambda->args)) {
+        ZrParser_Compiler_Error(cs, "Cannot bind the variadic array parameter", node->location);
+        goto lambda_type_scope_cleanup;
+    }
+
     if (oldFunction != ZR_NULL && lambda->block != ZR_NULL) {
         SZrCompilerState parentCompilerSnapshot = {0};
         parentCompilerSnapshot.localVars.head = (TZrByte *)savedParentLocalVars;

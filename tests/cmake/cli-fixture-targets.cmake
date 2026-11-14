@@ -69,6 +69,15 @@ if (TARGET zr_vm_call_spread_test)
     )
 endif ()
 
+if (TARGET zr_vm_cli_executable)
+    add_test(
+            NAME source_parameter_binding
+            COMMAND ${CMAKE_COMMAND}
+            "-DZR_VM_CLI=$<TARGET_FILE:zr_vm_cli_executable>"
+            -P "${CMAKE_SOURCE_DIR}/tests/cli/source_parameter_binding.cmake"
+    )
+endif ()
+
 if (TARGET zr_vm_cli_executable AND
         (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static) AND

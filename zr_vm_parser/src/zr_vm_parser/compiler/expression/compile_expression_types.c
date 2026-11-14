@@ -3601,7 +3601,11 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                     resolvedFunctionType->declarationNode->type == ZR_AST_FUNCTION_DECLARATION) {
                     SZrFunctionDeclaration *declaration =
                             &resolvedFunctionType->declarationNode->data.functionDeclaration;
-                    if (declaration->params != ZR_NULL) {
+                    /* An all-positional variadic call with a tail already has
+                     * every fixed argument. Keep the tail for the VM call. */
+                    if (declaration->params != ZR_NULL &&
+                        !(declaration->args != ZR_NULL && !call->hasNamedArgs &&
+                          call->args != ZR_NULL && call->args->count > declaration->params->count)) {
                         argsToCompile = match_named_arguments(cs, call, declaration->params);
                     }
                 }
@@ -3717,6 +3721,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                             call,
                             spreadParameterTypes,
                             spreadParameterPassingModes,
+                            type_inference_function_rest_parameter(resolvedFunctionType) != ZR_NULL,
                             member->location)) {
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);

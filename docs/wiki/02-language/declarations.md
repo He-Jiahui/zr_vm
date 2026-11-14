@@ -92,9 +92,10 @@ var {name: displayName, id} = record;
 function-declaration = [decorator], [access], ["async"], "fn", identifier,
                        [generic-parameters], "(", parameters, ")",
                        [ ":", TypeRef ], [where-clauses], block ;
-parameters = [ parameter, { ",", parameter }, [ ",", "...", parameter ] ] ;
+parameters = [ rest | parameter, { ",", parameter }, [ ",", rest ] ] ;
 parameter = ["const"], [identifier, ":"], ["in"|"out"|"ref"|"scoped"], TypeRef,
              [ "=", expr ] ;
+rest = "...", ["const"], identifier, ":", TypeRef, "[", "]" ;
 ```
 
 ```zr
@@ -105,8 +106,13 @@ fn add(left: int, right: int): int {
 fn read(value: in int): int { return value; }
 fn update(value: ref int): void { value += 1; }
 fn produce(value: out int): void { value = 7; }
-fn logAll(prefix: string, ...values: string): void { return; }
+fn withDefault(value: int = 7): int { return value; }
+fn count(prefix: string, ...values: string[]): int { return values.length; }
 ```
+
+省略普通参数会使用 `=` 后的默认值，例如 `withDefault()` 返回 `7`。
+可变参数必须按值传递，类型必须是未指定长度的数组，而且只能出现在最后。
+`count("items", "a", "b")` 的 `values` 包含两个元素；`count("items")` 的 `values` 是空数组。
 
 函数声明中的返回类型分隔符是 `:`。`->` 只属于 function type；`=>` 只属于匿名 expression body。旧的 `func name(...) -> T {}`、无 `fn` 的 keywordless declaration 和箭头返回声明会得到 `legacy_syntax_removed`，不会回退成普通表达式。
 

@@ -67,7 +67,7 @@ void tearDown(void) {
 // 锁定展开实参为独立 AST，防止普通数组表达式吞掉省略号语义。
 static void test_call_spread_has_dedicated_argument_ast(void) {
     const char *source =
-            "fn collect(...values: int): int { return 1; }\n"
+            "fn collect(...values: int[]): int { return 1; }\n"
             "collect(...[1, 2]);\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "call_spread_ast.zr");

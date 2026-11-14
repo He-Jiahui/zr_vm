@@ -17,4 +17,7 @@ EZrCompilerParameterIdentityResult compiler_register_parameter_semantic_identity
         TZrUInt32 stackSlot,
         SZrFileRange sourceRange);
 
+/* A rest array occupies the first local slot after the fixed call parameters. */
+TZrBool compiler_register_rest_parameter(SZrCompilerState *cs, SZrParameter *parameter);
+
 #endif

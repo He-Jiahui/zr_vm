@@ -117,7 +117,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_e
     ZR_ASSERT(function != ZR_NULL);
 
     exactArgsClearStackSizePlusOne = (TZrUInt32)argumentsCount + 1u;
-    if (ZR_UNLIKELY(state->debugHookSignal != 0u ||
+    if (ZR_UNLIKELY(state->debugHookSignal != 0u || function->hasVariableArguments ||
                     function->parameterCount != argumentsCount ||
                     function->vmEntryClearStackSizePlusOne != exactArgsClearStackSizePlusOne ||
                     function_precall_has_inline_frame_parameters(function))) {
