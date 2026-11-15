@@ -4254,10 +4254,18 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     return ZR_TRUE;
                 }
 
-                if (currentType.baseType == ZR_VALUE_TYPE_ARRAY &&
-                    memberLookupName != ZR_NULL &&
-                    zr_string_equals_cstr(memberLookupName, "length")) {
+                /* The primitive string prototype supplies getter-only scalar and byte lengths. */
+                TZrBool stringLength = !nextIsFunctionCall && !currentIsPrototypeReference &&
+                        currentType.baseType == ZR_VALUE_TYPE_STRING &&
+                        memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+                        (zr_string_equals_cstr(memberLookupName, "length") ||
+                         zr_string_equals_cstr(memberLookupName, "byteLength"));
+                if (stringLength || (currentType.baseType == ZR_VALUE_TYPE_ARRAY &&
+                                     zr_string_equals_cstr(memberLookupName, "length"))) {
                     ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_INT64);
+                    if (stringLength) {
+                        type_inference_record_builtin_member_reference_fact(cs, memberNode, &currentType, &nextType);
+                    }
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
                     ZrParser_InferredType_Copy(cs->state, &currentType, &nextType);

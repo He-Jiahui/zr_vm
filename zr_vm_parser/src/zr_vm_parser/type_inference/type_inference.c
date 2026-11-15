@@ -2534,8 +2534,9 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             ZrParser_InferredType_Free(cs->state, &leftType);
             return ZR_FALSE;
         }
-        if (hasLeftType) {
-            type_inference_record_member_write_reference_fact(cs, assignExpr->left);
+        if (hasLeftType && !type_inference_record_member_write_reference_fact(cs, assignExpr->left)) {
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            return ZR_FALSE;
         }
     }
 
