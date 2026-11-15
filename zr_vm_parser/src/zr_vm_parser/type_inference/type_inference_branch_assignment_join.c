@@ -211,8 +211,12 @@ static TZrBool type_inference_branch_assignment_analyze_expression(
     if (expression->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
         return ZR_TRUE;
     }
+    /* Collect compound writes too, even though replay cannot prove them. The
+     * fallback must forget their incoming range rather than retain it. */
     if (!type_inference_branch_assignment_parts(expression, &name, &right)) {
-        return ZR_FALSE;
+        SZrAstNode *left = expression->data.assignmentExpression.left;
+        if (left == ZR_NULL || left->type != ZR_AST_IDENTIFIER_LITERAL) return ZR_FALSE;
+        name = left->data.identifier.name;
     }
 
     return type_inference_branch_assignment_plan_add(state, plan, name);
@@ -602,20 +606,62 @@ static TZrBool type_inference_branch_assignment_can_replay_initializer(const SZr
     }
 }
 
+/* Replay-local declarations have no canonical SymbolId. Declaration identity
+ * also distinguishes shadows when a caller is not publishing semantic facts. */
+static TZrBool type_inference_branch_assignment_same_binding(
+        const SZrTypeBinding *left, const SZrTypeBinding *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        !ZrParser_SyntaxContext_Equal(left->syntaxContext, right->syntaxContext)) return ZR_FALSE;
+    if (left == right) return ZR_TRUE;
+    if (left->symbolId != ZR_SEMANTIC_ID_INVALID || right->symbolId != ZR_SEMANTIC_ID_INVALID) {
+        return left->symbolId != ZR_SEMANTIC_ID_INVALID && left->symbolId == right->symbolId;
+    }
+    return left->hasDeclarationRange && right->hasDeclarationRange &&
+           left->declarationRange.source == right->declarationRange.source &&
+           left->declarationRange.start.offset == right->declarationRange.start.offset &&
+           left->declarationRange.end.offset == right->declarationRange.end.offset;
+}
+
+/* Destructuring is not a numeric proof here, but its names must still shadow
+ * parent bindings. Unknown locals cannot accidentally borrow an outer range. */
+static TZrBool type_inference_branch_assignment_replay_pattern(
+        SZrCompilerState *cs, SZrAstNode *declaration, SZrAstNode *pattern,
+        const SZrInferredType *type) {
+    SZrAstNodeArray *keys;
+    if (pattern == ZR_NULL) return ZR_TRUE;
+    if (pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return ZrParser_TypeEnvironment_RegisterVariableExWithContext(
+                cs->state, cs->typeEnv, pattern->data.identifier.name, type,
+                declaration, pattern->location, pattern->data.identifier.syntaxContext);
+    }
+    if (pattern->type == ZR_AST_KEY_VALUE_PAIR) {
+        return type_inference_branch_assignment_replay_pattern(
+                cs, declaration, pattern->data.keyValuePair.value, type);
+    }
+    if (pattern->type == ZR_AST_DESTRUCTURING_ARRAY) keys = pattern->data.destructuringArray.keys;
+    else if (pattern->type == ZR_AST_DESTRUCTURING_OBJECT) keys = pattern->data.destructuringObject.keys;
+    else return ZR_FALSE;
+    for (TZrSize index = 0; keys != ZR_NULL && index < keys->count; ++index) {
+        if (!type_inference_branch_assignment_replay_pattern(cs, declaration, keys->nodes[index], type)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool type_inference_branch_assignment_replay_declaration(SZrCompilerState *cs,
-                                                                  SZrAstNode *node,
-                                                                  const SZrTypeInferenceBranchAssignmentPlan *plan) {
+                                                                  SZrAstNode *node) {
     const SZrVariableDeclaration *declaration = &node->data.variableDeclaration;
     SZrAstNode *pattern = declaration->pattern;
     SZrAstNode *value = declaration->value;
     SZrInferredType type;
     TZrBool success;
 
-    if (pattern == ZR_NULL || pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
-        /* The current range plan commits by name. Never commit a shadowed
-         * local assignment as if it were an assignment to the parent. */
-        type_inference_branch_assignment_plan_contains(plan, pattern->data.identifier.name)) {
-        return ZR_FALSE;
+    if (pattern == ZR_NULL || pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
+        ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+        success = type_inference_branch_assignment_replay_pattern(cs, node, pattern, &type);
+        ZrParser_InferredType_Free(cs->state, &type);
+        return success;
     }
     if (!type_inference_branch_assignment_can_replay_initializer(value)) {
         value = ZR_NULL; /* Shadow the outer binding without trying to prove a value. */
@@ -632,6 +678,7 @@ static TZrBool type_inference_branch_assignment_replay_declaration(SZrCompilerSt
 
 static TZrBool type_inference_branch_assignment_replay_assignment(SZrCompilerState *cs,
                                                                   SZrAstNode *assignmentNode,
+                                                                  const SZrTypeEnvironment *incomingEnv,
                                                                   SZrTypeInferenceBranchAssignmentResult *result) {
     SZrString *name = ZR_NULL;
     SZrAstNode *right = ZR_NULL;
@@ -647,17 +694,37 @@ static TZrBool type_inference_branch_assignment_replay_assignment(SZrCompilerSta
         return ZR_FALSE;
     }
 
+    const SZrAstNode *left = assignmentNode->data.assignmentExpression.left;
+    const SZrTypeBinding *binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv, name, left->data.identifier.syntaxContext);
+    const SZrTypeBinding *incoming = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            incomingEnv, name, left->data.identifier.syntaxContext);
+    TZrBool writesIncoming = type_inference_branch_assignment_same_binding(binding, incoming);
+    if (!writesIncoming && incoming != ZR_NULL && binding != ZR_NULL &&
+        binding->symbolId == ZR_SEMANTIC_ID_INVALID && !binding->hasDeclarationRange) {
+        return ZR_FALSE; /* A synthetic copy with no identity is not a proven local. */
+    }
+    /* The name-only join does not model hygienic targets. Fail to unknown,
+     * rather than committing a different context's binding by spelling. */
+    if (!ZrParser_SyntaxContext_Equal(left->data.identifier.syntaxContext, ZrParser_SyntaxContext_Root())) {
+        return ZR_FALSE;
+    }
+    TZrBool numericTarget = writesIncoming && ZR_VALUE_IS_TYPE_NUMBER(incoming->type.baseType);
+    if (!numericTarget && !type_inference_branch_assignment_can_replay_initializer(right)) return ZR_FALSE;
+
     ZrParser_InferredType_Init(cs->state, &rhsType, ZR_VALUE_TYPE_OBJECT);
     success = type_inference_branch_assignment_infer_replay_type(cs, right, ZR_NULL, &rhsType) &&
-              type_inference_branch_assignment_numeric_range(&rhsType, &minValue, &maxValue) &&
+              (!numericTarget || type_inference_branch_assignment_numeric_range(&rhsType, &minValue, &maxValue)) &&
               type_inference_branch_assignment_store_replayed_binding(cs, name, &rhsType) &&
-              type_inference_branch_assignment_result_store_type(cs->state, result, name, &rhsType);
+              (!numericTarget ||
+               type_inference_branch_assignment_result_store_type(cs->state, result, name, &rhsType));
     ZrParser_InferredType_Free(cs->state, &rhsType);
     return success;
 }
 
 static TZrBool type_inference_branch_assignment_store_current_plan_bindings(
         SZrCompilerState *cs,
+        const SZrTypeEnvironment *incomingEnv,
         const SZrTypeInferenceBranchAssignmentPlan *plan,
         SZrTypeInferenceBranchAssignmentResult *result) {
     TZrSize index;
@@ -678,9 +745,14 @@ static TZrBool type_inference_branch_assignment_store_current_plan_bindings(
             return ZR_FALSE;
         }
         binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
-        if (binding == ZR_NULL ||
-            !ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType) ||
-            !binding->type.hasRangeConstraint ||
+        const SZrTypeBinding *incoming = ZrParser_TypeEnvironment_FindVariableBinding(incomingEnv, name);
+        TZrBool sameBinding = type_inference_branch_assignment_same_binding(binding, incoming);
+        if (!sameBinding && incoming != ZR_NULL && binding != ZR_NULL &&
+            binding->symbolId == ZR_SEMANTIC_ID_INVALID && !binding->hasDeclarationRange) return ZR_FALSE;
+        if (!sameBinding || !ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType)) {
+            continue;
+        }
+        if (!binding->type.hasRangeConstraint ||
             !type_inference_branch_assignment_result_store_type(cs->state, result, name, &binding->type)) {
             return ZR_FALSE;
         }
@@ -691,6 +763,7 @@ static TZrBool type_inference_branch_assignment_store_current_plan_bindings(
 static TZrBool type_inference_branch_assignment_replay_nested_if(
         SZrCompilerState *cs,
         SZrAstNode *ifNode,
+        const SZrTypeEnvironment *incomingEnv,
         const SZrTypeInferenceBranchAssignmentPlan *plan,
         SZrTypeInferenceBranchAssignmentResult *result) {
     if (cs == ZR_NULL ||
@@ -702,11 +775,12 @@ static TZrBool type_inference_branch_assignment_replay_nested_if(
     }
 
     return ZrParser_TypeInference_TryJoinIfElseNumericAssignments(cs, ifNode) &&
-           type_inference_branch_assignment_store_current_plan_bindings(cs, plan, result);
+           type_inference_branch_assignment_store_current_plan_bindings(cs, incomingEnv, plan, result);
 }
 
 static TZrBool type_inference_branch_assignment_replay_branch(SZrCompilerState *cs,
                                                               SZrAstNode *branchNode,
+                                                              const SZrTypeEnvironment *incomingEnv,
                                                               const SZrTypeInferenceBranchAssignmentPlan *plan,
                                                               SZrTypeInferenceBranchAssignmentResult *result) {
     SZrAstNodeArray *body;
@@ -724,9 +798,9 @@ static TZrBool type_inference_branch_assignment_replay_branch(SZrCompilerState *
     if (branchNode->type != ZR_AST_BLOCK) {
         SZrAstNode *expression = type_inference_branch_assignment_statement_expression(branchNode);
         if (expression != ZR_NULL && expression->type == ZR_AST_IF_EXPRESSION) {
-            return type_inference_branch_assignment_replay_nested_if(cs, expression, plan, result);
+            return type_inference_branch_assignment_replay_nested_if(cs, expression, incomingEnv, plan, result);
         }
-        return type_inference_branch_assignment_replay_assignment(cs, expression, result);
+        return type_inference_branch_assignment_replay_assignment(cs, expression, incomingEnv, result);
     }
 
     body = branchNode->data.block.body;
@@ -744,14 +818,14 @@ static TZrBool type_inference_branch_assignment_replay_branch(SZrCompilerState *
             continue;
         }
         if (expression->type == ZR_AST_IF_EXPRESSION) {
-            if (!type_inference_branch_assignment_replay_nested_if(cs, expression, plan, result)) {
+            if (!type_inference_branch_assignment_replay_nested_if(cs, expression, incomingEnv, plan, result)) {
                 return ZR_FALSE;
             }
             replayed = ZR_TRUE;
             continue;
         }
         if (expression->type == ZR_AST_VARIABLE_DECLARATION) {
-            if (!type_inference_branch_assignment_replay_declaration(cs, expression, plan)) {
+            if (!type_inference_branch_assignment_replay_declaration(cs, expression)) {
                 return ZR_FALSE;
             }
             continue;
@@ -762,7 +836,7 @@ static TZrBool type_inference_branch_assignment_replay_branch(SZrCompilerState *
         if (!type_inference_branch_assignment_parts(expression, &name, &right)) {
             return ZR_FALSE;
         }
-        if (!type_inference_branch_assignment_replay_assignment(cs, expression, result)) {
+        if (!type_inference_branch_assignment_replay_assignment(cs, expression, incomingEnv, result)) {
             return ZR_FALSE;
         }
         replayed = ZR_TRUE;
@@ -785,7 +859,12 @@ static TZrBool type_inference_branch_assignment_infer_plan(SZrCompilerState *cs,
     }
 
     pushed = type_inference_branch_assignment_push_replay_scope(cs, condition, falseBranch, &scope);
-    success = pushed && type_inference_branch_assignment_replay_branch(cs, branchNode, plan, result);
+    /* Nested joins must not consume facts proved under the source check's
+     * earlier bindings, nor publish trial facts. Recompute or stay unknown. */
+    SZrSemanticContext *semanticContext = cs->semanticContext;
+    cs->semanticContext = ZR_NULL;
+    success = pushed && type_inference_branch_assignment_replay_branch(cs, branchNode, scope.savedEnv, plan, result);
+    cs->semanticContext = semanticContext;
     if (pushed) {
         ZrParser_TypeInference_PopBranchScope(cs, &scope);
     }
@@ -853,11 +932,61 @@ static TZrBool type_inference_branch_assignment_commit_result(
         if (binding == ZR_NULL ||
             binding->name == ZR_NULL ||
             !binding->hasType ||
-            !ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, binding->name, &binding->type)) {
+            !type_inference_branch_assignment_store_replayed_binding(cs, binding->name, &binding->type)) {
             return ZR_FALSE;
         }
     }
     return ZR_TRUE;
+}
+
+/* Failed replay is lack of a proof, not proof that the entry value survives.
+ * Invalidate only visible incoming numeric targets, keeping canonical identity
+ * and declared limits. No trial declaration or source fact is committed. */
+static void type_inference_branch_assignment_forget_plan_ranges(
+        SZrCompilerState *cs, const SZrTypeInferenceBranchAssignmentPlan *plan) {
+    if (plan == ZR_NULL || !plan->isInitialized) return;
+    for (SZrTypeEnvironment *env = cs->typeEnv; env != ZR_NULL; env = env->parent) {
+        for (TZrSize index = 0; index < env->variableTypes.length; ++index) {
+            SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, index);
+            if (!ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType) || !binding->type.hasRangeConstraint ||
+                !type_inference_branch_assignment_plan_contains(plan, binding->name) ||
+                ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                        cs->typeEnv, binding->name, binding->syntaxContext) != binding) continue;
+            SZrTypeBinding widened = *binding;
+            const SZrSemanticSymbolRecord *symbol = ZrParser_Semantic_FindSymbolById(
+                    cs->semanticContext, binding->symbolId);
+            const SZrType *annotation = ZR_NULL;
+            if (symbol != ZR_NULL && symbol->astNode != ZR_NULL) {
+                if (symbol->astNode->type == ZR_AST_VARIABLE_DECLARATION) {
+                    annotation = symbol->astNode->data.variableDeclaration.typeInfo;
+                } else if (symbol->astNode->type == ZR_AST_PARAMETER) {
+                    annotation = symbol->astNode->data.parameter.typeInfo;
+                }
+            }
+            memset(&widened.type, 0, sizeof(widened.type));
+            ZrParser_InferredType_Copy(cs->state, &widened.type, &binding->type);
+            widened.type.hasRangeConstraint = ZR_FALSE;
+            widened.type.minValue = widened.type.maxValue = 0;
+            ZrParser_InferredType_ResetRangeSegments(&widened.type);
+            if (annotation != ZR_NULL) {
+                SZrInferredType declaredType;
+                ZrParser_InferredType_Init(cs->state, &declaredType, ZR_VALUE_TYPE_OBJECT);
+                if (type_inference_branch_assignment_infer_replay_type(cs, ZR_NULL, annotation, &declaredType)) {
+                    widened.type.hasRangeConstraint = declaredType.hasRangeConstraint;
+                    widened.type.minValue = declaredType.minValue;
+                    widened.type.maxValue = declaredType.maxValue;
+                    (void)ZrParser_InferredType_CopyRangeSegments(cs->state, &widened.type, &declaredType);
+                }
+                ZrParser_InferredType_Free(cs->state, &declaredType);
+            }
+            if (env == cs->typeEnv) {
+                ZrParser_InferredType_Free(cs->state, &binding->type);
+                binding->type = widened.type;
+            } else {
+                ZrCore_Array_Push(cs->state, &cs->typeEnv->variableTypes, &widened);
+            }
+        }
+    }
 }
 
 TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState *cs,
@@ -915,17 +1044,8 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
         goto cleanup;
     }
 
-    /* The join only models writes to incoming numeric bindings. Do not
-     * re-infer unrelated RHSs, or reject a numeric path because of a dead one. */
-    const SZrTypeInferenceBranchAssignmentPlan *activeTargets = conditionKnown
-            ? (conditionValue ? &thenPlan : &elsePlan) : &targetPlan;
-    for (index = 0; index < type_inference_branch_assignment_plan_target_count(activeTargets); ++index) {
-        SZrString *name = type_inference_branch_assignment_plan_target_at(activeTargets, index);
-        const SZrTypeBinding *binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
-        if (binding == ZR_NULL || !ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType)) {
-            goto cleanup;
-        }
-    }
+    /* Plans may also mention branch-local names. Replay keeps those bindings
+     * scoped and only incoming numeric assignments contribute a result. */
 
     initialized =
             type_inference_branch_assignment_result_init(
@@ -1003,7 +1123,7 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
 
         targetBinding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, targetName);
         if (targetBinding == ZR_NULL || !ZR_VALUE_IS_TYPE_NUMBER(targetBinding->type.baseType)) {
-            goto cleanup;
+            continue;
         }
 
         thenType = type_inference_branch_assignment_result_find_type(&thenResult, targetName);
@@ -1076,6 +1196,14 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
     joined = type_inference_branch_assignment_commit_result(cs, &joinedResult);
 
 cleanup:
+    if (!joined) {
+        if (conditionKnown) {
+            type_inference_branch_assignment_forget_plan_ranges(cs, conditionValue ? &thenPlan : &elsePlan);
+        } else {
+            type_inference_branch_assignment_forget_plan_ranges(cs, &thenPlan);
+            type_inference_branch_assignment_forget_plan_ranges(cs, &elsePlan);
+        }
+    }
     type_inference_branch_assignment_result_free(cs->state, &joinedResult);
     type_inference_branch_assignment_result_free(cs->state, &elseResult);
     type_inference_branch_assignment_result_free(cs->state, &thenResult);

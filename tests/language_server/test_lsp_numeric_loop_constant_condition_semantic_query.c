@@ -606,6 +606,56 @@ test_local_expression_query_for_true_condition_step_assignment_known_true_if_bre
             "for true condition step assignment known true if break branch");
 }
 
+/* The entry value makes this break precede the step at runtime (result 11).
+ * The bounded replay cannot currently prove that under its widened iteration
+ * environment: require sound unknown, never the stale entry result 6 or step
+ * result 21. An unrelated invariant must retain its precise range. */
+static TZrBool test_local_expression_query_for_refined_break_forgets_entry_range(SZrState *state) {
+    const TZrChar *content =
+        "fn calc(): int {\n"
+        "  var narrowed: int = 5;\n"
+        "  for (; true; narrowed = 20) {\n"
+        "    if (narrowed == 5) { narrowed = 10; break; }\n"
+        "  }\n"
+        "  return narrowed + 1;\n}\n";
+    const TZrChar *unwritten =
+        "fn calc(): int {\n"
+        "  var narrowed: int = 5; var stable: int = 2;\n"
+        "  for (; true; narrowed = 20) {\n"
+        "    if (narrowed == 5) { narrowed = 10; break; }\n"
+        "  }\n"
+        "  return stable + 1;\n}\n";
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///for_refined_break_unknown.zr");
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    SZrArray diagnostics = {0};
+    TZrBool passed = context != ZR_NULL && uri != ZR_NULL &&
+            ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) &&
+            find_position_for_substring(content, "+", &position) &&
+            ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
+    for (TZrSize index = 0; index < diagnostics.length; ++index) {
+        const SZrLspDiagnostic *diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, index);
+        if (diagnostic->severity == 1) {
+            printf("FAIL: unexpected refined-break error: %s\n", ZrCore_String_GetNativeString(diagnostic->message));
+            passed = ZR_FALSE;
+        }
+    }
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = passed && ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query) &&
+            query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT && query.expressionFact != ZR_NULL &&
+            query.expressionFact->kind == ZR_SEMANTIC_EXPRESSION_FACT_BINARY &&
+            query.expressionFact->inferredType.baseType == ZR_VALUE_TYPE_INT64 &&
+            !query.expressionFact->inferredType.hasRangeConstraint &&
+            query.expressionFact->inferredType.rangeSegmentCount == 0 &&
+            (query.numericFact == ZR_NULL || !query.numericFact->hasRange) && query.reachabilityFact == ZR_NULL;
+    if (!passed) printf("FAIL: refined break must not retain a preheader or step-only range\n");
+    if (diagnostics.isValid) ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+    return expect_local_for_body_assignment_before_break_range_equals(
+            state, unwritten, "file:///for_refined_break_invariant.zr", "unwritten invariant after failed loop join", 3, 3) && passed;
+}
+
 /* 此可执行文件由 CTest 的 language_server 套件调用，汇总常量循环条件、break 与 header 执行顺序用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -627,6 +677,7 @@ int main(void) {
     TZrBool omittedVarInitStepPassed;
     TZrBool trueStepNestedIfBreakBranchesPassed;
     TZrBool trueStepKnownTrueIfBreakBranchPassed;
+    TZrBool refinedBreakFallbackPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -715,8 +766,11 @@ int main(void) {
     printf("%s: LSP Local Expression Query Joins For True-Condition Step Assignment Known-True If Break Branch\n",
            trueStepKnownTrueIfBreakBranchPassed ? "PASS" : "FAIL");
 
+    refinedBreakFallbackPassed = test_local_expression_query_for_refined_break_forgets_entry_range(state);
+    printf("%s: LSP Failed Refined-Break Join Forgets Only Written Ranges\n", refinedBreakFallbackPassed ? "PASS" : "FAIL");
+
     ZrCore_GlobalState_Free(global);
-    return (passed &&
+    return (refinedBreakFallbackPassed && passed &&
             noLeakPassed &&
             trueConditionPassed &&
             omittedConditionPassed &&

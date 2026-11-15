@@ -2396,7 +2396,10 @@ static TZrBool type_inference_condition_known_bool_value(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    return type_inference_logical_fact_known_bool_value(cs, condition, outValue, ZR_NULL);
+    /* Speculative range replay has no source semantic context. Pure AST
+     * constants remain valid there, unlike facts tied to an earlier environment. */
+    return type_inference_node_bool_value(condition, outValue) ||
+           type_inference_logical_fact_known_bool_value(cs, condition, outValue, ZR_NULL);
 }
 
 TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
