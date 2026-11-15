@@ -445,6 +445,8 @@ static void test_assignment_member_targets_record_member_write_reference_facts(v
     SZrInferredType result;
     const SZrSemanticReferenceFact *memberWriteFact;
     const SZrSemanticReferenceFact *indexWriteFact;
+    const SZrSemanticReferenceFact *indexReadFact;
+    const SZrSemanticReferenceFact *indexDeclarationFact;
     const char *source =
             "var seed = 1;\n"
             "var index = 0;\n"
@@ -522,11 +524,17 @@ static void test_assignment_member_targets_record_member_write_reference_facts(v
 
     memberWriteFact = ZrParser_SemanticFacts_FindReferenceAtPosition(cs->semanticContext,
                                                                      memberProperty->location);
-    indexWriteFact = ZrParser_SemanticFacts_FindReferenceAtPosition(cs->semanticContext,
-                                                                    indexProperty->location);
+    /* The computed write belongs to the whole member, not its separately read key. */
+    indexWriteFact = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, indexMemberNode, ZR_SEMANTIC_REFERENCE_MEMBER_WRITE);
+    indexReadFact = ZrParser_SemanticFacts_FindReferenceAtPosition(cs->semanticContext,
+                                                                   indexProperty->location);
+    indexDeclarationFact = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, indexPattern, ZR_SEMANTIC_REFERENCE_DECLARATION);
 
     TEST_ASSERT_NOT_NULL(memberWriteFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_MEMBER_WRITE, memberWriteFact->kind);
+    TEST_ASSERT_EQUAL_PTR(memberProperty, memberWriteFact->node);
     TEST_ASSERT_FALSE(memberWriteFact->isResolved);
     TEST_ASSERT_NOT_NULL(memberWriteFact->name);
     TEST_ASSERT_EQUAL_STRING("value", ZrCore_String_GetNativeString(memberWriteFact->name));
@@ -535,11 +543,41 @@ static void test_assignment_member_targets_record_member_write_reference_facts(v
 
     TEST_ASSERT_NOT_NULL(indexWriteFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_MEMBER_WRITE, indexWriteFact->kind);
+    TEST_ASSERT_EQUAL_PTR(indexMemberNode, indexWriteFact->node);
     TEST_ASSERT_FALSE(indexWriteFact->isResolved);
     TEST_ASSERT_NOT_NULL(indexWriteFact->name);
     TEST_ASSERT_EQUAL_STRING("index", ZrCore_String_GetNativeString(indexWriteFact->name));
-    TEST_ASSERT_EQUAL_UINT64(indexProperty->location.start.offset, indexWriteFact->range.start.offset);
-    TEST_ASSERT_EQUAL_UINT64(indexProperty->location.end.offset, indexWriteFact->range.end.offset);
+    TEST_ASSERT_EQUAL_PTR(indexMemberNode->location.source, indexWriteFact->range.source);
+    TEST_ASSERT_EQUAL_UINT64(indexMemberNode->location.start.offset, indexWriteFact->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(indexMemberNode->location.end.offset, indexWriteFact->range.end.offset);
+    TEST_ASSERT_EQUAL_UINT64(indexMemberNode->location.start.offset,
+                             indexWriteFact->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(indexMemberNode->location.end.offset,
+                             indexWriteFact->declarationRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, indexWriteFact->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, indexWriteFact->typeId);
+    TEST_ASSERT_NULL(ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, indexProperty, ZR_SEMANTIC_REFERENCE_MEMBER_WRITE));
+
+    TEST_ASSERT_NOT_NULL(indexReadFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_READ, indexReadFact->kind);
+    TEST_ASSERT_EQUAL_PTR(indexProperty, indexReadFact->node);
+    TEST_ASSERT_TRUE(indexReadFact->isResolved);
+    TEST_ASSERT_NOT_NULL(indexReadFact->name);
+    TEST_ASSERT_EQUAL_STRING("index", ZrCore_String_GetNativeString(indexReadFact->name));
+    TEST_ASSERT_EQUAL_PTR(indexProperty->location.source, indexReadFact->range.source);
+    TEST_ASSERT_EQUAL_UINT64(indexProperty->location.start.offset, indexReadFact->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(indexProperty->location.end.offset, indexReadFact->range.end.offset);
+    TEST_ASSERT_EQUAL_PTR(indexPattern->location.source, indexReadFact->declarationRange.source);
+    TEST_ASSERT_EQUAL_UINT64(indexPattern->location.start.offset,
+                             indexReadFact->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(indexPattern->location.end.offset,
+                             indexReadFact->declarationRange.end.offset);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, indexReadFact->symbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, indexReadFact->typeId);
+    TEST_ASSERT_NOT_NULL(indexDeclarationFact);
+    TEST_ASSERT_EQUAL_UINT32(indexDeclarationFact->symbolId, indexReadFact->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(indexDeclarationFact->typeId, indexReadFact->typeId);
 
     ZrParser_InferredType_Free(g_state, &result);
     ZrParser_InferredType_Free(g_state, &indexType);
