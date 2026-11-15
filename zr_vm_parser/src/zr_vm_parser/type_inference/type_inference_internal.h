@@ -129,7 +129,7 @@ TZrBool type_inference_rest_argument_types_match(const SZrArray *argumentTypes,
                                                 const SZrInferredType *elementType);
 TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
                                            const SZrFunctionCall *call,
-                                           const SZrParameter *rest,
+                                           const SZrFunctionTypeInfo *function,
                                            TZrSize fixedCount,
                                            TZrSize positionalCount,
                                            const SZrInferredType *spreadType);

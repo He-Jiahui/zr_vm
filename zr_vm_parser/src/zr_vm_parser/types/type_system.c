@@ -796,6 +796,12 @@ static void free_function_type_info_payload(SZrState *state, SZrFunctionTypeInfo
     }
 
     ZrParser_InferredType_Free(state, &funcInfo->returnType);
+    if (funcInfo->restParameterType != ZR_NULL) {
+        ZrParser_InferredType_Free(state, funcInfo->restParameterType);
+        ZrCore_Memory_RawFreeWithType(state->global, funcInfo->restParameterType,
+                                    sizeof(*funcInfo->restParameterType), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        funcInfo->restParameterType = ZR_NULL;
+    }
     if (funcInfo->paramTypes.isValid) {
         for (TZrSize j = 0; j < funcInfo->paramTypes.length; j++) {
             SZrInferredType *paramType =
@@ -1490,6 +1496,7 @@ static TZrBool type_environment_register_function_ex(
     }
     
     funcInfo->name = name;
+    funcInfo->restParameterType = ZR_NULL;
     ZrParser_InferredType_Copy(state, &funcInfo->returnType, returnType);
     ZrCore_Array_Construct(&funcInfo->paramTypes);
     ZrCore_Array_Construct(&funcInfo->genericParameters);

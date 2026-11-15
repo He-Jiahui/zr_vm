@@ -123,6 +123,9 @@ typedef struct SZrFunctionTypeInfo {
     TZrBool hasInferredReturnType;   // declaration return contract has been refined
     /* Item identity for declarations; local identity for callable value bindings. */
     SZrSyntaxContext syntaxContext;
+    /* Owned source-rest contract resolved at declaration, never in a caller's
+     * alias scope. Not a fixed parameter or serialized runtime signature. */
+    SZrInferredType *restParameterType;
 } SZrFunctionTypeInfo;
 
 typedef struct SZrNamedTypeBinding {

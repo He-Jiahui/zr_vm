@@ -18,6 +18,21 @@ fn scopedCount(): int {
     let values: T = ["caller alias"];
     return result + values.length;
 }
+class Item {}
+let Element = string[];
+fn nominalCount(...items: Item[]): int { return items.length; }
+fn genericNominalCount<T>(first: T, ...items: Item[]): int { return items.length; }
+fn aliasCount(...items: Element[]): int { return items.length; }
+fn genericAliasCount<T>(first: T, ...items: Element[]): int { return items.length; }
+fn declarationScopedCount(item: Item, items: Item[]): int {
+    let Item = string[];
+    let Element = int[];
+    return nominalCount(item) + nominalCount(...items) + genericNominalCount(1, item)
+        + aliasCount(["declared"]) + genericAliasCount(1, ["declared"]);
+}
+if (declarationScopedCount(new Item(), [new Item()]) != 5) {
+    throw "caller aliases must not replace rest declaration types";
+}
 let tail: int[] = [20, 22];
 let fixed: int[1] = [42];
 if (genericCount(1, 20, 22) != 2 || genericCount<int>(1, ...tail) != 2 || scopedCount() != 3) {

@@ -1129,7 +1129,6 @@ static TZrBool generic_type_references_bindings(const SZrArray *bindings,
  * extra fixed signature entries. Compatibility is checked after substitution. */
 static EZrGenericCallResolveStatus infer_generic_rest_argument_bindings(
         SZrCompilerState *cs,
-        SZrTypeEnvironment *env,
         const SZrFunctionTypeInfo *funcType,
         SZrFunctionCall *call,
         SZrArray *bindings,
@@ -1141,18 +1140,17 @@ static EZrGenericCallResolveStatus infer_generic_rest_argument_bindings(
     TZrSize positionalCount = call != ZR_NULL && call->args != ZR_NULL ? call->args->count : 0u;
     TZrBool hasSpread = compiler_call_has_spread_argument(call);
     SZrInferredType spreadType;
-    SZrInferredType restType;
-    SZrAstNode *savedFunctionNode;
-    SZrTypeEnvironment *savedEnv;
-    SZrTypeEnvironment *declarationEnv = ZR_NULL;
-    TZrBool converted;
+    const SZrInferredType *restType = funcType->restParameterType;
     EZrGenericCallResolveStatus status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
 
     if (rest == ZR_NULL) {
         return ZR_GENERIC_CALL_RESOLVE_OK;
     }
+    if (restType == ZR_NULL || restType->baseType != ZR_VALUE_TYPE_ARRAY ||
+        restType->elementTypes.length != 1u) {
+        return status;
+    }
     ZrParser_InferredType_Init(cs->state, &spreadType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(cs->state, &restType, ZR_VALUE_TYPE_OBJECT);
     if (hasSpread) {
         SZrAstNode *spreadNode;
         if (positionalCount == 0u) {
@@ -1176,32 +1174,10 @@ static EZrGenericCallResolveStatus infer_generic_rest_argument_bindings(
         goto cleanup;
     }
 
-    /* Convert the declaration's annotation in its owning type environment, not
-     * under caller shadowing. Actual argument inference above stays at the call. */
-    for (SZrTypeEnvironment *scope = env; scope != ZR_NULL && declarationEnv == ZR_NULL;
-         scope = scope->parent) {
-        for (TZrSize index = 0u; index < scope->functionReturnTypes.length; ++index) {
-            SZrFunctionTypeInfo *const *candidate = ZrCore_Array_Get(&scope->functionReturnTypes, index);
-            if (candidate != ZR_NULL && *candidate == funcType) {
-                declarationEnv = scope;
-                break;
-            }
-        }
-    }
-    savedFunctionNode = cs->currentFunctionNode;
-    savedEnv = cs->typeEnv;
-    cs->currentFunctionNode = funcType->declarationNode;
-    if (declarationEnv != ZR_NULL) {
-        cs->typeEnv = declarationEnv;
-    }
-    converted = type_inference_annotation_type_convert(
-            cs, rest->typeInfo, funcType->declarationNode->data.functionDeclaration.generic, &restType);
-    cs->currentFunctionNode = savedFunctionNode;
-    cs->typeEnv = savedEnv;
-    if (!converted || restType.baseType != ZR_VALUE_TYPE_ARRAY || restType.elementTypes.length != 1u) {
-        goto cleanup;
-    }
-    ZrParser_InferredType_Copy(cs->state, elementType, ZrCore_Array_Get(&restType.elementTypes, 0u));
+    /* The declaration owns this complete type; only actual expressions are
+     * inferred under the caller. Generic substitution still uses shared bindings. */
+    ZrParser_InferredType_Copy(cs->state, elementType,
+                              ZrCore_Array_Get((SZrArray *)&restType->elementTypes, 0u));
     if (generic_type_references_bindings(bindings, elementType)) {
         for (TZrSize index = 0u; index < argumentTypes->length; ++index) {
             const SZrInferredType *actual = ZrCore_Array_Get(argumentTypes, index);
@@ -1216,7 +1192,6 @@ static EZrGenericCallResolveStatus infer_generic_rest_argument_bindings(
     status = ZR_GENERIC_CALL_RESOLVE_OK;
 
 cleanup:
-    ZrParser_InferredType_Free(cs->state, &restType);
     ZrParser_InferredType_Free(cs->state, &spreadType);
     return status;
 }
@@ -1462,7 +1437,7 @@ EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
     ZrCore_Array_Construct(&restArgumentTypes);
     ZrParser_InferredType_Init(cs->state, &restElementType, ZR_VALUE_TYPE_OBJECT);
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
-        status = infer_generic_rest_argument_bindings(cs, env, funcType, call, &bindings,
+        status = infer_generic_rest_argument_bindings(cs, funcType, call, &bindings,
                                                       &restArgumentTypes, &restElementType,
                                                       diagnosticBuffer, diagnosticBufferSize);
     }
