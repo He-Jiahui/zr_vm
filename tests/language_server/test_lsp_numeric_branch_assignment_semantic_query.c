@@ -877,6 +877,53 @@ static TZrBool test_local_expression_query_joins_branch_local_ranges(SZrState *s
             "file:///active_numeric_branch_assignment.zr", activeNumericTarget, 0, 11, 11);
 }
 
+/* Unrelated shadows cannot abort a join, and disabling diagnostics must not
+ * disable pure constant control-flow selection in a replayed RHS. */
+static TZrBool test_local_expression_query_replay_edge_ranges(SZrState *state) {
+    const TZrChar *shadowedScratch =
+        "fn calc(flag: bool): int {\n"
+        "  var narrowed: int = 7; var scratch: int = 0;\n"
+        "  if (flag) { var scratch: int = 100; scratch = 101; narrowed = 10; }\n"
+        "  else { narrowed = 20; }\n"
+        "  return narrowed + 1;\n}\n";
+    const TZrChar *localScratch =
+        "fn calc(flag: bool): int {\n"
+        "  var narrowed: int = 7;\n"
+        "  if (flag) { var scratch: int = 100; scratch = 101; narrowed = 10; }\n"
+        "  else { narrowed = 20; }\n"
+        "  return narrowed + 1;\n}\n";
+    const TZrChar *constantConditional =
+        "fn calc(flag: bool): int {\n"
+        "  var narrowed: int = 7;\n"
+        "  if (flag) { narrowed = 1 < 2 ? 10 : \"dead\"; }\n"
+        "  else { narrowed = 20; }\n"
+        "  return narrowed + 1;\n}\n";
+    const TZrChar *nestedShadow =
+        "fn calc(flag: bool, other: bool): int {\n"
+        "  var narrowed: int = 7;\n"
+        "  if (flag) { var narrowed: int = 100;\n"
+        "    if (other) { narrowed = 101; } else { narrowed = 102; }\n"
+        "  }\n"
+        "  return narrowed + 1;\n}\n";
+    const TZrChar *unrelatedDestructuring =
+        "fn calc(flag: bool): int {\n"
+        "  var narrowed: int = 7;\n"
+        "  if (flag) { var [unused] = [1]; narrowed = 10; }\n"
+        "  else { narrowed = 20; }\n"
+        "  return narrowed + 1;\n}\n";
+    TZrBool passed = run_assignment_segment_range_case(state, "unrelated shadow keeps numeric join",
+            "file:///unrelated_shadow_numeric_join.zr", shadowedScratch, 0, 11, 21, 11, 11, 21, 21);
+    passed &= run_assignment_segment_range_case(state, "local target is not an incoming target",
+            "file:///local_scratch_numeric_join.zr", localScratch, 0, 11, 21, 11, 11, 21, 21);
+    passed &= run_assignment_segment_range_case(state, "replay selects pure constant ternary",
+            "file:///constant_ternary_numeric_join.zr", constantConditional, 0, 11, 21, 11, 11, 21, 21);
+    passed &= run_assignment_range_case(state, "nested local results do not escape",
+            "file:///nested_shadow_numeric_join.zr", nestedShadow, 0, 8, 8);
+    passed &= run_assignment_segment_range_case(state, "unrelated destructuring keeps numeric join",
+            "file:///destructuring_numeric_join.zr", unrelatedDestructuring, 0, 11, 21, 11, 11, 21, 21);
+    return passed;
+}
+
 /* Follow the if with a checked assignment so a leaked replay error cannot hide at function exit. */
 static TZrBool run_branch_local_call_diagnostics(SZrState *state, TZrBool numericTarget, TZrBool invalid) {
     const TZrChar *fixture =
@@ -1083,6 +1130,7 @@ int main(void) {
            ifElseOnlyAssignmentDataflowTestPassed ? "PASS" : "FAIL");
 
     branchLocalRangePassed = test_local_expression_query_joins_branch_local_ranges(state);
+    branchLocalRangePassed &= test_local_expression_query_replay_edge_ranges(state);
     printf("%s: LSP Numeric Join Uses Branch-Local Bindings\n", branchLocalRangePassed ? "PASS" : "FAIL");
     branchLocalDiagnosticsPassed = run_branch_local_call_diagnostics(state, ZR_FALSE, ZR_FALSE) &&
             run_branch_local_call_diagnostics(state, ZR_FALSE, ZR_TRUE) &&

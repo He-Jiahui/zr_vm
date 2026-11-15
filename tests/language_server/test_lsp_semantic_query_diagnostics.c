@@ -492,6 +492,66 @@ static void test_lsp_diagnostics_publish_array_bounds(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* A mutable binding with no loop-carried writes is still an invariant. Check
+ * exact error publication, not merely the absence of a reachability warning. */
+static void test_lsp_diagnostics_preserve_unwritten_loop_ranges(SZrState *state) {
+    static const struct {
+        const TZrChar *name;
+        const TZrChar *source;
+        TZrSize boundsErrors;
+    } cases[] = {
+        {"while preserves invariant out-of-bounds index",
+         "fn f(flag: bool): int { var values = [1,2]; var index = 2; "
+         "while (flag) { return values[index]; } return 0; }", 1},
+        {"unrelated loop write does not erase out-of-bounds index",
+         "fn f(flag: bool): int { var values = [1,2]; var index = 2; var other = 0; "
+         "while (flag) { other = other + 1; return values[index]; } return 0; }", 1},
+        {"for preserves invariant out-of-bounds index",
+         "fn f(flag: bool): int { var values = [1,2]; var index = 2; "
+         "for (; flag; ) { return values[index]; } return 0; }", 1},
+        {"foreach preserves invariant out-of-bounds index",
+         "fn f(): int { var values = [1,2]; var index = 2; "
+         "for (var item in values) { return values[index]; } return 0; }", 1},
+        {"unwritten loop range selects only the live ternary type",
+         "fn f(): int { var index = 0; "
+         "while (true) { return index == 0 ? 1 : \"never\"; } }", 0}
+    };
+    for (TZrSize index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        SZrTestTimer timer;
+        SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+        SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///unwritten_loop_range.zr");
+        SZrArray diagnostics = {0};
+        TZrSize errors = 0;
+        TZrBool passed;
+        TEST_START(cases[index].name);
+        passed = context != ZR_NULL && uri != ZR_NULL &&
+                 ZrLanguageServer_Lsp_UpdateDocument(state, context, uri,
+                         cases[index].source, strlen(cases[index].source), 1) &&
+                 ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
+        if (passed) {
+            passed = diagnostic_array_count_code(&diagnostics, "array_index_out_of_bounds") == cases[index].boundsErrors;
+            for (TZrSize item = 0; item < diagnostics.length; ++item) {
+                const SZrLspDiagnostic *diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, item);
+                if (diagnostic->severity == 1) {
+                    ++errors;
+                    const TZrChar *code = test_string_text(diagnostic->code);
+                    if (code == ZR_NULL || strcmp(code, "array_index_out_of_bounds") != 0) {
+                        printf("Unexpected error: %s\n", test_string_text(diagnostic->message));
+                        passed = ZR_FALSE;
+                    }
+                }
+            }
+            const SZrLspDiagnostic *bounds = diagnostic_array_find_code(&diagnostics, "array_index_out_of_bounds");
+            passed = passed && errors == cases[index].boundsErrors &&
+                     (bounds == ZR_NULL || bounds->severity == 1);
+        }
+        if (diagnostics.isValid) ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+        if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+        if (passed) TEST_PASS(timer, cases[index].name);
+        else TEST_FAIL(timer, cases[index].name, "Expected exactly the invariant bounds errors and no spurious type error");
+    }
+}
+
 /* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_interval_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Interval Array Bounds";
@@ -950,6 +1010,7 @@ int main(void) {
     test_lsp_diagnostics_publish_interval_logical_unreachable_branch(state);
     test_lsp_diagnostics_publish_numeric_overflow(state);
     test_lsp_diagnostics_publish_array_bounds(state);
+    test_lsp_diagnostics_preserve_unwritten_loop_ranges(state);
     test_lsp_diagnostics_publish_interval_array_bounds(state);
     test_lsp_diagnostics_publish_possible_interval_array_bounds(state);
     test_lsp_diagnostics_publish_primitive_integer_array_bounds(state);
