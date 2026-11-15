@@ -727,6 +727,23 @@ static TZrBool semantic_infer_node_type(SZrState *state,
     return ZR_FALSE;
 }
 
+/* The AST walk alone does not infer a comparison or a bare identifier. Run
+ * parser inference in the current lexical/range scope to publish the condition
+ * and its operands' canonical reference and expression facts. */
+static void semantic_typecheck_condition(SZrState *state,
+                                         SZrSemanticAnalyzer *analyzer,
+                                         SZrAstNode *condition) {
+    SZrInferredType conditionType;
+
+    if (condition == ZR_NULL) {
+        return;
+    }
+    ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, condition);
+    ZrParser_InferredType_Init(state, &conditionType, ZR_VALUE_TYPE_OBJECT);
+    (void)semantic_infer_node_type(state, analyzer, condition, &conditionType, ZR_NULL);
+    ZrParser_InferredType_Free(state, &conditionType);
+}
+
 /* using 守卫的 union payload 仅在命中分支可见，同时记录资源离开作用域时的清理事实。 */
 static void semantic_typecheck_using_statement(SZrState *state,
                                                SZrSemanticAnalyzer *analyzer,
@@ -1482,16 +1499,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         case ZR_AST_IF_EXPRESSION: {
             SZrIfExpression *ifExpr = &node->data.ifExpression;
             SZrTypeInferenceBranchScope branchScope;
-            SZrInferredType conditionType;
 
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->condition);
-            ZrParser_InferredType_Init(state, &conditionType, ZR_VALUE_TYPE_OBJECT);
-            (void)semantic_infer_node_type(state,
-                                           analyzer,
-                                           ifExpr->condition,
-                                           &conditionType,
-                                           ZR_NULL);
-            ZrParser_InferredType_Free(state, &conditionType);
+            semantic_typecheck_condition(state, analyzer, ifExpr->condition);
             semantic_record_constant_if_condition_facts(state, analyzer, node);
 
             (void)ZrParser_TypeInference_PushTrueBranchNumericRangeScope(analyzer->compilerState,
@@ -1517,7 +1526,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         case ZR_AST_WHILE_LOOP: {
             SZrWhileLoop *whileLoop = &node->data.whileLoop;
             SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->cond);
+            semantic_typecheck_condition(state, analyzer, whileLoop->cond);
             ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                analyzer,
                                                                                whileLoop->cond,
@@ -1537,7 +1546,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
 
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
                 SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
-                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
+                semantic_typecheck_condition(state, analyzer, forLoop->cond);
                 ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                    analyzer,
                                                                                    forLoop->cond,
@@ -1549,7 +1558,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             } else {
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
                 SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
-                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
+                semantic_typecheck_condition(state, analyzer, forLoop->cond);
                 ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                    analyzer,
                                                                                    forLoop->cond,

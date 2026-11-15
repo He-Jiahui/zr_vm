@@ -27,6 +27,7 @@
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_cancellation_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_type_use_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_cast_operand_tests.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/lsp-loop-reference-identity-tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_handler_tests.cmake)
 
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)
