@@ -177,6 +177,7 @@ add_executable(
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/native_runner/main.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/native_runner/benchmark_support.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/numeric_loops/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/swarm_step/c/benchmark_case.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/dispatch_loops/c/benchmark_case.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/container_pipeline/c/benchmark_case.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/sort_array/c/benchmark_case.c

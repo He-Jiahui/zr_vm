@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_swarm_step",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

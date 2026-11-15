@@ -792,12 +792,13 @@ const CASE_HANDLERS = {
     gc_fragment_stress: ["BENCH_GC_FRAGMENT_STRESS_PASS", gcFragmentStress],
 };
 
-function runMain(caseName) {
-    if (!Object.prototype.hasOwnProperty.call(CASE_HANDLERS, caseName)) {
+function runMain(caseName, caseHandler = null) {
+    // A case may supply its own [banner, kernel] while sharing the CLI protocol.
+    if (caseHandler === null && !Object.prototype.hasOwnProperty.call(CASE_HANDLERS, caseName)) {
         throw new Error(`unknown benchmark case: ${caseName}`);
     }
 
-    const [banner, handler] = CASE_HANDLERS[caseName];
+    const [banner, handler] = caseHandler === null ? CASE_HANDLERS[caseName] : caseHandler;
     const scale = parseScale(process.argv.slice(2));
     const checksum = handler(scale);
     process.stdout.write(`${banner}\n${checksum}\n`);

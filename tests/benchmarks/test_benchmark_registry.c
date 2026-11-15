@@ -188,7 +188,8 @@ int main(void) {
             "branch_jump_dense",
             "mixed_service_loop",
             "gc_fragment_baseline",
-            "gc_fragment_stress"
+            "gc_fragment_stress",
+            "swarm_step"
     };
     char registryPath[ZR_TESTS_PATH_MAX];
     char readmePath[ZR_TESTS_PATH_MAX];
@@ -294,6 +295,13 @@ int main(void) {
             testsCmakePath,
             "tests/benchmarks/cases/gc_fragment_baseline/c/benchmark_case.c",
             "gc_fragment_baseline native runner CMake registration");
+    failures += benchmark_registry_expect_file_contains(
+            testsCmakePath,
+            "tests/benchmarks/cases/swarm_step/c/benchmark_case.c",
+            "swarm_step native runner CMake registration");
+    failures += benchmark_registry_expect_file(
+            ZR_VM_TESTS_SOURCE_DIR "/../tests/benchmarks/cases/swarm_step/lua/main.lua",
+            "swarm_step Lua entry");
 
     for (index = 0; index < sizeof(benchmarkCases) / sizeof(benchmarkCases[0]); index++) {
         char casePath[ZR_TESTS_PATH_MAX];
@@ -312,7 +320,7 @@ int main(void) {
         failures += benchmark_registry_expect_case_layout(
                 benchmarkCases[index],
                 index < 8u ? ZR_TRUE : ZR_FALSE,
-                ZR_TRUE);
+                strcmp(benchmarkCases[index], "swarm_step") != 0 ? ZR_TRUE : ZR_FALSE);
     }
 
     if (failures != 0) {
