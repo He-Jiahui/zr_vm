@@ -88,6 +88,7 @@ TZrBool compiler_validate_spread_call_signature(
         const SZrFunctionCall *call,
         const SZrArray *parameterTypes,
         const SZrArray *parameterPassingModes,
+        TZrBool isVariadic,
         SZrFileRange location);
 TZrBool compiler_validate_trailing_spread_call(
         SZrCompilerState *cs,

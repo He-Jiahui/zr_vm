@@ -2,6 +2,42 @@
 #include "compiler/compiler_internal.h"
 #include "type_inference/type_environment_context_lookup.h"
 
+#include <stddef.h>
+
+TZrBool compiler_register_rest_parameter(SZrCompilerState *cs, SZrParameter *parameter) {
+    SZrAstNode *node;
+    SZrInferredType inferred;
+    SZrString *name;
+    TZrUInt32 slot;
+    TZrBool registered;
+
+    if (parameter == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    node = (SZrAstNode *)((TZrByte *)parameter - offsetof(SZrAstNode, data.parameter));
+    name = parameter->name->name;
+    slot = allocate_local_var_with_context(cs, name, parameter->name->syntaxContext);
+    if (slot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    compiler_register_readonly_parameter_name(cs, parameter, name);
+    if (cs->typeEnv == ZR_NULL ||
+        !ZrParser_AstTypeToInferredType_Convert(cs, parameter->typeInfo, &inferred)) {
+        return ZR_FALSE;
+    }
+    registered = inferred.baseType == ZR_VALUE_TYPE_ARRAY &&
+                 inferred.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                 !inferred.hasArraySizeConstraint &&
+                 parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_VALUE &&
+                 ZrParser_TypeEnvironment_RegisterVariableEx(cs->state, cs->typeEnv, name,
+                                                           &inferred, node, node->location);
+    ZrParser_InferredType_Free(cs->state, &inferred);
+    return registered &&
+           compiler_register_parameter_semantic_identity(cs, name, parameter->name->syntaxContext,
+                                                        slot, node->location) !=
+                   ZR_COMPILER_PARAMETER_IDENTITY_ERROR;
+}
+
 TZrBool compiler_stack_slot_is_reference_parameter(SZrCompilerState *cs, TZrUInt32 stackSlot) {
     if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || cs->semanticContext == ZR_NULL) {
         return ZR_FALSE;

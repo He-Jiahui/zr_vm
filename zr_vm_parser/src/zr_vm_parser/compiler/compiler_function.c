@@ -399,6 +399,11 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (!compiler_register_rest_parameter(cs, funcDecl->args)) {
+        ZrParser_Compiler_Error(cs, "Cannot bind the variadic array parameter", node->location);
+        goto function_type_scope_cleanup;
+    }
+
     if (oldFunction != ZR_NULL && funcDecl->body != ZR_NULL) {
         SZrCompilerState parentCompilerSnapshot = {0};
         parentCompilerSnapshot.localVars.head = (TZrByte *)savedParentLocalVars;

@@ -2406,6 +2406,7 @@ static TZrBool infer_spread_call_argument_types_for_candidate(
     TZrSize prefixCount;
     TZrSize spreadCount;
     TZrSize parameterCount;
+    const SZrParameter *rest = type_inference_function_rest_parameter(funcType);
 
     if (handled != ZR_NULL) {
         *handled = ZR_FALSE;
@@ -2430,13 +2431,13 @@ static TZrBool infer_spread_call_argument_types_for_candidate(
     spreadExpression = spreadNode->data.spreadArgument.expression;
 
     ZrCore_Array_Construct(argTypes);
-    if (prefixCount > parameterCount) {
+    if (rest == ZR_NULL && prefixCount > parameterCount) {
         *mismatch = ZR_TRUE;
         return ZR_TRUE;
     }
     ZrCore_Array_Init(
             cs->state, argTypes, sizeof(SZrInferredType), parameterCount);
-    for (TZrSize index = 0U; index < prefixCount; index++) {
+    for (TZrSize index = 0U; index < prefixCount && index < parameterCount; index++) {
         if (!infer_call_argument_type_node(
                     cs, call->args->nodes[index], argTypes)) {
             free_inferred_type_array(cs->state, argTypes);
@@ -2464,9 +2465,13 @@ static TZrBool infer_spread_call_argument_types_for_candidate(
         return ZR_FALSE;
     }
 
-    spreadCount = parameterCount - prefixCount;
-    if (spreadType.hasArraySizeConstraint &&
-        spreadType.arrayFixedSize != spreadCount) {
+    spreadCount = parameterCount > prefixCount ? parameterCount - prefixCount : 0u;
+    if ((spreadType.hasArraySizeConstraint &&
+         (rest == ZR_NULL ? spreadType.arrayFixedSize != spreadCount
+                          : spreadType.arrayFixedSize < spreadCount)) ||
+        (rest != ZR_NULL && funcType->genericParameters.length == 0u &&
+         !type_inference_rest_arguments_match(
+                 cs, call, rest, parameterCount, prefixCount, &spreadType))) {
         *mismatch = ZR_TRUE;
         ZrParser_InferredType_Free(cs->state, &spreadType);
         free_inferred_type_array(cs->state, argTypes);
@@ -2737,6 +2742,21 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
     argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
 
     ZrCore_Array_Construct(argTypes);
+    if (declNode->type == ZR_AST_FUNCTION_DECLARATION &&
+        declNode->data.functionDeclaration.args != ZR_NULL &&
+        call != ZR_NULL && !call->hasNamedArgs && argCount > paramCount) {
+        /* Generic rest types are checked against substituted bindings by the
+         * generic resolver, never against an unresolved caller-visible T. */
+        if (funcType->genericParameters.length == 0u &&
+            !type_inference_rest_arguments_match(cs, call, declNode->data.functionDeclaration.args,
+                                                 paramCount, argCount, ZR_NULL)) {
+            if (mismatch != ZR_NULL) {
+                *mismatch = ZR_TRUE;
+            }
+            return ZR_TRUE;
+        }
+        argCount = paramCount;
+    }
     if (paramCount == 0) {
         if (argCount > 0) {
             if (mismatch != ZR_NULL) {

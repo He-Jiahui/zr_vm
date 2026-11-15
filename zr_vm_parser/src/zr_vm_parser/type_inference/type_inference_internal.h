@@ -116,6 +116,28 @@ ZR_PARSER_API EZrGenericCallResolveStatus resolve_generic_constructed_type_name(
         SZrString **outTypeName,
         TZrChar *diagnosticBuffer,
         TZrSize diagnosticBufferSize);
+/* Converts a callable annotation without letting caller aliases replace that
+ * declaration's hygienically matching type parameters. NULL keeps body rules. */
+TZrBool type_inference_annotation_type_convert(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        const SZrGenericDeclaration *preferredGeneric,
+        SZrInferredType *result);
+const SZrParameter *type_inference_function_rest_parameter(const SZrFunctionTypeInfo *function);
+TZrBool type_inference_rest_argument_types(SZrCompilerState *cs,
+                                          const SZrFunctionCall *call,
+                                          TZrSize fixedCount,
+                                          TZrSize positionalCount,
+                                          const SZrInferredType *spreadType,
+                                          SZrArray *argumentTypes);
+TZrBool type_inference_rest_argument_types_match(const SZrArray *argumentTypes,
+                                                const SZrInferredType *elementType);
+TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
+                                           const SZrFunctionCall *call,
+                                           const SZrParameter *rest,
+                                           TZrSize fixedCount,
+                                           TZrSize positionalCount,
+                                           const SZrInferredType *spreadType);
 TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
                                                          SZrString *funcName,

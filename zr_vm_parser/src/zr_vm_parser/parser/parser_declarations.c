@@ -250,8 +250,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         }
     } else {
         params = parse_parameter_list(ps);
-        /* TODO: parse_parameter_list 会吞掉后续逗号及 params 参数；
-         * 核查下方 args 分支可达性与编译器对变参位置的期望。 */
+        /* The fixed parameter list leaves the rest delimiter for this branch. */
         if (consume_token(ps, ZR_TK_COMMA)) {
             if (ps->lexer->t.token == ZR_TK_PARAMS) {
                 // 普通参数后跟可变参数 (param1, param2, ...name: type)

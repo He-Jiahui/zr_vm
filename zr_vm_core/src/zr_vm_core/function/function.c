@@ -27,6 +27,7 @@
 #include "function/function_precall_internal.h"
 #include "function/function_ir_owners_internal.h"
 #include "function/function_return_internal.h"
+#include "function/function_rest_parameters.h"
 #include "gc/gc_temporary_roots.h"
 
 /*
@@ -4053,7 +4054,7 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (function_precall_has_inline_frame_parameters(function)) {
+    if (function->hasVariableArguments || function_precall_has_inline_frame_parameters(function)) {
         return ZR_FALSE;
     }
 
@@ -4483,6 +4484,8 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
     SZrFunctionCallInfoStackAnchors callInfoAnchors;
     TZrBool hasArgumentSourceFrameAnchor = ZR_FALSE;
     TZrBool hasReceiverSourceFrameAnchor = ZR_FALSE;
+    SZrObject *restArray = ZR_NULL;
+    TZrSize restRootDepth = 0u;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(stackPointer != ZR_NULL);
@@ -4504,7 +4507,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
         state->stackTop.valuePointer = argumentTop;
     }
 
-    if (ZR_LIKELY(debugHookSignal == 0u &&
+    if (ZR_LIKELY(debugHookSignal == 0u && !function->hasVariableArguments &&
                   parametersCount == argumentsCount &&
                   cachedEntryClearStackSizePlusOne == exactArgsClearStackSizePlusOne &&
                   !function_precall_has_inline_frame_parameters(function) &&
@@ -4588,6 +4591,30 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
             stackPointer,
             &stackPointer,
             &returnDestination);
+    if (ZR_UNLIKELY(function->hasVariableArguments)) {
+        SZrFunctionStackAnchor callBaseAnchor;
+        SZrFunctionStackAnchor returnAnchor;
+        if (argumentsCount < parametersCount || parametersCount >= stackSize) {
+            ZrCore_Debug_RunError(state, "Invalid argument count or frame for variadic function");
+            return ZR_NULL;
+        }
+        ZrCore_Function_StackAnchorInit(state, stackPointer, &callBaseAnchor);
+        if (returnDestination != ZR_NULL) {
+            ZrCore_Function_StackAnchorInit(state, returnDestination, &returnAnchor);
+        }
+        restRootDepth = state->temporaryRootLength;
+        restArray = function_pack_rest_parameters(state, stackPointer, parametersCount, argumentsCount);
+        if (restArray == ZR_NULL) {
+            ZrCore_Debug_RunError(state, "Could not bind variadic array parameter");
+            return ZR_NULL;
+        }
+        stackPointer = ZrCore_Function_StackAnchorRestore(state, &callBaseAnchor);
+        if (returnDestination != ZR_NULL) {
+            returnDestination = ZrCore_Function_StackAnchorRestore(state, &returnAnchor);
+        }
+        argumentsCount = parametersCount;
+        state->stackTop.valuePointer = stackPointer + 1u + argumentsCount;
+    }
     if (hasArgumentSourceFrameAnchor) {
         argumentSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &argumentSourceFrameBaseAnchor);
     }
@@ -4600,6 +4627,9 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
         callInfo = ZrCore_CallInfo_Extend(state);
     }
     if (ZR_UNLIKELY(callInfo == ZR_NULL)) {
+        if (restArray != ZR_NULL) {
+            ZrCore_Gc_TemporaryRootsRestore(state, restRootDepth);
+        }
         return ZR_NULL;
     }
 
@@ -4634,6 +4664,11 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
     function_call_info_stack_anchors_restore_and_reanchor(state, callInfo, &callInfoAnchors, &stackPointer);
     ZrCore_Function_InitializeFrameLayoutStorage(state, stackPointer, function, argumentsCount);
     function_call_info_stack_anchors_restore_and_reanchor(state, callInfo, &callInfoAnchors, &stackPointer);
+    if (restArray != ZR_NULL) {
+        function_bind_rest_parameter(state, function, stackPointer + 1u, restArray);
+        state->stackTop.valuePointer = stackPointer + 2u + parametersCount;
+        ZrCore_Gc_TemporaryRootsRestore(state, restRootDepth);
+    }
     if (!(hasReceiverSourceFrame
                   ? function_bind_inline_frame_parameters_with_receiver_source(
                             state,
@@ -4921,7 +4956,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_p
     TZrSize stackSize;
 
     if (state == ZR_NULL || stackPointer == ZR_NULL || function == ZR_NULL ||
-        state->debugHookSignal != 0u ||
+        state->debugHookSignal != 0u || function->hasVariableArguments ||
         function->parameterCount != argumentsCount ||
         !ZrCore_Function_HasDirectValueFrameSlotSummary(function)) {
         return ZR_NULL;

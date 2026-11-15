@@ -1615,9 +1615,35 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
         // 这样可以进行错误恢复
     }
 
-    // 可选默认值（可变参数不能有默认值）
+    // A rest binding is one by-value, unsized array at the end of the list.
     SZrAstNode *defaultValue = ZR_NULL;
-    if (!isVariadic && consume_token(ps, ZR_TK_EQUALS)) {
+    if (isVariadic) {
+        const SZrType *arrayType = typeInfo;
+        while (arrayType != ZR_NULL && arrayType->dimensions == 0) {
+            arrayType = arrayType->subType;
+        }
+        if (arrayType == ZR_NULL) {
+            report_error(ps, "Variadic parameter must have an array type (T[])");
+        } else if (arrayType->hasArraySizeConstraint) {
+            report_error(ps, "Variadic parameter requires an unsized array type (T[])");
+        }
+        if (sourceForm != ZR_PARAMETER_SOURCE_VALUE ||
+            (typeInfo != ZR_NULL &&
+             (typeInfo->referenceAccess != ZR_REFERENCE_ACCESS_NONE || typeInfo->isScopedReference))) {
+            report_error(ps, "Variadic parameter must be passed by value");
+        }
+        if (consume_token(ps, ZR_TK_EQUALS)) {
+            report_error(ps, "Variadic parameter cannot have a default value");
+            ZrParser_Ast_Free(ps->state, parse_expression(ps));
+        }
+        if (ps->lexer->t.token == ZR_TK_COMMA) {
+            if (peek_token(ps) == ZR_TK_RPAREN) {
+                consume_token(ps, ZR_TK_COMMA);
+            } else {
+                report_error(ps, "Variadic parameter must be last");
+            }
+        }
+    } else if (consume_token(ps, ZR_TK_EQUALS)) {
         defaultValue = parse_expression(ps);
         if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
             report_error(ps, "out parameter cannot have a default value");
@@ -1673,7 +1699,8 @@ SZrAstNodeArray *parse_parameter_list(SZrParserState *ps) {
         /* TODO: 首参数失败仍返回空列表；核查 hasError 是否阻止各签名调用方
          * 将失效签名作为无参声明交给后续阶段。 */
 
-        while (consume_token(ps, ZR_TK_COMMA)) {
+        while (ps->lexer->t.token == ZR_TK_COMMA &&
+               peek_token(ps) != ZR_TK_PARAMS && consume_token(ps, ZR_TK_COMMA)) {
             if (ps->lexer->t.token == ZR_TK_RPAREN) {
                 break;
             }

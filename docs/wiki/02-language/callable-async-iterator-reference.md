@@ -94,11 +94,10 @@ writer 使用。
 普通参数与一个尾随 variadic 参数的摘要：
 
 ```ebnf
-parameters         = [ parameter, { ",", parameter }, [ ",", variadic ] ] ;
+parameters         = [ variadic | parameter, { ",", parameter }, [ ",", variadic ] ] ;
 parameter          = [ "const" ], [ identifier, ":" ], [ source-form ], TypeRef,
                      [ "=", expression ] ;
-variadic           = "...", [ "const" ], [ identifier, ":" ],
-                     [ source-form ], TypeRef ;
+variadic           = "...", [ "const" ], identifier, ":", TypeRef, "[", "]" ;
 source-form        = "in" | "out" | "ref" | "ref", "readonly"
                      | "scoped", "ref" | "scoped", "ref", "readonly" ;
 ```
@@ -113,12 +112,14 @@ fn parse(source: in string, out result: i32): bool {
     return true;
 }
 
-fn log(prefix: string, ... values: string): void {
-    // values is the declared variadic tail.
+fn add(first: int = 7, ...values: int[]): int {
+    return first + values.length;
 }
 ```
 
-默认值只由非 variadic 参数解析。`const`、source form 和 TypeRef 都会被保留在
+调用 `add()` 时，`first` 使用默认值 `7`，`values` 是空数组。调用 `add(10, 20, 30)`
+时，`values` 是 `[20, 30]`。尾部也可以用 `add(10, ...items)` 展开 `int[]`。
+可变参数只能在最后，按值接收一个未指定长度的数组，不接受默认值。`const`、source form 和 TypeRef 都会被保留在
 `SZrParameter`；不要把 `const` 当成调用处 `const` 字面量，也不要认为 `ref` 仅是类型修饰。
 参数的词序、`readonly` 限制、`in/out` 与 reference type 的区别由[类型表达式与参数契约参考](type-expression-reference.md)
 完整规定。

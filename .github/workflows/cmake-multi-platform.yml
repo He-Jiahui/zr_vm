@@ -45,11 +45,12 @@ jobs:
             build_type: Debug
             c_compiler: cl
             cpp_compiler: cl
-          - os: ubuntu-latest
+          # Keep the extension's locked Playwright supported by the runner image.
+          - os: ubuntu-24.04
             build_type: Release
             c_compiler: gcc
             cpp_compiler: g++
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             build_type: Release
             c_compiler: clang
             cpp_compiler: clang++

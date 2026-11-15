@@ -1179,23 +1179,15 @@ void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt3
 void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount) {
     if (state->debugHookSignal & ZR_DEBUG_HOOK_MASK_RETURN) {
         TZrStackValuePointer stackPointer = callInfo->functionTop.valuePointer - resultCount;
-        TZrUInt32 totalArgumentsCount = 0;
-        TZrInt32 transferStart = 0;
-        if (ZR_CALL_INFO_IS_VM(callInfo)) {
-            SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
-            if (function != ZR_NULL && function->hasVariableArguments) {
-                totalArgumentsCount = (TZrUInt32)(callInfo->context.context.variableArgumentCount +
-                                                  function->parameterCount + 1);
-            }
-        }
-        callInfo->functionBase.valuePointer += totalArgumentsCount;
-        transferStart = (TZrUInt32)(stackPointer - callInfo->functionBase.valuePointer);
+        /* Source rest arguments are packed into an ordinary local array slot.
+         * Keep the frame base identical to CALL: locals and GC frame layouts
+         * remain relative to that base even while the RETURN hook runs. */
+        TZrUInt32 transferStart = (TZrUInt32)(stackPointer - callInfo->functionBase.valuePointer);
         ZrCore_Debug_Hook(state,
                           ZR_DEBUG_HOOK_EVENT_RETURN,
                           ZR_RUNTIME_DEBUG_HOOK_LINE_NONE,
                           transferStart,
                           (TZrUInt32)resultCount);
-        callInfo->functionBase.valuePointer -= totalArgumentsCount;
     }
     callInfo = callInfo->previous;
     if (callInfo != ZR_NULL && ZR_CALL_INFO_IS_VM(callInfo)) {
