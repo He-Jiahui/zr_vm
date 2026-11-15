@@ -1,0 +1,9 @@
+let {Base} = import("base");
+
+class Derived: Base {
+    pub override fn ping(): int { return 42; }
+}
+
+var derived = new Derived();
+if (derived.ping() != 42) { throw "imported override"; }
+return 42;

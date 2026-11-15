@@ -251,6 +251,12 @@ TZrBool compiler_publish_member_override_relation(
         sourceMember == ZR_NULL || targetMember == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* Imported members have metadata identities, without source symbol ranges. */
+    if (targetMember->declarationNode == ZR_NULL &&
+        targetMember->symbolId == ZR_SEMANTIC_ID_INVALID &&
+        targetMember->metadataToken != 0u) {
+        return ZR_TRUE;
+    }
     return ZrParser_SemanticRelations_PublishSymbolRelation(
             cs->semanticContext,
             ZR_SEMANTIC_RELATION_OVERRIDE,

@@ -603,6 +603,7 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
                                                                   SZrTypePrototypeInfo *info,
                                                                   SZrString *typeName,
                                                                   TZrUInt32 depth) {
+    SZrTypePrototypeInfo prototypeSnapshot;
     SZrTypePrototypeInfo *prototype;
 
     if (cs == ZR_NULL || info == ZR_NULL || typeName == ZR_NULL || depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
@@ -613,6 +614,10 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
     if (prototype == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* Nested type lookups can relocate cs->typePrototypes. Keep the member and
+     * inheritance array headers stable while validating this prototype. */
+    prototypeSnapshot = *prototype;
+    prototype = &prototypeSnapshot;
 
     for (TZrSize memberIndex = 0; memberIndex < prototype->members.length; memberIndex++) {
         const SZrTypeMemberInfo *requiredMember =

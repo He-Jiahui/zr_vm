@@ -1052,6 +1052,43 @@ static void test_compiled_source_publishes_interface_member_implementation(void)
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_override_relation_accepts_metadata_only_target_without_source_edge(void) {
+    SZrCompilerState cs;
+    SZrTypeMemberInfo sourceMember;
+    SZrTypeMemberInfo targetMember;
+    SZrAstNode targetDeclaration;
+
+    memset(&cs, 0, sizeof(cs));
+    memset(&sourceMember, 0, sizeof(sourceMember));
+    memset(&targetMember, 0, sizeof(targetMember));
+    memset(&targetDeclaration, 0, sizeof(targetDeclaration));
+    cs.semanticContext = ZrParser_SemanticContext_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    sourceMember.symbolId = relation_register_symbol(
+            cs.semanticContext, "ping", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, 31U, 10U);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, sourceMember.symbolId);
+
+    /* Imported metadata has a callable identity but no source symbol/range. */
+    targetMember.metadataToken = 0x06000001U;
+    TEST_ASSERT_TRUE(compiler_publish_member_override_relation(
+            &cs, &sourceMember, &targetMember));
+    TEST_ASSERT_TRUE(compiler_publish_member_implementation_relation(
+            &cs, &sourceMember, &targetMember));
+    TEST_ASSERT_EQUAL_UINT(0U, cs.semanticContext->relationFacts.length);
+
+    /* Missing metadata and broken source declarations still fail closed. */
+    targetMember.metadataToken = 0U;
+    TEST_ASSERT_FALSE(compiler_publish_member_override_relation(
+            &cs, &sourceMember, &targetMember));
+    targetMember.metadataToken = 0x06000001U;
+    targetMember.declarationNode = &targetDeclaration;
+    TEST_ASSERT_FALSE(compiler_publish_member_override_relation(
+            &cs, &sourceMember, &targetMember));
+    TEST_ASSERT_EQUAL_UINT(0U, cs.semanticContext->relationFacts.length);
+
+    ZrParser_SemanticContext_Free(cs.semanticContext);
+}
+
 static void test_compiled_source_publishes_override_relation(void) {
     const TZrChar *source =
             "abstract class Base {\n"
@@ -1616,6 +1653,7 @@ int main(void) {
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
     RUN_TEST(test_compiled_source_publishes_type_hierarchy_relations);
     RUN_TEST(test_compiled_source_publishes_interface_member_implementation);
+    RUN_TEST(test_override_relation_accepts_metadata_only_target_without_source_edge);
     RUN_TEST(test_compiled_source_publishes_override_relation);
     RUN_TEST(test_compiled_source_publishes_meta_function_override_relation);
     RUN_TEST(test_compiled_source_publishes_explicit_constructor_relation);

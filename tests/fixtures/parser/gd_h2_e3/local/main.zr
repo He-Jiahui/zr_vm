@@ -1,0 +1,14 @@
+class Base {
+    pub virtual fn ping(): int { return 7; }
+}
+
+class Derived: Base {
+    pub override fn ping(): int { return super.ping() + 35; }
+}
+
+fn callBase(value: Base): int { return value.ping(); }
+
+var derived = new Derived();
+if (derived.ping() != 42) { throw "local override"; }
+if (callBase(derived) != 42) { throw "local virtual dispatch"; }
+return 42;
