@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "parser/parser_range_evidence.h"
 
 #include <stddef.h>
@@ -109,6 +111,7 @@ static void publish_member_reference(SZrSemanticContext *context,
             existing->hasDefinitionRange = fact->hasDefinitionRange;
             existing->symbolId = fact->symbolId;
             existing->typeId = fact->typeId;
+            existing->receiverTypeId = fact->receiverTypeId;
             existing->ownershipQualifier = fact->ownershipQualifier;
             existing->isResolved = ZR_TRUE;
         }
@@ -117,9 +120,41 @@ static void publish_member_reference(SZrSemanticContext *context,
     ZrParser_SemanticFacts_AppendReference(context, fact);
 }
 
-static void record_member_reference(SZrCompilerState *cs,
-                                    SZrAstNode *node,
-                                    EZrSemanticReferenceKind kind) {
+static TZrBool is_readonly_builtin_string_member(SZrSemanticContext *context,
+                                                  const SZrSemanticReferenceFact *read) {
+    const SZrCanonicalTypeNode *receiver;
+
+    if (read == ZR_NULL || !read->isResolved ||
+        read->receiverTypeId == ZR_SEMANTIC_ID_INVALID ||
+        (!zr_string_equals_cstr(read->name, "length") &&
+         !zr_string_equals_cstr(read->name, "byteLength"))) {
+        return ZR_FALSE;
+    }
+    receiver = ZrParser_CanonicalType_Find(context, read->receiverTypeId);
+    return receiver != ZR_NULL && receiver->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+           receiver->data.primitive.valueType == ZR_VALUE_TYPE_STRING;
+}
+
+static void report_readonly_builtin_string_member(SZrCompilerState *cs, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (ZrParser_DiagnosticBuilder_Build(
+                cs->state, &diagnostic, ZR_STRUCTURED_DIAGNOSTIC_ERROR, location,
+                "const_assignment", "Cannot assign to a read-only string property",
+                "Primitive string length properties are getter-only.",
+                "Construct a new string instead of assigning its length.") &&
+        ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic, ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    } else {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        ZrParser_Compiler_Error(cs, "Cannot assign to a read-only string property", location);
+    }
+}
+
+static TZrBool record_member_reference(SZrCompilerState *cs,
+                                      SZrAstNode *node,
+                                      EZrSemanticReferenceKind kind) {
     SZrSemanticReferenceFact fact;
     SZrAstNode *member = ZR_NULL;
     SZrAstNode *property;
@@ -129,7 +164,7 @@ static void record_member_reference(SZrCompilerState *cs,
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || node == ZR_NULL ||
         node->type != ZR_AST_PRIMARY_EXPRESSION ||
         node->data.primaryExpression.members == ZR_NULL) {
-        return;
+        return ZR_TRUE;
     }
     for (TZrSize index = node->data.primaryExpression.members->count; index > 0; index--) {
         SZrAstNode *candidate = node->data.primaryExpression.members->nodes[index - 1];
@@ -139,7 +174,7 @@ static void record_member_reference(SZrCompilerState *cs,
         }
     }
     if (member == ZR_NULL) {
-        return;
+        return ZR_TRUE;
     }
     property = member->data.memberExpression.property;
     computedAccess = kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
@@ -163,19 +198,50 @@ static void record_member_reference(SZrCompilerState *cs,
                    ? ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
                              cs->semanticContext, fact.node, ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS)
                    : ZR_NULL;
+    if (is_readonly_builtin_string_member(cs->semanticContext, read)) {
+        report_readonly_builtin_string_member(cs, fact.range);
+        return ZR_FALSE;
+    }
     if (read != ZR_NULL && read->isResolved) {
         fact = *read;
         fact.kind = kind;
     }
     publish_member_reference(cs->semanticContext, &fact);
+    return ZR_TRUE;
+}
+
+void type_inference_record_builtin_member_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *memberNode, const SZrInferredType *receiverType,
+        const SZrInferredType *valueType) {
+    SZrSemanticReferenceFact fact = {0};
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        receiverType == ZR_NULL || valueType == ZR_NULL) {
+        return;
+    }
+    fact.typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, valueType);
+    fact.receiverTypeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, receiverType);
+    if (fact.typeId == ZR_SEMANTIC_ID_INVALID || fact.receiverTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+    fact.node = memberNode->data.memberExpression.property;
+    fact.name = fact.node->data.identifier.name;
+    fact.range = fact.node->location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS;
+    /* Builtin properties have canonical types, but no source declaration to navigate to. */
+    fact.isResolved = ZR_TRUE;
+    publish_member_reference(cs->semanticContext, &fact);
 }
 
 void type_inference_record_member_access_reference_fact(SZrCompilerState *cs, SZrAstNode *node) {
-    record_member_reference(cs, node, ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    (void)record_member_reference(cs, node, ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
 }
 
-void type_inference_record_member_write_reference_fact(SZrCompilerState *cs, SZrAstNode *node) {
-    record_member_reference(cs, node, ZR_SEMANTIC_REFERENCE_MEMBER_WRITE);
+TZrBool type_inference_record_member_write_reference_fact(SZrCompilerState *cs, SZrAstNode *node) {
+    return record_member_reference(cs, node, ZR_SEMANTIC_REFERENCE_MEMBER_WRITE);
 }
 
 void type_inference_record_resolved_member_reference_fact(
