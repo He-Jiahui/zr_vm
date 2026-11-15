@@ -1,0 +1,108 @@
+name: Swarm smoke (non-gating)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-release:
+    name: Swarm smoke / Linux Release
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Configure Release
+        env:
+          BUILD_DIR: ${{ runner.temp }}/swarm-smoke
+        run: |
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$BUILD_DIR/logs" "$BUILD_DIR/tmp"
+          cmake -S . -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc \
+            -DZR_VM_BUILD_DEMOS=ON -DBUILD_TESTS=ON -DBUILD_CLI=ON \
+            -DBUILD_RUST_BINDING=OFF -DBUILD_LANGUAGE_SERVER=OFF \
+            -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF \
+            -DBUILD_NETWORK_LIB=OFF -DBUILD_DEBUG_LIB=OFF -DBUILD_THREAD_LIB=OFF \
+            2>&1 | tee "$BUILD_DIR/logs/configure.log"
+
+      - name: Build smoke targets
+        run: |
+          cmake --build "$BUILD_DIR" --parallel 2 --target \
+            zr_vm_cli_executable zr_swarm zrgame_plugins zrgame_native_tests \
+            2>&1 | tee "$BUILD_DIR/logs/build.log"
+
+      - name: Run the seven Swarm smoke tests
+        timeout-minutes: 30
+        run: |
+          export TMPDIR="$BUILD_DIR/tmp"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import xml.etree.ElementTree as ET
+
+          expected = [
+              "demo_native_runtime",
+              "demo_native_smoke_interp",
+              "demo_native_smoke_binary",
+              "demo_cli_smoke_interp_dod",
+              "demo_cli_smoke_binary_dod",
+              "demo_host_smoke_dod",
+              "demo_host_smoke_c",
+          ]
+
+          def require_exact(names, source):
+              if sorted(names) != sorted(expected):
+                  raise SystemExit(f"{source}: expected {expected}, got {names}")
+
+          build = Path(os.environ["BUILD_DIR"])
+          logs = build / "logs"
+          pattern = "^(" + "|".join(expected) + ")$"
+          ctest = ["ctest", "--test-dir", str(build), "-R", pattern]
+          selection = subprocess.check_output([*ctest, "--show-only=json-v1"])
+          (logs / "ctest-selection.json").write_bytes(selection)
+          require_exact([test["name"] for test in json.loads(selection)["tests"]], "CTest selection")
+          print("Verified CTest selection: " + ", ".join(expected), flush=True)
+
+          # Check execution as well as registration: a disabled test can still be listed.
+          junit = logs / "ctest-results.xml"
+          result = subprocess.run([*ctest, "--parallel", "1", "--no-tests=error",
+                                   "--output-on-failure", "--output-junit", str(junit)])
+          if not junit.is_file():
+              raise SystemExit(f"CTest did not write JUnit results (exit {result.returncode})")
+          cases = ET.parse(junit).findall(".//testcase")
+          require_exact([case.attrib["name"] for case in cases], "CTest results")
+          skipped = [case.attrib["name"] for case in cases
+                     if case.get("status") in {"disabled", "notrun"} or case.find("skipped") is not None]
+          if skipped:
+              raise SystemExit(f"CTest did not run: {skipped}")
+          raise SystemExit(result.returncode)
+          PY
+
+      - name: Upload smoke diagnostics
+        if: always() && env.BUILD_DIR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-smoke-linux-release
+          path: |
+            ${{ env.BUILD_DIR }}/logs/
+            ${{ env.BUILD_DIR }}/Testing/
+            ${{ env.BUILD_DIR }}/tmp/
+          if-no-files-found: ignore
