@@ -243,6 +243,83 @@ static void semantic_typecheck_pop_runtime_type_binding_scope(SZrState *state,
     }
 }
 
+/* Initializer/branch refinements describe the preheader, not every iteration.
+ * Until a loop invariant has been proved, analyze mutable numeric bindings at
+ * their declared contract in a temporary overlay. Preserve canonical identity
+ * and restore the preheader before the existing post-loop assignment join. */
+static SZrTypeEnvironment *semantic_typecheck_push_loop_range_scope(
+        SZrState *state, SZrSemanticAnalyzer *analyzer,
+        const SZrTypeEnvironment *iterationEnv) {
+    SZrTypeEnvironment *savedEnv =
+            semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+    SZrTypeEnvironment *loopEnv;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        savedEnv == ZR_NULL || analyzer->compilerState->typeEnv == savedEnv) {
+        return savedEnv;
+    }
+    loopEnv = analyzer->compilerState->typeEnv;
+    for (SZrTypeEnvironment *env = savedEnv; env != ZR_NULL; env = env->parent) {
+        /* A foreach item is initialized anew on each iteration. */
+        if (env == iterationEnv) continue;
+        for (TZrSize index = 0; index < env->variableTypes.length; ++index) {
+            const SZrTypeBinding *binding =
+                    (const SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, index);
+            SZrSymbol *symbol;
+            const SZrType *declaredTypeNode = ZR_NULL;
+            SZrTypeBinding widened;
+
+            if (binding == ZR_NULL || binding->name == ZR_NULL ||
+                !ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType) ||
+                !binding->type.hasRangeConstraint ||
+                ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                        savedEnv, binding->name, binding->syntaxContext) != binding) {
+                continue;
+            }
+            symbol = ZrLanguageServer_SymbolTable_FindBySemanticId(
+                    analyzer->symbolTable, binding->symbolId);
+            if (symbol == ZR_NULL && binding->hasDeclarationRange) {
+                symbol = ZrLanguageServer_SymbolTable_FindDefinition(
+                        analyzer->symbolTable, binding->declarationRange);
+            }
+            if (symbol != ZR_NULL && symbol->isConst) {
+                continue;
+            }
+            if (symbol != ZR_NULL && symbol->astNode != ZR_NULL) {
+                if (symbol->astNode->type == ZR_AST_PARAMETER) {
+                    const SZrParameter *parameter = &symbol->astNode->data.parameter;
+                    if (parameter->passingMode == ZR_PARAMETER_PASSING_MODE_IN) {
+                        continue;
+                    }
+                    declaredTypeNode = parameter->typeInfo;
+                } else if (symbol->astNode->type == ZR_AST_VARIABLE_DECLARATION) {
+                    declaredTypeNode = symbol->astNode->data.variableDeclaration.typeInfo;
+                }
+            }
+
+            widened = *binding;
+            memset(&widened.type, 0, sizeof(widened.type));
+            ZrParser_InferredType_Copy(state, &widened.type, &binding->type);
+            widened.type.hasRangeConstraint = ZR_FALSE;
+            widened.type.minValue = widened.type.maxValue = 0;
+            ZrParser_InferredType_ResetRangeSegments(&widened.type);
+            if (declaredTypeNode != ZR_NULL) {
+                SZrInferredType declaredType;
+                ZrParser_InferredType_Init(state, &declaredType, ZR_VALUE_TYPE_OBJECT);
+                if (semantic_type_from_ast(state, analyzer, declaredTypeNode, &declaredType)) {
+                    widened.type.hasRangeConstraint = declaredType.hasRangeConstraint;
+                    widened.type.minValue = declaredType.minValue;
+                    widened.type.maxValue = declaredType.maxValue;
+                    (void)ZrParser_InferredType_CopyRangeSegments(state, &widened.type, &declaredType);
+                }
+                ZrParser_InferredType_Free(state, &declaredType);
+            }
+            ZrCore_Array_Push(state, &loopEnv->variableTypes, &widened);
+        }
+    }
+    return savedEnv;
+}
+
 static void semantic_typecheck_register_variable_binding(SZrState *state,
                                                          SZrSemanticAnalyzer *analyzer,
                                                          SZrString *name,
@@ -1439,12 +1516,14 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         
         case ZR_AST_WHILE_LOOP: {
             SZrWhileLoop *whileLoop = &node->data.whileLoop;
+            SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->cond);
             ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                analyzer,
                                                                                whileLoop->cond,
                                                                                whileLoop->block);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->block);
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedLoopEnv);
             (void)ZrParser_TypeInference_TryJoinWhileNumericAssignments(analyzer->compilerState, node);
             break;
         }
@@ -1457,6 +1536,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
 
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
+                SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
                 ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                    analyzer,
@@ -1464,9 +1544,11 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                                    forLoop->block);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+                semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedLoopEnv);
                 semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             } else {
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
+                SZrTypeEnvironment *savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, ZR_NULL);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
                 ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
                                                                                    analyzer,
@@ -1474,6 +1556,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                                    forLoop->block);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
                 ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+                semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedLoopEnv);
             }
             (void)ZrParser_TypeInference_TryJoinForNumericAssignments(analyzer->compilerState, node);
             break;
@@ -1483,7 +1566,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrForeachLoop *foreachLoop = &node->data.foreachLoop;
             SZrTypeEnvironment *savedTypeEnv =
                 semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+            SZrTypeEnvironment *iterationEnv = analyzer->compilerState->typeEnv;
+            SZrTypeEnvironment *savedLoopEnv;
 
+            /* The iterable is evaluated once, before any loop-carried writes. */
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, foreachLoop->expr);
             semantic_typecheck_register_foreach_binding(state,
                                                         analyzer,
@@ -1491,7 +1577,9 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                         foreachLoop->pattern != ZR_NULL
                                                             ? foreachLoop->pattern->location
                                                             : node->location);
+            savedLoopEnv = semantic_typecheck_push_loop_range_scope(state, analyzer, iterationEnv);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, foreachLoop->block);
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedLoopEnv);
             semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             (void)ZrParser_TypeInference_TryJoinForeachNumericAssignments(analyzer->compilerState, node);
             break;
