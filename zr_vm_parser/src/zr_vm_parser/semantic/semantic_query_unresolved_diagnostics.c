@@ -108,6 +108,12 @@ static TZrBool semantic_query_unresolved_is_effective(
     if (context == ZR_NULL || fact == ZR_NULL || fact->isResolved ||
         fact->name == ZR_NULL ||
         semantic_query_unresolved_has_canonical_target(fact) ||
+        /* A computed member fact describes the bracket operation for queries.
+         * Its optional name is the key expression, not a named member lookup.
+         * Separate key references and index diagnostics remain reportable. */
+        (semantic_query_unresolved_kind_is_member(fact->kind) &&
+         fact->node != ZR_NULL && fact->node->type == ZR_AST_MEMBER_EXPRESSION &&
+         fact->node->data.memberExpression.computed) ||
         !semantic_query_unresolved_kind_is_reportable(fact->kind) ||
         !context->referenceFacts.isValid) {
         return ZR_FALSE;
