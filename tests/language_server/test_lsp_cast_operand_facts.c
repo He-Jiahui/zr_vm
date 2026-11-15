@@ -11,6 +11,7 @@
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/writer.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* Unity 每例创建的 VM；LSP 上下文和返回位置均须在它销毁前释放。 */
@@ -305,6 +306,40 @@ static void test_string_length_builtin_cannot_be_written(void) {
     TEST_ASSERT_EQUAL_UINT(member.character + strlen("byteLength"), diagnostic->range.end.character);
 }
 
+/* A writable reference changes access to the string, not its getter-only properties. */
+static void assert_ref_string_property_is_readonly(const char *property) {
+    char source[192];
+    SZrString *uri = ZrCore_String_CreateFromNative(g_state, "file:///ref_string_length_write.zr");
+    SZrLspPosition member;
+    const SZrLspDiagnostic *diagnostic;
+    SZrSemanticAnalyzer *analyzer;
+
+    snprintf(source, sizeof(source),
+             "fn resize(text: ref string): void { text.%s = 2; }\n", property);
+    member = find_position(source, property, 0);
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_UpdateDocument(g_state, g_context, uri, source, strlen(source), 1));
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDiagnostics(g_state, g_context, uri, &g_diagnostics));
+    TEST_ASSERT_EQUAL_UINT(1, g_diagnostics.length);
+    diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&g_diagnostics, 0);
+    TEST_ASSERT_EQUAL_STRING("const_assignment", ZrCore_String_GetNativeString(diagnostic->code));
+    TEST_ASSERT_EQUAL_UINT(member.line, diagnostic->range.start.line);
+    TEST_ASSERT_EQUAL_UINT(member.character, diagnostic->range.start.character);
+    TEST_ASSERT_EQUAL_UINT(member.character + strlen(property), diagnostic->range.end.character);
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(g_state, g_context, uri);
+    TEST_ASSERT_NOT_NULL(analyzer);
+    /* Passing form belongs to the callable contract; the body reads a string value. */
+    assert_string_length_fact(uri, source, analyzer->semanticContext, property, 0);
+}
+
+static void test_ref_string_byte_length_builtin_cannot_be_written(void) {
+    assert_ref_string_property_is_readonly("byteLength");
+}
+
+static void test_ref_string_length_builtin_cannot_be_written(void) {
+    assert_ref_string_property_is_readonly("length");
+}
+
 /* CTest language_server_cast_operand_facts runs the provider and builtin cases. */
 int main(void) {
     UNITY_BEGIN();
@@ -314,5 +349,7 @@ int main(void) {
     RUN_TEST(test_native_cast_operand_retains_external_identity_and_navigation);
     RUN_TEST(test_string_length_properties_resolve_inside_and_outside_cast);
     RUN_TEST(test_string_length_builtin_cannot_be_written);
+    RUN_TEST(test_ref_string_byte_length_builtin_cannot_be_written);
+    RUN_TEST(test_ref_string_length_builtin_cannot_be_written);
     return UNITY_END();
 }
