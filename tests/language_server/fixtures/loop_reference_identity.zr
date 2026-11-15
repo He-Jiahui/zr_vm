@@ -1,0 +1,47 @@
+let container = import("zr.container");
+
+fn lookup(index: int): string {
+    if (index > 0) { return "😀中文"; }
+    return "zero";
+}
+
+pub fn render(count: int): string {
+    let values = new container.Array<string>();
+    var cursor = 0;
+    while (cursor < count) {
+        values.add(lookup(cursor));
+        cursor += 1;
+    }
+    var output = "";
+    var index = 0;
+    while (index < values.length) {
+        if (index > 0) { output += ","; }
+        {
+            let index = 1;
+            output += lookup(index);
+        }
+        output += values[index];
+        index += 1;
+    }
+    if (count > 0) {
+        let itemIndex = 0;
+        output = lookup(itemIndex);
+    }
+    output = lookup(1);
+    let text = "😀中文";
+    let width = <int> text.length;
+    if (width > 0) { output += text; }
+    return output;
+}
+
+class Matrix<T, const N: int> { }
+class Box<T> {
+    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> {
+        return value;
+    }
+}
+fn genericBoundary(): void {
+    var box = new Box<int>();
+    var matrix = new Matrix<int, 4>();
+    box.shape(matrix);
+}
