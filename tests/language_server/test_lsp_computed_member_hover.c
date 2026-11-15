@@ -13,6 +13,11 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_query.h"
+
+extern SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(
+        SZrState *state, SZrLspContext *context, SZrString *uri);
 
 /* 独立测试进程通过全局状态回调供给 VM 原生内存；此约定覆盖本文件的 LSP 上下文和查询对象。 */
 static TZrPtr test_allocator(TZrPtr userData,
@@ -242,12 +247,176 @@ static TZrBool test_lsp_hover_surfaces_computed_member_access_at_bracket(SZrStat
     return passed;
 }
 
+typedef struct SZrNativeHoverCase {
+    SZrLspPosition position;
+    TZrInt32 start;
+    TZrInt32 end;
+    const TZrChar *type;
+    EZrSemanticReferenceKind referenceKind;
+} SZrNativeHoverCase;
+
+/* Compare a complete type line, allowing the native container's qualified name. */
+static TZrBool native_type_equals(const TZrChar *text, const TZrChar *expected) {
+    const TZrChar prefix[] = "zr.container.";
+    TZrSize length = strlen(expected);
+    if (text == ZR_NULL) return ZR_FALSE;
+    if (strncmp(text, prefix, sizeof(prefix) - 1u) == 0) text += sizeof(prefix) - 1u;
+    return strcspn(text, "\n") == length && strncmp(text, expected, length) == 0;
+}
+
+static TZrBool check_native_hover(SZrState *state, SZrLspContext *context,
+                                 SZrString *uri, const SZrNativeHoverCase *test) {
+    SZrLspHover *hover = ZR_NULL;
+    SZrLspLocalSemanticQueryResult query;
+    SZrParserSemanticTypeQuery canonical;
+    TZrChar canonicalText[128] = {0};
+    const TZrChar *text;
+    const TZrChar *typeLine;
+    TZrBool passed;
+
+    (void)ZrLanguageServer_Lsp_GetHover(state, context, uri, test->position, &hover);
+    text = hover_first_text(hover);
+    typeLine = text != ZR_NULL ? strstr(text, "Type: ") : ZR_NULL;
+    passed = hover != ZR_NULL && typeLine != ZR_NULL && native_type_equals(typeLine + 6, test->type) &&
+             hover->range.start.line == test->position.line && hover->range.start.character == test->start &&
+             hover->range.end.line == test->position.line && hover->range.end.character == test->end &&
+             test->start <= test->position.character && test->position.character < test->end;
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (test->referenceKind != ZR_SEMANTIC_REFERENCE_UNKNOWN) {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+        passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
+                         state, context, uri, test->position, &query) &&
+                 query.referenceFact != ZR_NULL && query.referenceFact->kind == test->referenceKind &&
+                 query.expressionFact != ZR_NULL && analyzer != ZR_NULL &&
+                 query.expressionFact->memberIsComputed == (test->referenceKind != ZR_SEMANTIC_REFERENCE_READ) &&
+                 ZrParser_SemanticQuery_CanonicalTypeAt(
+                         analyzer->semanticContext, query.queryRange, ZR_NULL, &canonical) &&
+                 canonical.typeId == query.expressionFact->typeId &&
+                 ZrParser_CanonicalType_Format(analyzer->semanticContext, canonical.typeId,
+                                              canonicalText, sizeof(canonicalText)) &&
+                 native_type_equals(canonicalText, test->type) && passed;
+    }
+    if (!passed) {
+        printf("FAIL: hover %d:%d expected %s and range %d:%d-%d; ref=%d canonical=%s "
+               "range=%d:%d-%d:%d hover=%s\n",
+               test->position.line, test->position.character, test->type,
+               test->position.line, test->start, test->end,
+               query.referenceFact != ZR_NULL ? (int)query.referenceFact->kind : -1, canonicalText,
+               hover != ZR_NULL ? hover->range.start.line : -1,
+               hover != ZR_NULL ? hover->range.start.character : -1,
+               hover != ZR_NULL ? hover->range.end.line : -1,
+               hover != ZR_NULL ? hover->range.end.character : -1,
+               text != ZR_NULL ? text : "<null>");
+    }
+    hover_free(state, hover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    return passed;
+}
+
+/* Check length inside a loop and both brackets, key, and receiver of typed indexing. */
+static TZrBool test_native_computed_hover_token_boundaries(SZrState *state) {
+    const TZrChar *content =
+        "let container = import(\"zr.container\");\r\n"
+        "fn inspect(index: int, label: string): string {\r\n"
+        "    let values = new container.Array<string>();\r\n"
+        "    let numbers = new container.Array<int>();\r\n"
+        "    let mapping = new container.Map<string, bool>();\r\n"
+        "    /* \xF0\x9F\x98\x80\xE4\xB8\xAD\xE6\x96\x87 */ while (index < values.length) { break; }\r\n"
+        "    /* \xF0\x9F\x98\x80 */ values[index] = \"x\";\r\n"
+        "    let number = numbers[index];\r\n"
+        "    mapping[label] = true;\r\n"
+        "    let present = mapping[label];\r\n"
+        "    return values[index];\r\n"
+        "}\r\n";
+    /* Columns are independent UTF-16 expectations, not derived with the server codec. */
+    const SZrNativeHoverCase cases[] = {
+        {{5, 38}, 37, 43, "int", ZR_SEMANTIC_REFERENCE_UNKNOWN},
+        {{6, 19}, 13, 26, "string", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
+        {{6, 25}, 13, 26, "string", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
+        {{6, 22}, 20, 25, "int", ZR_SEMANTIC_REFERENCE_READ},
+        {{6, 15}, 13, 19, "Array<string>", ZR_SEMANTIC_REFERENCE_READ},
+        {{7, 24}, 17, 31, "int", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{7, 30}, 17, 31, "int", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{8, 11}, 4, 18, "bool", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
+        {{8, 17}, 4, 18, "bool", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
+        {{8, 14}, 12, 17, "string", ZR_SEMANTIC_REFERENCE_READ},
+        {{9, 25}, 18, 32, "bool", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{9, 31}, 18, 32, "bool", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{10, 17}, 11, 24, "string", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{10, 23}, 11, 24, "string", ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS},
+        {{10, 20}, 18, 23, "int", ZR_SEMANTIC_REFERENCE_READ},
+        {{10, 13}, 11, 17, "Array<string>", ZR_SEMANTIC_REFERENCE_READ},
+    };
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///native_hover_boundaries.zr");
+    TZrBool passed = context != ZR_NULL && uri != ZR_NULL &&
+            ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1);
+
+    if (passed) {
+        for (TZrSize i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            passed = check_native_hover(state, context, uri, &cases[i]) && passed;
+        }
+    }
+    if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
+/* A genuinely absent key stays an unresolved read, not a string-valued member token. */
+static TZrBool test_missing_computed_key_is_not_the_element(SZrState *state) {
+    const TZrChar *content =
+        "let container = import(\"zr.container\");\n"
+        "fn inspect(): void {\n"
+        "    let values = new container.Array<string>();\n"
+        "    values[missing];\n"
+        "}\n";
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///missing_computed_hover_key.zr");
+    SZrLspPosition position = {3, 13};
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray diagnostics = {0};
+    TZrBool hasUnresolvedKey = ZR_FALSE;
+    TZrBool passed;
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = context != ZR_NULL && uri != ZR_NULL &&
+            ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) &&
+            ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query) &&
+            query.referenceFact != ZR_NULL && !query.referenceFact->isResolved &&
+            query.referenceFact->kind == ZR_SEMANTIC_REFERENCE_READ;
+    if (passed) {
+        (void)ZrLanguageServer_Lsp_GetHover(state, context, uri, position, &hover);
+        passed = !hover_contains_text(hover, "Type: string") &&
+                 !hover_contains_text(hover, "Member: missing") &&
+                 ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
+        for (TZrSize i = 0; i < diagnostics.length; i++) {
+            SZrLspDiagnostic **slot = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, i);
+            const SZrLspDiagnostic *diagnostic = slot != ZR_NULL ? *slot : ZR_NULL;
+            if (diagnostic != ZR_NULL && diagnostic->severity == 1 && diagnostic->code != ZR_NULL &&
+                strcmp(string_text(diagnostic->code), "unresolved_reference") == 0 &&
+                diagnostic->range.start.line == 3 && diagnostic->range.start.character == 11 &&
+                diagnostic->range.end.line == 3 && diagnostic->range.end.character == 18) {
+                hasUnresolvedKey = ZR_TRUE;
+            }
+        }
+    }
+    if (!passed || !hasUnresolvedKey) printf("FAIL: missing key must stay an unresolved read\n");
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    hover_free(state, hover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+    return passed && hasUnresolvedKey;
+}
+
 /* CMake 的 computed_member_hover 测试目标入口：单次构建全局状态并把该回归结果交给 CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
     SZrState *state;
     TZrBool computedMemberHoverPassed;
+    TZrBool tokenBoundariesPassed;
+    TZrBool missingKeyPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -264,7 +433,13 @@ int main(void) {
     computedMemberHoverPassed = test_lsp_hover_surfaces_computed_member_access_at_bracket(state);
     printf("%s: LSP Hover Surfaces Computed Member Access At Bracket\n",
            computedMemberHoverPassed ? "PASS" : "FAIL");
+    tokenBoundariesPassed = test_native_computed_hover_token_boundaries(state);
+    printf("%s: Native Member And Computed Hover Token Boundaries\n",
+           tokenBoundariesPassed ? "PASS" : "FAIL");
+    missingKeyPassed = test_missing_computed_key_is_not_the_element(state);
+    printf("%s: Missing Computed Key Remains Unresolved\n",
+           missingKeyPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
-    return computedMemberHoverPassed ? 0 : 1;
+    return computedMemberHoverPassed && tokenBoundariesPassed && missingKeyPassed ? 0 : 1;
 }

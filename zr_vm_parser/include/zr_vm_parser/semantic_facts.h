@@ -514,21 +514,21 @@ ZR_PARSER_API const SZrSemanticExpressionFact *ZrParser_SemanticFacts_FindExpres
         const SZrSemanticContext *context,
         const SZrAstNode *node);
 /** @brief 为位置语义查询提供当前位置的表达式证据。
- * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源，跨度评分只取 offset 差。 该选择仅定位已有投影，不证明类型可供规范查询使用；等宽候选采用后项。
+ * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源，跨度评分只取 offset 差。 该选择仅定位已有投影，不证明类型可供规范查询使用；等宽候选采用后项。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrSemanticExpressionFact *ZrParser_SemanticFacts_FindExpressionAtPosition(
         const SZrSemanticContext *context,
         SZrFileRange position);
 /** @brief 为导航和位置语义查询提供当前位置的引用证据。
- * @note 位置仅取 position.start；两个 range 各有至少一个非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源；先偏好 range 起点与光标相同的候选，再比较较小 offset 跨度和较高引用用途优先级，完全平局保留前项。返回事实仍须满足具体 consumer 的身份门槛。
+ * @note 位置仅取 position.start；两个 range 各有至少一个非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源；先偏好 range 起点与光标相同的候选，再比较较小 offset 跨度和较高引用用途优先级，完全平局保留前项。返回事实仍须满足具体 consumer 的身份门槛。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPosition(
         const SZrSemanticContext *context,
         SZrFileRange position);
 /** @brief 为需要特定引用用途的语义查询提供当前位置的引用证据。
- * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源，跨度评分只取 offset 差。 用途由 kind 限定；等宽候选保留前项，不采用普通引用位置查询的起点偏好。
+ * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源，跨度评分只取 offset 差。 用途由 kind 限定；等宽候选保留前项，不采用普通引用位置查询的起点偏好。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
@@ -565,7 +565,7 @@ ZR_PARSER_API const SZrSemanticLogicalFact *ZrParser_SemanticFacts_FindLogicalBy
         const SZrSemanticContext *context,
         const SZrAstNode *node);
 /** @brief 为位置语义查询提供当前位置的逻辑证据。
- * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源，跨度评分只取 offset 差。 等宽候选采用后项；返回事实不保证存在 knownValue。
+ * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源，跨度评分只取 offset 差。 等宽候选采用后项；返回事实不保证存在 knownValue。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrSemanticLogicalFact *ZrParser_SemanticFacts_FindLogicalAtPosition(
@@ -579,7 +579,7 @@ ZR_PARSER_API const SZrSemanticOwnershipFact *ZrParser_SemanticFacts_FindOwnersh
         const SZrSemanticContext *context,
         const SZrAstNode *node);
 /** @brief 为位置语义查询提供当前位置的所有权证据。
- * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源，跨度评分只取 offset 差。 violation 仅在跨度相等时优先，其余平局保留前项；返回事实仍须按 qualifier、ID 和见证解释。
+ * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源，跨度评分只取 offset 差。 violation 仅在跨度相等时优先，其余平局保留前项；返回事实仍须按 qualifier、ID 和见证解释。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrSemanticOwnershipFact *ZrParser_SemanticFacts_FindOwnershipAtPosition(
@@ -594,7 +594,7 @@ ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
         const SZrSemanticContext *context,
         const SZrAstNode *node);
 /** @brief 为位置语义查询提供当前位置的 ownership intrinsic 决策证据。
- * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 闭区间命中，否则按行列。命中须同源，跨度评分只取 offset 差。 必须命中整体 range；nameRange 可帮助定位名称，不能绕过整体范围。等宽候选保留前项。
+ * @note 位置仅取 position.start；双方各有非零端 offset 时按 offset 半开区间命中，否则按行列（零宽范围保留锚点命中）。命中须同源，跨度评分只取 offset 差。 必须命中整体 range；nameRange 可帮助定位名称，不能绕过整体范围。等宽候选保留前项。
  * @return 返回当前 context 事实数组内的借用指针或 NULL；对应数组增长、Reset/Free 后不得持有，也不能将记录或其 context ID 跨快照使用。
  */
 ZR_PARSER_API const SZrOwnershipIntrinsicFact *
