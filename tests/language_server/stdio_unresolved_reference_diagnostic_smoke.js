@@ -1,8 +1,6 @@
 const { spawnSync } = require('child_process');
 
-// 独立 stdio 诊断探针：不存在的实例成员应只对成员标识符范围发布 member_not_found。
-// TODO: 当前 tests/CMakeLists.txt 与 tests/language_server/CMakeLists.txt 均未直接注册本脚本；
-// 核查是否有其他正式验收入口，再决定把此回归接入哪一层自动测试。
+// 只有真正缺失的具名成员应发布 member_not_found；计算索引另有类型诊断。
 
 /** 将协议和诊断契约失败传给 Node 进程状态，供手工或未来自动入口判定。 */
 function assert(condition, message) {
@@ -20,10 +18,7 @@ function createMessage(payload) {
     ]);
 }
 
-/** 从真实服务端 stdout 寻找诊断通知与请求响应。
- * BUG: Content-Length 计 UTF-8 字节，output 却已解码为 JS 字符串；响应含非 ASCII 文本且后续有帧时，
- *      以字节数推进字符串偏移会把下一帧前缀并入 JSON。双帧含中文消息的独立 Node 复现触发 SyntaxError。
- */
+/** Content-Length 以字节为单位；只在截出完整消息后解码。 */
 function parseMessages(output) {
     const messages = [];
     let offset = 0;
@@ -33,13 +28,13 @@ function parseMessages(output) {
         if (headerEnd < 0) {
             break;
         }
-        const header = output.slice(offset, headerEnd);
+        const header = output.subarray(offset, headerEnd).toString('ascii');
         const lengthMatch = /Content-Length: (\d+)/i.exec(header);
         assert(lengthMatch, `Malformed LSP header: ${header}`);
         const bodyStart = headerEnd + 4;
         const bodyEnd = bodyStart + Number(lengthMatch[1]);
         assert(bodyEnd <= output.length, 'Truncated LSP response body');
-        messages.push(JSON.parse(output.slice(bodyStart, bodyEnd)));
+        messages.push(JSON.parse(output.subarray(bodyStart, bodyEnd).toString('utf8')));
         offset = bodyEnd;
     }
     return messages;
@@ -52,7 +47,7 @@ function assertRange(range, startLine, startCharacter, endLine, endCharacter) {
         range.start.character === startCharacter &&
         range.end.line === endLine &&
         range.end.character === endCharacter,
-    `Unexpected unresolved member range: ${JSON.stringify(range)}`);
+    `Unexpected diagnostic range: ${JSON.stringify(range)}`);
 }
 
 const serverPath = process.argv[2];
@@ -65,6 +60,21 @@ const documentText = [
     '}',
     'fn read(meter: Meter): int {',
     '    return meter.missingField;',
+    '}',
+    'let container = import("zr.container");',
+    'fn readIndex(values: container.Array<int>): int {',
+    '    var index = 0;',
+    '    values[index] = 2;',
+    '    return values[index];',
+    '}',
+    'fn wrongIndex(): int {',
+    '    var values = [1, 2];',
+    '    let badIndex = "name";',
+    '    return values[badIndex];',
+    '}',
+    'fn useMissingIndex(values: container.Array<int>): int {',
+    '    values[missingIndex] = 2;',
+    '    return values[missingIndex];',
     '}',
     '',
 ].join('\n');
@@ -105,7 +115,6 @@ const payload = Buffer.concat([
 // 向真实 stdio 服务端送入整条请求链，失败或超时必须阻止诊断断言继续。
 const result = spawnSync(serverPath, serverArgs, {
     input: payload,
-    encoding: 'utf8',
     timeout: 10000,
     windowsHide: true,
 });
@@ -120,6 +129,21 @@ const publication = parseMessages(result.stdout).find((message) =>
     message.params.version === 1 &&
     Array.isArray(message.params.diagnostics));
 assert(publication, 'Expected unresolved-reference diagnostic publication');
+
+const indexErrors = publication.params.diagnostics.filter((item) =>
+    item.severity === 1 && item.range.start.line >= 6 && item.range.start.line <= 11);
+assert(indexErrors.length === 0,
+    `Expected the native array index read and write to be diagnosed as valid: ${JSON.stringify(indexErrors)}`);
+const wrongIndex = publication.params.diagnostics.filter((item) => item.code === 'array_index_type_mismatch');
+assert(wrongIndex.length === 1 && wrongIndex[0].range.start.line === 15,
+    `Expected one real array index type mismatch: ${JSON.stringify(publication.params.diagnostics)}`);
+const missingKeys = publication.params.diagnostics.filter((item) => item.code === 'unresolved_reference')
+    .sort((left, right) => left.range.start.line - right.range.start.line);
+assert(missingKeys.length === 2 && missingKeys.every((item) => item.severity === 1 &&
+    item.message.startsWith("Reference 'missingIndex' could not be resolved")),
+    `Expected unresolved variable diagnostics for both missing keys: ${JSON.stringify(publication.params.diagnostics)}`);
+assertRange(missingKeys[0].range, 18, 11, 18, 23);
+assertRange(missingKeys[1].range, 19, 18, 19, 30);
 
 // 按 canonical code 核对诊断目录的投影、范围与修复 disposition；不能用泛型错误替代。
 const diagnostics = publication.params.diagnostics.filter((diagnostic) =>

@@ -177,12 +177,12 @@ static TZrBool record_member_reference(SZrCompilerState *cs,
         return ZR_TRUE;
     }
     property = member->data.memberExpression.property;
-    computedAccess = kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
-                     member->data.memberExpression.computed;
+    /* Both bracket operations use their own anchor; the key is a separate read. */
+    computedAccess = member->data.memberExpression.computed;
     if (computedAccess && property != ZR_NULL) {
         SZrInferredType propertyType;
         ZrParser_InferredType_Init(cs->state, &propertyType, ZR_VALUE_TYPE_OBJECT);
-        (void)ZrParser_ExpressionType_Infer(cs, property, &propertyType);
+        (void)type_inference_computed_key_infer(cs, property, &propertyType);
         ZrParser_InferredType_Free(cs->state, &propertyType);
     }
     memset(&fact, 0, sizeof(fact));

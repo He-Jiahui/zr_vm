@@ -1383,9 +1383,28 @@ static TZrBool infer_identifier_callable_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-// 从标识符推断类型
-TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+static void record_unresolved_computed_key_read(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrSemanticReferenceFact fact = {0};
+
+    if (cs->semanticContext == ZR_NULL ||
+        ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                cs->semanticContext, node, ZR_SEMANTIC_REFERENCE_READ) != ZR_NULL) {
+        return;
+    }
+    fact.node = node;
+    fact.range = node->location;
+    fact.name = node->data.identifier.name;
+    fact.syntaxContext = node->data.identifier.syntaxContext;
+    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
+static TZrBool infer_identifier_type(SZrCompilerState *cs,
+                                    SZrAstNode *node,
+                                    SZrInferredType *result,
+                                    TZrBool recordMissingKeyRead) {
     SZrFunctionTypeInfo *funcTypeInfo = ZR_NULL;
+    TZrBool hasKnownFunction = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL) {
         return ZR_FALSE;
@@ -1427,23 +1446,34 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         }
 
         if (ZrParser_TypeEnvironment_LookupFunctionWithContext(
-                    cs->typeEnv, name, node->data.identifier.syntaxContext,
-                    &funcTypeInfo) &&
-            infer_identifier_callable_type(cs, node, funcTypeInfo, result)) {
-            return ZR_TRUE;
+                    cs->typeEnv, name, node->data.identifier.syntaxContext, &funcTypeInfo)) {
+            hasKnownFunction = ZR_TRUE;
+            if (infer_identifier_callable_type(cs, node, funcTypeInfo, result)) {
+                return ZR_TRUE;
+            }
         }
     }
 
     if (cs->compileTimeTypeEnv != ZR_NULL &&
         ZrParser_TypeEnvironment_LookupFunctionWithContext(
-                cs->compileTimeTypeEnv, name, node->data.identifier.syntaxContext,
-                &funcTypeInfo) &&
-        infer_identifier_callable_type(cs, node, funcTypeInfo, result)) {
-        return ZR_TRUE;
+                cs->compileTimeTypeEnv, name, node->data.identifier.syntaxContext, &funcTypeInfo)) {
+        hasKnownFunction = ZR_TRUE;
+        if (infer_identifier_callable_type(cs, node, funcTypeInfo, result)) {
+            return ZR_TRUE;
+        }
     }
 
     if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
         return inferred_type_from_type_name(cs, name, result);
+    }
+    /* For a bare bracket key, a proven missing name is a variable read, not
+     * a missing member. Do not treat implicit receivers or weak callable
+     * metadata as absent bindings. */
+    if (recordMissingKeyRead && cs->typeEnv != ZR_NULL && !hasKnownFunction &&
+        !zr_string_equals_cstr(name, "zr") &&
+        !(cs->currentTypeName != ZR_NULL &&
+          (zr_string_equals_cstr(name, "this") || zr_string_equals_cstr(name, "super")))) {
+        record_unresolved_computed_key_read(cs, node);
     }
     // 未找到变量类型，不立即报错
     // 可能是全局对象 zr 的属性访问，或者子函数，或者全局对象的其他属性
@@ -1451,6 +1481,10 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     // compile_identifier 会尝试作为全局对象属性访问、子函数访问等
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    return infer_identifier_type(cs, node, result, ZR_FALSE);
 }
 
 static const SZrAstNode *type_inference_skip_unary_plus_identity(
@@ -2821,7 +2855,10 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
 }
 
 // 从AST节点推断类型（主入口函数）
-static TZrBool type_inference_expression_infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+static TZrBool type_inference_expression_infer(SZrCompilerState *cs,
+                                                 SZrAstNode *node,
+                                                 SZrInferredType *result,
+                                                 TZrBool recordMissingKeyRead) {
     EZrSemanticNumericFactKind numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN;
     TZrBool success = ZR_FALSE;
 
@@ -2830,7 +2867,7 @@ static TZrBool type_inference_expression_infer(SZrCompilerState *cs, SZrAstNode 
     }
 
     SZrExpressionTypeCacheEntry *cached = type_inference_cache_entry(cs, node);
-    if (cached != ZR_NULL && cached->hasType) {
+    if (!recordMissingKeyRead && cached != ZR_NULL && cached->hasType) {
         ZrParser_InferredType_Copy(cs->state, result, &cached->type);
         return ZR_TRUE;
     }
@@ -2860,7 +2897,7 @@ static TZrBool type_inference_expression_infer(SZrCompilerState *cs, SZrAstNode 
             success = ZR_TRUE;
             break;
         case ZR_AST_IDENTIFIER_LITERAL:
-            success = ZrParser_IdentifierType_Infer(cs, node, result);
+            success = infer_identifier_type(cs, node, result, recordMissingKeyRead);
             if (success &&
                 ZR_VALUE_IS_TYPE_NUMBER(result->baseType) &&
                 (result->hasRangeConstraint || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result->baseType))) {
@@ -2991,9 +3028,18 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) return ZR_FALSE;
     /* Return and binding inference can run before expression compilation. */
     type_inference_cache_begin(cs, node, &cache);
-    success = type_inference_expression_infer(cs, node, result);
+    success = type_inference_expression_infer(cs, node, result, ZR_FALSE);
     type_inference_cache_end(cs, &cache);
     return success;
+}
+
+TZrBool type_inference_computed_key_infer(SZrCompilerState *cs,
+                                         SZrAstNode *node,
+                                         SZrInferredType *result) {
+    if (node != ZR_NULL && node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return type_inference_expression_infer(cs, node, result, ZR_TRUE);
+    }
+    return ZrParser_ExpressionType_Infer(cs, node, result);
 }
 
 static TZrBool ast_type_should_preserve_primitive_alias(const TZrNativeString nameStr,
