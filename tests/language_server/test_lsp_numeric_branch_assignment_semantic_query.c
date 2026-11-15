@@ -831,6 +831,110 @@ static TZrBool test_local_expression_query_joins_if_else_only_assignment_range(S
                                      11);
 }
 
+/* The numeric replay must use the declarations in each branch, not the shadowed outer value. */
+static TZrBool test_local_expression_query_joins_branch_local_ranges(SZrState *state) {
+    const TZrChar *content =
+        "fn calc(flag: bool): int {\n"
+        "    let increment = 100;\n"
+        "    var narrowed: int = 5;\n"
+        "    if (flag) {\n"
+        "        let increment = 1;\n"
+        "        narrowed = increment;\n"
+        "    } else {\n"
+        "        let increment: int = 10;\n"
+        "        narrowed = increment;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+    const TZrChar *shadowedTarget =
+        "fn calc(flag: bool): int {\n"
+        "    var narrowed: int = 7;\n"
+        "    if (flag) {\n"
+        "        var narrowed: int = 100;\n"
+        "        narrowed = 101;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+    const TZrChar *activeNumericTarget =
+        "fn source(): int { return 4; }\n"
+        "fn calc(): int {\n"
+        "    var narrowed: int = 7;\n"
+        "    var text = \"\";\n"
+        "    if (true) {\n"
+        "        let opaque = source();\n"
+        "        narrowed = 10;\n"
+        "    } else {\n"
+        "        text = \"dead\";\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_segment_range_case(state, "branch-local assignment dataflow",
+            "file:///branch_local_assignment_range.zr", content, 0, 2, 11, 2, 2, 11, 11) &&
+           run_assignment_range_case(state, "local assignment does not change the parent",
+            "file:///shadowed_branch_assignment_target.zr", shadowedTarget, 0, 8, 8) &&
+           run_assignment_range_case(state, "only active numeric targets need replay",
+            "file:///active_numeric_branch_assignment.zr", activeNumericTarget, 0, 11, 11);
+}
+
+/* Follow the if with a checked assignment so a leaked replay error cannot hide at function exit. */
+static TZrBool run_branch_local_call_diagnostics(SZrState *state, TZrBool numericTarget, TZrBool invalid) {
+    const TZrChar *fixture =
+        "fn lookup(index: int): %s { return %s; }\n"
+        "fn demo(flag: bool): %s {\n"
+        "    var value = %s;\n"
+        "    if (flag) {\n"
+        "        let itemIndex = %s;\n"
+        "        value = lookup(itemIndex);\n"
+        "    }\n"
+        "    value = lookup(1);\n"
+        "    return value;\n"
+        "}\n";
+    const TZrChar *type = numericTarget ? "int" : "string";
+    const TZrChar *value = numericTarget ? "1" : "\"ok\"";
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///branch_local_call_diagnostics.zr");
+    SZrLspPosition argument;
+    SZrArray diagnostics;
+    TZrChar source[512];
+    TZrSize errors = 0;
+    TZrBool passed = ZR_FALSE;
+    int length = snprintf(source, sizeof(source), fixture, type, value, type, value,
+                          invalid ? "\"wrong\"" : "0");
+
+    ZrCore_Array_Construct(&diagnostics);
+    if (context == ZR_NULL || uri == ZR_NULL || length < 0 || (size_t)length >= sizeof(source) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, source, (TZrSize)length, 1) ||
+        !find_position_for_substring(source, "itemIndex", 1, &argument) ||
+        !ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        goto cleanup;
+    }
+    for (TZrSize index = 0; index < diagnostics.length; ++index) {
+        const SZrLspDiagnostic *item = *(SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, index);
+        if (item->severity == 1) {
+            const TZrChar *message = ZrCore_String_GetNativeString(item->message);
+            ++errors;
+            if (!invalid || message == ZR_NULL ||
+                strstr(message, "Expected 'int' but found 'string'") == ZR_NULL ||
+                item->range.start.line != argument.line ||
+                item->range.start.character != argument.character ||
+                item->range.end.character != argument.character + (TZrInt32)strlen("itemIndex")) {
+                printf("Unexpected diagnostic at %d:%d: %s\n", item->range.start.line,
+                       item->range.start.character, message != ZR_NULL ? message : "(no message)");
+                goto cleanup;
+            }
+        }
+    }
+    passed = errors == (invalid ? 1U : 0U);
+
+cleanup:
+    if (diagnostics.isValid) {
+        ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    }
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 /* 此可执行文件由 CTest 的 language_server 套件调用，汇总条件分支与循环赋值汇合后的数值事实用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -861,6 +965,8 @@ int main(void) {
     TZrBool foreachItemAssignmentDataflowTestPassed;
     TZrBool ifThenAssignmentDataflowTestPassed;
     TZrBool ifElseOnlyAssignmentDataflowTestPassed;
+    TZrBool branchLocalRangePassed;
+    TZrBool branchLocalDiagnosticsPassed;
     TZrBool passed;
 
     memset(&callbacks, 0, sizeof(callbacks));
@@ -976,7 +1082,16 @@ int main(void) {
     printf("%s: LSP Local Expression Query Joins If/Else-Only Assignment Range\n",
            ifElseOnlyAssignmentDataflowTestPassed ? "PASS" : "FAIL");
 
-    passed = ifElseAssignmentDataflowTestPassed &&
+    branchLocalRangePassed = test_local_expression_query_joins_branch_local_ranges(state);
+    printf("%s: LSP Numeric Join Uses Branch-Local Bindings\n", branchLocalRangePassed ? "PASS" : "FAIL");
+    branchLocalDiagnosticsPassed = run_branch_local_call_diagnostics(state, ZR_FALSE, ZR_FALSE) &&
+            run_branch_local_call_diagnostics(state, ZR_FALSE, ZR_TRUE) &&
+            run_branch_local_call_diagnostics(state, ZR_TRUE, ZR_TRUE);
+    printf("%s: LSP Numeric Join Preserves Only Live Call Diagnostics\n",
+           branchLocalDiagnosticsPassed ? "PASS" : "FAIL");
+
+    passed = branchLocalRangePassed && branchLocalDiagnosticsPassed &&
+             ifElseAssignmentDataflowTestPassed &&
              ifElseAssignmentSegmentDataflowTestPassed &&
              ifElseMultiStatementAssignmentDataflowTestPassed &&
              ifElseNonterminalAssignmentDataflowTestPassed &&
