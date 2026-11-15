@@ -1107,6 +1107,120 @@ static EZrGenericCallResolveStatus resolve_generic_bindings_from_arguments(
     return ZR_GENERIC_CALL_RESOLVE_OK;
 }
 
+static TZrBool generic_type_references_bindings(const SZrArray *bindings,
+                                               const SZrInferredType *type) {
+    if (type == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (type->elementTypes.length == 0u &&
+        find_generic_binding_index(bindings, type->typeName) != ZR_PARSER_I32_NONE) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0u; index < type->elementTypes.length; ++index) {
+        const SZrInferredType *element = ZrCore_Array_Get((SZrArray *)&type->elementTypes, index);
+        if (generic_type_references_bindings(bindings, element)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+/* Rest values participate in the same bindings as fixed parameters, but are not
+ * extra fixed signature entries. Compatibility is checked after substitution. */
+static EZrGenericCallResolveStatus infer_generic_rest_argument_bindings(
+        SZrCompilerState *cs,
+        SZrTypeEnvironment *env,
+        const SZrFunctionTypeInfo *funcType,
+        SZrFunctionCall *call,
+        SZrArray *bindings,
+        SZrArray *argumentTypes,
+        SZrInferredType *elementType,
+        TZrChar *diagnosticBuffer,
+        TZrSize diagnosticBufferSize) {
+    const SZrParameter *rest = type_inference_function_rest_parameter(funcType);
+    TZrSize positionalCount = call != ZR_NULL && call->args != ZR_NULL ? call->args->count : 0u;
+    TZrBool hasSpread = compiler_call_has_spread_argument(call);
+    SZrInferredType spreadType;
+    SZrInferredType restType;
+    SZrAstNode *savedFunctionNode;
+    SZrTypeEnvironment *savedEnv;
+    SZrTypeEnvironment *declarationEnv = ZR_NULL;
+    TZrBool converted;
+    EZrGenericCallResolveStatus status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+
+    if (rest == ZR_NULL) {
+        return ZR_GENERIC_CALL_RESOLVE_OK;
+    }
+    ZrParser_InferredType_Init(cs->state, &spreadType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(cs->state, &restType, ZR_VALUE_TYPE_OBJECT);
+    if (hasSpread) {
+        SZrAstNode *spreadNode;
+        if (positionalCount == 0u) {
+            goto cleanup;
+        }
+        positionalCount--;
+        spreadNode = call->args->nodes[positionalCount];
+        if (spreadNode == ZR_NULL || spreadNode->type != ZR_AST_SPREAD_ARGUMENT ||
+            spreadNode->data.spreadArgument.expression == ZR_NULL ||
+            !ZrParser_ExpressionType_Infer(cs, spreadNode->data.spreadArgument.expression, &spreadType)) {
+            goto cleanup;
+        }
+    }
+    if (!type_inference_rest_argument_types(cs, call, funcType->paramTypes.length,
+                                            positionalCount, hasSpread ? &spreadType : ZR_NULL,
+                                            argumentTypes)) {
+        goto cleanup;
+    }
+    if (argumentTypes->length == 0u) {
+        status = ZR_GENERIC_CALL_RESOLVE_OK;
+        goto cleanup;
+    }
+
+    /* Convert the declaration's annotation in its owning type environment, not
+     * under caller shadowing. Actual argument inference above stays at the call. */
+    for (SZrTypeEnvironment *scope = env; scope != ZR_NULL && declarationEnv == ZR_NULL;
+         scope = scope->parent) {
+        for (TZrSize index = 0u; index < scope->functionReturnTypes.length; ++index) {
+            SZrFunctionTypeInfo *const *candidate = ZrCore_Array_Get(&scope->functionReturnTypes, index);
+            if (candidate != ZR_NULL && *candidate == funcType) {
+                declarationEnv = scope;
+                break;
+            }
+        }
+    }
+    savedFunctionNode = cs->currentFunctionNode;
+    savedEnv = cs->typeEnv;
+    cs->currentFunctionNode = funcType->declarationNode;
+    if (declarationEnv != ZR_NULL) {
+        cs->typeEnv = declarationEnv;
+    }
+    converted = type_inference_annotation_type_convert(
+            cs, rest->typeInfo, funcType->declarationNode->data.functionDeclaration.generic, &restType);
+    cs->currentFunctionNode = savedFunctionNode;
+    cs->typeEnv = savedEnv;
+    if (!converted || restType.baseType != ZR_VALUE_TYPE_ARRAY || restType.elementTypes.length != 1u) {
+        goto cleanup;
+    }
+    ZrParser_InferredType_Copy(cs->state, elementType, ZrCore_Array_Get(&restType.elementTypes, 0u));
+    if (generic_type_references_bindings(bindings, elementType)) {
+        for (TZrSize index = 0u; index < argumentTypes->length; ++index) {
+            const SZrInferredType *actual = ZrCore_Array_Get(argumentTypes, index);
+            if (!unify_generic_binding(cs->state, bindings, elementType, actual,
+                                       diagnosticBuffer, diagnosticBufferSize)) {
+                status = diagnosticBuffer != ZR_NULL && diagnosticBuffer[0] != '\0'
+                        ? ZR_GENERIC_CALL_RESOLVE_CONFLICTING_INFERENCE : ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+                goto cleanup;
+            }
+        }
+    }
+    status = ZR_GENERIC_CALL_RESOLVE_OK;
+
+cleanup:
+    ZrParser_InferredType_Free(cs->state, &restType);
+    ZrParser_InferredType_Free(cs->state, &spreadType);
+    return status;
+}
+
 static EZrGenericCallResolveStatus ensure_all_generic_bindings_resolved(
         const SZrArray *bindings,
         TZrChar *diagnosticBuffer,
@@ -1282,6 +1396,8 @@ EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         TZrSize diagnosticBufferSize) {
     SZrArray bindings;
     SZrArray argumentTypes;
+    SZrArray restArgumentTypes;
+    SZrInferredType restElementType;
     TZrBool mismatch = ZR_FALSE;
     EZrGenericCallResolveStatus status;
 
@@ -1343,6 +1459,13 @@ EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
     }
 
+    ZrCore_Array_Construct(&restArgumentTypes);
+    ZrParser_InferredType_Init(cs->state, &restElementType, ZR_VALUE_TYPE_OBJECT);
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
+        status = infer_generic_rest_argument_bindings(cs, env, funcType, call, &bindings,
+                                                      &restArgumentTypes, &restElementType,
+                                                      diagnosticBuffer, diagnosticBufferSize);
+    }
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
         status = ensure_all_generic_bindings_resolved(&bindings, diagnosticBuffer, diagnosticBufferSize);
     }
@@ -1351,9 +1474,24 @@ EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         status = validate_generic_call_bindings_constraints(cs, &bindings, diagnosticBuffer, diagnosticBufferSize);
     }
 
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK && restArgumentTypes.length > 0u) {
+        SZrInferredType resolvedElementType;
+        ZrParser_InferredType_Init(cs->state, &resolvedElementType, ZR_VALUE_TYPE_OBJECT);
+        if (!substitute_generic_parameter_type(cs->state, &bindings, &restElementType, &resolvedElementType) ||
+            !type_inference_rest_argument_types_match(&restArgumentTypes, &resolvedElementType)) {
+            status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+            if (diagnosticBuffer != ZR_NULL && diagnosticBufferSize > 0u) {
+                snprintf(diagnosticBuffer, diagnosticBufferSize,
+                         "rest argument elements must match the bound type without conversion");
+            }
+        }
+        ZrParser_InferredType_Free(cs->state, &resolvedElementType);
+    }
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
         status = build_substituted_function_signature(cs->state, funcType, &bindings, signature);
     }
+    ZrParser_InferredType_Free(cs->state, &restElementType);
+    free_inferred_type_array(cs->state, &restArgumentTypes);
 
     if (status != ZR_GENERIC_CALL_RESOLVE_OK) {
         finalize_generic_call_diagnostic(diagnosticBuffer,

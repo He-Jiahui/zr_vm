@@ -1627,7 +1627,9 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
         } else if (arrayType->hasArraySizeConstraint) {
             report_error(ps, "Variadic parameter requires an unsized array type (T[])");
         }
-        if (sourceForm != ZR_PARAMETER_SOURCE_VALUE) {
+        if (sourceForm != ZR_PARAMETER_SOURCE_VALUE ||
+            (typeInfo != ZR_NULL &&
+             (typeInfo->referenceAccess != ZR_REFERENCE_ACCESS_NONE || typeInfo->isScopedReference))) {
             report_error(ps, "Variadic parameter must be passed by value");
         }
         if (consume_token(ps, ZR_TK_EQUALS)) {

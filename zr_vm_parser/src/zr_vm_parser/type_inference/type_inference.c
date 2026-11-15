@@ -165,7 +165,10 @@ static SZrExpressionTypeCacheEntry *type_inference_cache_entry(SZrCompilerState 
 }
 
 static TZrBool type_inference_convert_ast_type(
-        SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result);
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        const SZrGenericDeclaration *preferredGeneric,
+        SZrInferredType *result);
 
 static void type_error_report_detailed(
         SZrCompilerState *cs,
@@ -3136,8 +3139,41 @@ static TZrBool inferred_type_contains_open_const_parameter(
     return ZR_FALSE;
 }
 
+/* Signature annotations retain their own generic identity even when converted
+ * at a call site. Ordinary body annotations pass no preferred declaration. */
+static TZrBool ast_type_identifier_is_preferred_generic(
+        const SZrIdentifier *identifier,
+        const SZrGenericDeclaration *preferredGeneric) {
+    SZrSyntaxContext context;
+
+    if (identifier == ZR_NULL || identifier->name == ZR_NULL ||
+        !ZrParser_SyntaxContext_IsValid(identifier->syntaxContext) ||
+        preferredGeneric == ZR_NULL || preferredGeneric->params == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    context = ZrParser_SyntaxContext_Normalize(identifier->syntaxContext, ZR_SYNTAX_NAMESPACE_LOCAL);
+    for (TZrSize index = 0u; index < preferredGeneric->params->count; ++index) {
+        const SZrAstNode *node = preferredGeneric->params->nodes[index];
+        const SZrParameter *parameter;
+        if (node == ZR_NULL || node->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+        parameter = &node->data.parameter;
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE &&
+            parameter->name != ZR_NULL && parameter->name->name != ZR_NULL &&
+            ZrParser_SyntaxContext_IsValid(parameter->name->syntaxContext) &&
+            ZrCore_String_Equal(parameter->name->name, identifier->name) &&
+            ZrParser_SyntaxContext_Equal(context, ZrParser_SyntaxContext_Normalize(
+                    parameter->name->syntaxContext, ZR_SYNTAX_NAMESPACE_LOCAL))) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                            const SZrType *astType,
+                                                           const SZrGenericDeclaration *preferredGeneric,
                                                            SZrInferredType *result) {
     if (cs == ZR_NULL || astType == ZR_NULL || result == ZR_NULL || astType->name == ZR_NULL) {
         return ZR_FALSE;
@@ -3185,7 +3221,9 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             return ZR_TRUE;
         }
 
-        if (type_inference_resolve_type_value_alias(cs, typeName,
+        if (!ast_type_identifier_is_preferred_generic(
+                    &astType->name->data.identifier, preferredGeneric) &&
+            type_inference_resolve_type_value_alias(cs, typeName,
                     astType->name->data.identifier.syntaxContext, result)) {
             type_inference_publish_type_value_display_alias(
                     cs, result, astType);
@@ -3269,7 +3307,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                        &ownershipGenericInnerType)) {
             SZrSemanticContext *savedSemanticContext = cs->semanticContext;
             cs->semanticContext = ZR_NULL;
-            if (!type_inference_convert_ast_type(cs, ownershipGenericInnerType, result)) {
+            if (!type_inference_convert_ast_type(cs, ownershipGenericInnerType, preferredGeneric, result)) {
                 cs->semanticContext = savedSemanticContext;
                 return ZR_FALSE;
             }
@@ -3299,7 +3337,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             TZrBool isResourceTarget;
 
             cs->semanticContext = ZR_NULL;
-            if (!type_inference_convert_ast_type(cs, gcBridgeInnerType, result)) {
+            if (!type_inference_convert_ast_type(cs, gcBridgeInnerType, preferredGeneric, result)) {
                 cs->semanticContext = savedSemanticContext;
                 return ZR_FALSE;
             }
@@ -3382,7 +3420,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                 cs->state,
                                 &paramType,
                                 constParameterName);
-                    } else if (!type_inference_convert_ast_type(cs, argumentType, &paramType)) {
+                    } else if (!type_inference_convert_ast_type(cs, argumentType, preferredGeneric, &paramType)) {
                         ZrParser_InferredType_Free(cs->state, &paramType);
                         ZrParser_InferredType_Free(cs->state, result);
                         return ZR_FALSE;
@@ -3611,6 +3649,7 @@ static SZrString *ast_type_build_canonical_module_member_type_name(SZrCompilerSt
 
 static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs,
                                                             const SZrType *astType,
+                                                            const SZrGenericDeclaration *preferredGeneric,
                                                             SZrInferredType *result) {
     const SZrType *segmentType;
     SZrInferredType currentType;
@@ -3695,7 +3734,7 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
         }
 
         ZrParser_InferredType_Free(cs->state, &currentType);
-        if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &currentType)) {
+        if (!ast_type_resolve_unqualified_inferred_type(cs, astType, preferredGeneric, &currentType)) {
             return ZR_FALSE;
         }
     }
@@ -3783,7 +3822,11 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
 }
 
 // 将AST类型注解转换为推断类型
-static TZrBool type_inference_convert_ast_type(SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
+static TZrBool type_inference_convert_ast_type(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        const SZrGenericDeclaration *preferredGeneric,
+        SZrInferredType *result) {
     SZrInferredType namedType;
     TZrBool namedTypeInitialized = ZR_FALSE;
     TZrBool resolvedQualifiedType = ZR_FALSE;
@@ -3802,7 +3845,7 @@ static TZrBool type_inference_convert_ast_type(SZrCompilerState *cs, const SZrTy
     namedTypeInitialized = ZR_TRUE;
 
     if (astType->subType != ZR_NULL) {
-        if (ast_type_try_resolve_qualified_inferred_type(cs, astType, &namedType)) {
+        if (ast_type_try_resolve_qualified_inferred_type(cs, astType, preferredGeneric, &namedType)) {
             resolvedQualifiedType = ZR_TRUE;
             if (cs->semanticContext != ZR_NULL && namedType.typeName != ZR_NULL) {
                 ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
@@ -3814,11 +3857,11 @@ static TZrBool type_inference_convert_ast_type(SZrCompilerState *cs, const SZrTy
         } else if (cs->hasError) {
             ZrParser_InferredType_Free(cs->state, &namedType);
             return ZR_FALSE;
-        } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &namedType)) {
+        } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, preferredGeneric, &namedType)) {
             ZrParser_InferredType_Free(cs->state, &namedType);
             return ZR_FALSE;
         }
-    } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &namedType)) {
+    } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, preferredGeneric, &namedType)) {
         ZrParser_InferredType_Free(cs->state, &namedType);
         return ZR_FALSE;
     }
@@ -3897,9 +3940,12 @@ static TZrBool type_inference_convert_ast_type(SZrCompilerState *cs, const SZrTy
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_AstTypeToInferredType_Convert(
-        SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
-    if (!type_inference_convert_ast_type(cs, astType, result)) {
+TZrBool type_inference_annotation_type_convert(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        const SZrGenericDeclaration *preferredGeneric,
+        SZrInferredType *result) {
+    if (!type_inference_convert_ast_type(cs, astType, preferredGeneric, result)) {
         return ZR_FALSE;
     }
     if (cs->semanticContext != ZR_NULL && astType != ZR_NULL &&
@@ -3909,6 +3955,11 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(
                 ZrParser_CanonicalType_FromInferred(cs->semanticContext, result), ZR_TRUE);
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_AstTypeToInferredType_Convert(
+        SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result) {
+    return type_inference_annotation_type_convert(cs, astType, ZR_NULL, result);
 }
 
 // 获取类型的范围限制（用于整数类型）

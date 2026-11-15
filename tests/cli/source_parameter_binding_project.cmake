@@ -8,7 +8,33 @@ fn withDefault(value: int = 7): int { return value; }
 fn count(first: int = 7, ...params: int[]): int {
     return first + params.length;
 }
+fn genericCount<T>(first: T, ...params: T[]): int { return params.length; }
+fn tailCount<T>(...params: T[]): int { return params.length; }
+fn onlyFixed(first: int, ...params: string[]): int { return first + params.length; }
+fn keep(...params: int[]): int[] { return params; }
+fn scopedCount(): int {
+    let T = string[];
+    let result = genericCount<int>(1, 20, 22);
+    let values: T = ["caller alias"];
+    return result + values.length;
+}
 let tail: int[] = [20, 22];
+let fixed: int[1] = [42];
+if (genericCount(1, 20, 22) != 2 || genericCount<int>(1, ...tail) != 2 || scopedCount() != 3) {
+    throw "generic fixed-prefix rest binding failed";
+}
+if (tailCount(20, 22) != 2 || tailCount<int>(...tail) != 2) {
+    throw "generic rest-only binding failed";
+}
+if (onlyFixed(...fixed) != 42 || onlyFixed(...[42]) != 42) {
+    throw "fixed-only spread must leave an empty rest array";
+}
+let first = keep(20);
+let second = keep(22);
+first[0] = 7;
+if (first[0] != 7 || second[0] != 22 || withDefault(value: 11) != 11) {
+    throw "rest arrays must be fresh and supplied defaults preserved";
+}
 return withDefault() + count() + count(26, ...tail);
 ]=])
 

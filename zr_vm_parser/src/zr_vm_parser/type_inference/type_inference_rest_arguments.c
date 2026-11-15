@@ -18,6 +18,95 @@ static TZrBool rest_element_matches(const SZrInferredType *actual, const SZrInfe
            ZrParser_InferredType_GetConversionOpcode(actual, expected) == ZR_INSTRUCTION_ENUM(ENUM_MAX);
 }
 
+/* Collect the actual tail separately from the fixed signature. Generic binding
+ * must run before compatibility checking, without evaluating any expression. */
+TZrBool type_inference_rest_argument_types(SZrCompilerState *cs,
+                                          const SZrFunctionCall *call,
+                                          TZrSize fixedCount,
+                                          TZrSize positionalCount,
+                                          const SZrInferredType *spreadType,
+                                          SZrArray *argumentTypes) {
+    if (argumentTypes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Construct(argumentTypes);
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (positionalCount <= fixedCount && spreadType == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || positionalCount > call->args->count) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Init(cs->state, argumentTypes, sizeof(SZrInferredType),
+                      positionalCount > fixedCount ? positionalCount - fixedCount : 1u);
+    for (TZrSize index = fixedCount; index < positionalCount; ++index) {
+        SZrInferredType actual;
+        const SZrCallArgumentSyntax *syntax = call->argumentMarkers != ZR_NULL
+                ? (const SZrCallArgumentSyntax *)ZrCore_Array_Get(call->argumentMarkers, index) : ZR_NULL;
+        if (syntax != ZR_NULL && syntax->marker != ZR_CALL_ARGUMENT_MARKER_NONE) {
+            goto error;
+        }
+        ZrParser_InferredType_Init(cs->state, &actual, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, call->args->nodes[index], &actual)) {
+            ZrParser_InferredType_Free(cs->state, &actual);
+            goto error;
+        }
+        ZrCore_Array_Push(cs->state, argumentTypes, &actual);
+    }
+    if (spreadType != ZR_NULL) {
+        const SZrAstNode *spreadNode = positionalCount < call->args->count
+                ? call->args->nodes[positionalCount] : ZR_NULL;
+        const SZrAstNode *expression;
+        const SZrInferredType *element;
+        SZrInferredType copiedType;
+        TZrSize remainingFixed = fixedCount > positionalCount ? fixedCount - positionalCount : 0u;
+        if (spreadNode == ZR_NULL || spreadNode->type != ZR_AST_SPREAD_ARGUMENT ||
+            spreadNode->data.spreadArgument.expression == ZR_NULL) {
+            goto error;
+        }
+        expression = spreadNode->data.spreadArgument.expression;
+        if (expression->type == ZR_AST_ARRAY_LITERAL) {
+            const SZrAstNodeArray *items = expression->data.arrayLiteral.elements;
+            if ((items == ZR_NULL ? 0u : items->count) <= remainingFixed) {
+                return ZR_TRUE;
+            }
+        } else if (spreadType->hasArraySizeConstraint && spreadType->arrayFixedSize > 0u &&
+                   spreadType->arrayFixedSize <= remainingFixed) {
+            /* A sized array consumed entirely by fixed parameters has no rest
+             * element. Zero is also used for open extents, so it is not proof. */
+            return ZR_TRUE;
+        }
+        element = rest_element_type(spreadType);
+        if (element == ZR_NULL) {
+            goto error;
+        }
+        ZrParser_InferredType_Copy(cs->state, &copiedType, element);
+        ZrCore_Array_Push(cs->state, argumentTypes, &copiedType);
+    }
+    return ZR_TRUE;
+
+error:
+    free_inferred_type_array(cs->state, argumentTypes);
+    ZrCore_Array_Construct(argumentTypes);
+    return ZR_FALSE;
+}
+
+TZrBool type_inference_rest_argument_types_match(const SZrArray *argumentTypes,
+                                                const SZrInferredType *elementType) {
+    if (argumentTypes == ZR_NULL || elementType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < argumentTypes->length; ++index) {
+        const SZrInferredType *actual = ZrCore_Array_Get((SZrArray *)argumentTypes, index);
+        if (!rest_element_matches(actual, elementType)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 /* Match the tail without changing the fixed signature seen by overload resolution.
  * The call retains the original evaluation order; the VM packs the evaluated values. */
 TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
@@ -26,53 +115,29 @@ TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
                                            TZrSize fixedCount,
                                            TZrSize positionalCount,
                                            const SZrInferredType *spreadType) {
+    SZrArray argumentTypes;
     SZrInferredType restType;
-    const SZrInferredType *expected;
-    TZrBool result = ZR_FALSE;
+    TZrBool result;
 
-    if (positionalCount <= fixedCount && spreadType == ZR_NULL) {
-        return ZR_TRUE;
-    }
-    if (!ZrParser_AstTypeToInferredType_Convert(cs, rest->typeInfo, &restType)) {
+    if (cs == ZR_NULL || rest == ZR_NULL) {
         return ZR_FALSE;
     }
-    expected = rest_element_type(&restType);
-    if (expected == ZR_NULL) {
-        goto cleanup;
+    if (!type_inference_rest_argument_types(cs, call, fixedCount, positionalCount,
+                                            spreadType, &argumentTypes)) {
+        return ZR_FALSE;
     }
-    for (TZrSize index = fixedCount; index < positionalCount; ++index) {
-        SZrInferredType actual;
-        TZrBool matches;
-        const SZrCallArgumentSyntax *syntax = call->argumentMarkers != ZR_NULL
-                ? (const SZrCallArgumentSyntax *)ZrCore_Array_Get(call->argumentMarkers, index) : ZR_NULL;
-        if (syntax != ZR_NULL && syntax->marker != ZR_CALL_ARGUMENT_MARKER_NONE) {
-            goto cleanup;
-        }
-        ZrParser_InferredType_Init(cs->state, &actual, ZR_VALUE_TYPE_OBJECT);
-        matches = ZrParser_ExpressionType_Infer(cs, call->args->nodes[index], &actual) &&
-                  rest_element_matches(&actual, expected);
-        ZrParser_InferredType_Free(cs->state, &actual);
-        if (!matches) {
-            goto cleanup;
-        }
+    if (argumentTypes.length == 0u) {
+        free_inferred_type_array(cs->state, &argumentTypes);
+        return ZR_TRUE;
     }
-    if (spreadType != ZR_NULL) {
-        const SZrAstNode *expression = call->args->nodes[positionalCount]->data.spreadArgument.expression;
-        TZrSize remainingFixed = fixedCount > positionalCount ? fixedCount - positionalCount : 0u;
-        if (expression->type == ZR_AST_ARRAY_LITERAL) {
-            const SZrAstNodeArray *items = expression->data.arrayLiteral.elements;
-            if ((items == ZR_NULL ? 0u : items->count) <= remainingFixed) {
-                result = ZR_TRUE;
-                goto cleanup;
-            }
-        }
-        if (!rest_element_matches(rest_element_type(spreadType), expected)) {
-            goto cleanup;
-        }
+    ZrParser_InferredType_Init(cs->state, &restType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs, rest->typeInfo, &restType)) {
+        ZrParser_InferredType_Free(cs->state, &restType);
+        free_inferred_type_array(cs->state, &argumentTypes);
+        return ZR_FALSE;
     }
-    result = ZR_TRUE;
-
-cleanup:
+    result = type_inference_rest_argument_types_match(&argumentTypes, rest_element_type(&restType));
     ZrParser_InferredType_Free(cs->state, &restType);
+    free_inferred_type_array(cs->state, &argumentTypes);
     return result;
 }

@@ -26,6 +26,9 @@ TZrBool compiler_register_rest_parameter(SZrCompilerState *cs, SZrParameter *par
         return ZR_FALSE;
     }
     registered = inferred.baseType == ZR_VALUE_TYPE_ARRAY &&
+                 inferred.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                 !inferred.hasArraySizeConstraint &&
+                 parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_VALUE &&
                  ZrParser_TypeEnvironment_RegisterVariableEx(cs->state, cs->typeEnv, name,
                                                            &inferred, node, node->location);
     ZrParser_InferredType_Free(cs->state, &inferred);
