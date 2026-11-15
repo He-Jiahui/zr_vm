@@ -111,15 +111,16 @@ TZrBool type_inference_rest_argument_types_match(const SZrArray *argumentTypes,
  * The call retains the original evaluation order; the VM packs the evaluated values. */
 TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
                                            const SZrFunctionCall *call,
-                                           const SZrParameter *rest,
+                                           const SZrFunctionTypeInfo *function,
                                            TZrSize fixedCount,
                                            TZrSize positionalCount,
                                            const SZrInferredType *spreadType) {
     SZrArray argumentTypes;
-    SZrInferredType restType;
+    const SZrInferredType *elementType;
     TZrBool result;
 
-    if (cs == ZR_NULL || rest == ZR_NULL) {
+    if (cs == ZR_NULL || function == ZR_NULL || function->restParameterType == ZR_NULL ||
+        (elementType = rest_element_type(function->restParameterType)) == ZR_NULL) {
         return ZR_FALSE;
     }
     if (!type_inference_rest_argument_types(cs, call, fixedCount, positionalCount,
@@ -130,14 +131,7 @@ TZrBool type_inference_rest_arguments_match(SZrCompilerState *cs,
         free_inferred_type_array(cs->state, &argumentTypes);
         return ZR_TRUE;
     }
-    ZrParser_InferredType_Init(cs->state, &restType, ZR_VALUE_TYPE_OBJECT);
-    if (!ZrParser_AstTypeToInferredType_Convert(cs, rest->typeInfo, &restType)) {
-        ZrParser_InferredType_Free(cs->state, &restType);
-        free_inferred_type_array(cs->state, &argumentTypes);
-        return ZR_FALSE;
-    }
-    result = type_inference_rest_argument_types_match(&argumentTypes, rest_element_type(&restType));
-    ZrParser_InferredType_Free(cs->state, &restType);
+    result = type_inference_rest_argument_types_match(&argumentTypes, elementType);
     free_inferred_type_array(cs->state, &argumentTypes);
     return result;
 }

@@ -162,6 +162,98 @@ fn f<T>(first: T, ...params: T[]): int {
 }
 return f<int>(1, 2);
 ]=] 2)
+# These signatures must keep declaration types, not caller-visible aliases.
+expect_result(rest_nominal_type_survives_caller_alias [=[
+class Item {}
+fn f(...params: Item[]): int { return params.length; }
+fn run(item: Item): int {
+    let Item = string[];
+    return f(item);
+}
+return run(new Item());
+]=] 1)
+expect_result(rest_nominal_spread_survives_caller_alias [=[
+class Item {}
+fn f(...params: Item[]): int { return params.length; }
+fn run(items: Item[]): int {
+    let Item = string[];
+    return f(...items);
+}
+return run([new Item()]);
+]=] 1)
+expect_result(generic_rest_concrete_type_survives_caller_alias [=[
+class Item {}
+fn f<T>(first: T, ...params: Item[]): int { return params.length; }
+fn run(item: Item): int {
+    let Item = string[];
+    return f(1, item);
+}
+return run(new Item());
+]=] 1)
+expect_result(rest_keeps_declaration_type_alias [=[
+let Element = string[];
+fn f(...params: Element[]): int { return params.length; }
+fn run(): int {
+    let Element = int[];
+    return f(["declaration alias"]);
+}
+return run();
+]=] 1)
+expect_result(generic_rest_keeps_concrete_declaration_alias [=[
+let Element = string[];
+fn f<T>(first: T, ...params: Element[]): int { return params.length; }
+fn run(): int {
+    let Element = int[];
+    return f(1, ["declaration alias"]);
+}
+return run();
+]=] 1)
+expect_rejection(rest_caller_alias_cannot_replace_nominal_contract [=[
+class Item {}
+fn f(...params: Item[]): int { return params.length; }
+fn run(): int {
+    let Item = string[];
+    return f(["not an Item"]);
+}
+return run();
+]=] "No matching overload for function 'f'")
+expect_rejection(rest_spread_caller_alias_cannot_replace_nominal_contract [=[
+class Item {}
+fn f(...params: Item[]): int { return params.length; }
+fn run(): int {
+    let Item = string[];
+    let values: string[][] = [["not an Item"]];
+    return f(...values);
+}
+return run();
+]=] "No matching overload for function 'f'")
+expect_rejection(generic_rest_caller_alias_cannot_replace_concrete_contract [=[
+class Item {}
+fn f<T>(first: T, ...params: Item[]): int { return params.length; }
+fn run(): int {
+    let Item = string[];
+    return f(1, ["not an Item"]);
+}
+return run();
+]=] "Generic function 'f'|No matching overload for function 'f'")
+expect_rejection(rest_caller_alias_cannot_replace_declaration_alias [=[
+let Element = string[];
+fn f(...params: Element[]): int { return params.length; }
+fn run(): int {
+    let Element = int[];
+    return f([1]);
+}
+return run();
+]=] "No matching overload for function 'f'")
+expect_rejection(generic_rest_caller_alias_cannot_replace_declaration_alias [=[
+let Element = string[];
+fn f<T>(first: T, ...params: Element[]): int { return params.length; }
+fn run(): int {
+    let Element = int[];
+    return f(1, [1]);
+}
+return run();
+]=] "Generic function 'f'|No matching overload for function 'f'")
 expect_rejection(generic_rest_empty_requires_type_argument [=[
 fn f<T>(...params: T[]): int { return params.length; }
 return f();

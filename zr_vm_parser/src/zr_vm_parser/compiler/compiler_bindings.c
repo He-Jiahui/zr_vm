@@ -124,6 +124,51 @@ void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrStrin
     emit_constant_to_slot(cs, slot, &constantValue);
 }
 
+/* Freeze the complete annotation while its declaration's aliases are active.
+ * Changing typeEnv at a call site cannot restore cs->typeValueAliases. */
+static TZrBool compiler_capture_rest_parameter_type(SZrCompilerState *cs,
+                                                   SZrFunctionDeclaration *declaration) {
+    SZrFunctionTypeInfo *function = ZR_NULL;
+    SZrInferredType restType;
+    SZrInferredType *ownedType;
+
+    if (declaration->args == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0u; index < cs->typeEnv->functionReturnTypes.length; ++index) {
+        SZrFunctionTypeInfo *const *entry = ZrCore_Array_Get(&cs->typeEnv->functionReturnTypes, index);
+        if (entry != ZR_NULL && *entry != ZR_NULL &&
+            (*entry)->declarationNode == cs->currentFunctionNode) {
+            function = *entry;
+            break;
+        }
+    }
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (function->restParameterType != ZR_NULL) {
+        return ZR_TRUE; /* Predeclaration already owns the contract. */
+    }
+    ZrParser_InferredType_Init(cs->state, &restType, ZR_VALUE_TYPE_OBJECT);
+    if (!type_inference_annotation_type_convert(
+                cs, declaration->args->typeInfo, declaration->generic, &restType) ||
+        restType.baseType != ZR_VALUE_TYPE_ARRAY || restType.elementTypes.length != 1u ||
+        restType.referenceAccess != ZR_REFERENCE_ACCESS_NONE || restType.hasArraySizeConstraint ||
+        declaration->args->sourcePassingForm != ZR_PARAMETER_SOURCE_VALUE) {
+        ZrParser_InferredType_Free(cs->state, &restType);
+        return ZR_FALSE;
+    }
+    ownedType = ZrCore_Memory_RawMallocWithType(
+            cs->state->global, sizeof(*ownedType), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (ownedType == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &restType);
+        return ZR_FALSE;
+    }
+    *ownedType = restType; /* Transfer all nested type/constraint storage. */
+    function->restParameterType = ownedType;
+    return ZR_TRUE;
+}
+
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) {
     SZrInferredType returnType;
     SZrArray paramTypes;
@@ -223,6 +268,9 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
         if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
             ZrCore_Array_Free(cs->state, &parameterPassingModes);
         }
+    }
+    if (!cs->hasError && !compiler_capture_rest_parameter_type(cs, funcDecl)) {
+        ZrParser_Compiler_Error(cs, "Cannot capture the variadic array parameter type", cs->currentFunctionNode->location);
     }
 }
 

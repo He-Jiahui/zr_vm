@@ -2471,7 +2471,7 @@ static TZrBool infer_spread_call_argument_types_for_candidate(
                           : spreadType.arrayFixedSize < spreadCount)) ||
         (rest != ZR_NULL && funcType->genericParameters.length == 0u &&
          !type_inference_rest_arguments_match(
-                 cs, call, rest, parameterCount, prefixCount, &spreadType))) {
+                 cs, call, funcType, parameterCount, prefixCount, &spreadType))) {
         *mismatch = ZR_TRUE;
         ZrParser_InferredType_Free(cs->state, &spreadType);
         free_inferred_type_array(cs->state, argTypes);
@@ -2748,7 +2748,7 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
         /* Generic rest types are checked against substituted bindings by the
          * generic resolver, never against an unresolved caller-visible T. */
         if (funcType->genericParameters.length == 0u &&
-            !type_inference_rest_arguments_match(cs, call, declNode->data.functionDeclaration.args,
+            !type_inference_rest_arguments_match(cs, call, funcType,
                                                  paramCount, argCount, ZR_NULL)) {
             if (mismatch != ZR_NULL) {
                 *mismatch = ZR_TRUE;
