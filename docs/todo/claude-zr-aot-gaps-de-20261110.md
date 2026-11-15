@@ -1,5 +1,26 @@
 # zr_vm AOT gaps D then E: root cause and Codex-ready plan (Claude, read-only dig)
 
+> **Historical diagnosis and plan — not implementation acceptance.**
+> This report describes the original `8fbbf4bb` / `4c5eebcbb` snapshot. It was
+> imported on 2026-11-16 after comparison with committed main `df5e6dcc`.
+> `SETTLED`, `MUST`, old starting-tip requirements and agent instructions below
+> belong to the historical report; they are not current execution instructions.
+> Do not reset current work to that old tip or infer that its proposed fixes passed.
+
+## Import-time status review (2026-11-16)
+
+- The D validator and E function-table lookup sites still appeared to need the
+  reported investigation at `df5e6dcc`, by source inspection. This import did not
+  rerun the original AOT crash/link fixtures or establish present-day acceptance.
+- Before implementation, reproduce each issue against the then-current committed
+  tree and check its actual ABI, metadata and backend contracts. Preserve newer
+  work instead of applying the old one-file plan mechanically.
+- Machine paths and external evidence references below describe the original
+  environment. They are not portable paths or evidence artifacts supplied by this
+  import. Original line numbers and remote-main statements are historical.
+
+---
+
 ## RESULT_CARD
 
 - **STATUS:** SETTLED

@@ -1,5 +1,34 @@
 # zr_vm LSP editor-feature gaps — read-only dig (2026-11-10 request, written 2026-11-14)
 
+> **Historical diagnosis and plan — not current findings or acceptance.**
+> This report describes `8fbbf4bb` / `4c5eebcbb`, not the import-time main
+> `df5e6dcc` reviewed on 2026-11-16. The original text is retained for provenance.
+> Its `SETTLED`, `MUST`, old starting-tip requirements and agent instructions do
+> not authorize current work or establish that proposed changes were implemented
+> and validated. Recheck the current tree rather than resetting to the old tip.
+
+## Import-time drift review (2026-11-16)
+
+The following historical claims must not be reused unchanged as current defects:
+
+- Main already accepts formatting options, including tab sizes 1 through 32 and
+  `insertSpaces`; the stdio adapter reads those options. The public formatting
+  signatures also changed, so the old B2/U2 API proposal is not the current plan.
+- The shared editor-position helper already delegates to the UTF-16 position
+  codec. The B7/U5 helper description therefore does not describe current main.
+- Parameter-name inlay hints already exist. Inlay range-end handling,
+  multi-range overlap handling and selection-parent scanning also changed after
+  this report's snapshot; absence claims and old patch plans need fresh review.
+- These observations are source-level drift notes, not a claim that all formatter,
+  semantic-token, fallback-AST or diagnostic issues are fixed or tested. Any
+  remaining gap needs a current reproducer and its own acceptance evidence.
+
+Absolute machine paths, external evidence references, line numbers and the
+original remote-main statements below are historical, not bundled or portable
+validation artifacts.
+
+---
+
 ## RESULT_CARD
 
 - **STATUS:** SETTLED (diagnosis and plan only; nothing built, run, staged or committed)
