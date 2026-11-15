@@ -514,7 +514,17 @@ static void test_lsp_diagnostics_preserve_unwritten_loop_ranges(SZrState *state)
          "for (var item in values) { return values[index]; } return 0; }", 1},
         {"unwritten loop range selects only the live ternary type",
          "fn f(): int { var index = 0; "
-         "while (true) { return index == 0 ? 1 : \"never\"; } }", 0}
+         "while (true) { return index == 0 ? 1 : \"never\"; } }", 0},
+        {"ref alias write invalidates another parameter's index range",
+         "fn f(left: ref int, right: ref int, flag: bool): int { "
+         "var values = [1,2]; if (right == 2) { "
+         "while (flag) { left = 0; return values[right]; } } return 0; } "
+         "var sharedIndex = 2; f(ref sharedIndex, ref sharedIndex, true);", 0},
+        {"out alias write invalidates a ref parameter's index range",
+         "fn f(left: out int, right: ref int, flag: bool): int { "
+         "var values = [1,2]; if (right == 2) { "
+         "while (flag) { left = 0; return values[right]; } } left = 0; return 0; } "
+         "var sharedIndex = 2; f(out sharedIndex, ref sharedIndex, true);", 0}
     };
     for (TZrSize index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
         SZrTestTimer timer;

@@ -297,6 +297,40 @@ static TZrBool semantic_typecheck_syntax_is_primitive(
     }
 }
 
+/* A scalar-looking identifier can still write shared caller storage. Numeric
+ * refinements intentionally erase reference access, so consult the canonical
+ * source parameter as well as an explicit writable-ref type. Missing identity
+ * is not evidence that this is an unaliased value write. */
+static TZrBool semantic_typecheck_identifier_write_is_opaque(
+        const SZrAstNode *identifier, const SZrTypeEnvironment *typeEnv) {
+    const SZrTypeBinding *binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            typeEnv, identifier->data.identifier.name, identifier->data.identifier.syntaxContext);
+    const SZrSemanticSymbolRecord *symbol = ZR_NULL;
+    const SZrType *annotation = ZR_NULL;
+    if (binding == ZR_NULL) return ZR_TRUE;
+    for (const SZrTypeEnvironment *env = typeEnv; env != ZR_NULL && symbol == ZR_NULL; env = env->parent) {
+        symbol = ZrParser_Semantic_FindSymbolById(env->semanticContext, binding->symbolId);
+    }
+    if (symbol == ZR_NULL || symbol->astNode == ZR_NULL) return ZR_TRUE;
+    if (symbol->astNode->type == ZR_AST_PARAMETER) {
+        const SZrParameter *parameter = &symbol->astNode->data.parameter;
+        if (parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF_READONLY ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_IN ||
+            parameter->passingMode == ZR_PARAMETER_PASSING_MODE_IN) return ZR_FALSE;
+        if (parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_OUT ||
+            parameter->passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+            parameter->passingMode == ZR_PARAMETER_PASSING_MODE_OUT) return ZR_TRUE;
+        annotation = parameter->typeInfo;
+    } else if (symbol->astNode->type == ZR_AST_VARIABLE_DECLARATION) {
+        annotation = symbol->astNode->data.variableDeclaration.typeInfo;
+    }
+    return binding->type.referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE ||
+           (annotation != ZR_NULL && annotation->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE);
+}
+
 static TZrBool semantic_typecheck_nodes_may_write_range(
         const SZrAstNodeArray *nodes, const SZrTypeBinding *binding, const SZrTypeEnvironment *typeEnv) {
     if (nodes != ZR_NULL && nodes->nodes != ZR_NULL) {
@@ -328,7 +362,8 @@ static TZrBool semantic_typecheck_node_may_write_range(
             if (left == ZR_NULL || left->type != ZR_AST_IDENTIFIER_LITERAL) return ZR_TRUE;
             /* Binding lookup normalizes hygiene namespaces. A same-spelled
              * write is conservatively a may-write even if raw contexts differ. */
-            return (binding != ZR_NULL && ZrCore_String_Equal(left->data.identifier.name, binding->name)) ||
+            return semantic_typecheck_identifier_write_is_opaque(left, typeEnv) ||
+                   (binding != ZR_NULL && ZrCore_String_Equal(left->data.identifier.name, binding->name)) ||
                    !semantic_typecheck_syntax_is_primitive(left, typeEnv) ||
                    semantic_typecheck_node_may_write_range(node->data.assignmentExpression.right, binding, typeEnv);
         }
