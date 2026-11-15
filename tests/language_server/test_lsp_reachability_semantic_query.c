@@ -899,6 +899,134 @@ static void test_local_query_keeps_nested_breaking_loop_reachable(SZrState *stat
     TEST_PASS(timer, summary);
 }
 
+/* A preheader singleton is not a loop invariant. Check both the published
+ * diagnostics and the branch fact, rather than filtering a warning at output. */
+static void test_loop_carried_numeric_ranges(SZrState *state) {
+    static const struct {
+        const char *name;
+        const char *source;
+        TZrBool unreachable;
+    } cases[] = {
+        {"while counter changes on the backedge",
+         "fn join(count: int): string {\n"
+         "  var index = 0; var serialized = \"[\";\n"
+         "  while (index < count) {\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "    index = index + 1;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_FALSE},
+        {"branch-refined mutable value parameter changes on the backedge",
+         "fn join(index: int, count: int): string {\n"
+         "  var serialized = \"[\";\n"
+         "  if (index == 0) {\n"
+         "    while (index < count) {\n"
+         "      if (index > 0) { serialized = serialized + \",\"; }\n"
+         "      index = index + 1;\n"
+         "    }\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_FALSE},
+        {"for counter changes in the step",
+         "fn join(count: int): string {\n"
+         "  var serialized = \"[\";\n"
+         "  for (var index = 0; index < count; index = index + 1) {\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_FALSE},
+        {"foreach carries an outer counter",
+         "fn join(): string {\n"
+         "  var index = 0; var serialized = \"[\"; var items = [1, 2];\n"
+         "  for (var item in items) {\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "    index = index + 1;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_FALSE},
+        {"nested loop carries an outer counter",
+         "fn join(count: int): string {\n"
+         "  var index = 0; var serialized = \"[\";\n"
+         "  while (index < count) {\n"
+         "    var previous = 0;\n"
+         "    while (previous < index) {\n"
+         "      if (previous > 0) { serialized = serialized + \",\"; }\n"
+         "      previous = previous + 1;\n"
+         "    }\n"
+         "    index = index + 1;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_FALSE},
+        {"immutable preheader value still proves a dead branch",
+         "fn join(count: int): string {\n"
+         "  let index = 0; var serialized = \"[\";\n"
+         "  while (count > 0) {\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "    break;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_TRUE},
+        {"declared numeric limits still prove a dead branch",
+         "fn join(count: int): string {\n"
+         "  var index: u8 = 0; var serialized = \"[\";\n"
+         "  while (count > 0) {\n"
+         "    if (index > 255) { serialized = serialized + \",\"; }\n"
+         "    break;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_TRUE},
+        {"foreach item keeps its per-iteration initialization range",
+         "fn join(): string {\n"
+         "  var serialized = \"[\"; var items = [0];\n"
+         "  for (var index in items) {\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_TRUE},
+        {"iteration-local initialization still proves a dead branch",
+         "fn join(count: int): string {\n"
+         "  var serialized = \"[\";\n"
+         "  while (count > 0) {\n"
+         "    var index = 0;\n"
+         "    if (index > 0) { serialized = serialized + \",\"; }\n"
+         "    break;\n"
+         "  }\n"
+         "  return serialized;\n}\n", ZR_TRUE}
+    };
+
+    for (TZrSize index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        SZrTestTimer timer;
+        SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+        SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///loop_carried_range.zr");
+        SZrArray diagnostics = {0};
+        SZrLspPosition position;
+        SZrLspLocalSemanticQueryResult query;
+        TZrBool passed;
+        TEST_START(cases[index].name);
+        passed = context != ZR_NULL && uri != ZR_NULL &&
+                 ZrLanguageServer_Lsp_UpdateDocument(state, context, uri,
+                         cases[index].source, strlen(cases[index].source), 1) &&
+                 ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
+        if (passed) {
+            passed = lsp_diagnostics_contain_code(&diagnostics, "unreachable_code") == cases[index].unreachable;
+            /* No parser/type error may make the absence of a warning vacuous. */
+            for (TZrSize diagnosticIndex = 0; diagnosticIndex < diagnostics.length; ++diagnosticIndex) {
+                SZrLspDiagnostic *diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, diagnosticIndex);
+                if (diagnostic->severity == 1 /* LSP Error */) {
+                    printf("Unexpected diagnostic: %s\n", lsp_test_string_text(diagnostic->message));
+                    passed = ZR_FALSE;
+                }
+            }
+        }
+        ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+        if (passed && !cases[index].unreachable) {
+            passed = lsp_find_position_for_substring(cases[index].source,
+                             "serialized = serialized +", 0, &position) &&
+                     ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query) &&
+                     query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+                     query.reachabilityFact == ZR_NULL;
+        }
+        if (diagnostics.isValid) {
+            ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+        }
+        if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+        if (passed) TEST_PASS(timer, cases[index].name);
+        else TEST_FAIL(timer, cases[index].name, "Loop entry range leaked into an iteration, or a true dead branch was lost");
+    }
+}
+
 /* 依次跑分支、switch 与循环的正反可达性用例，聚合失败交给 CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -934,6 +1062,7 @@ int main(void) {
     test_local_query_keeps_infinite_for_loop_with_break_reachable(state);
     test_local_query_returns_nested_loop_exit_reachability_fact(state);
     test_local_query_keeps_nested_breaking_loop_reachable(state);
+    test_loop_carried_numeric_ranges(state);
 
     ZrCore_GlobalState_Free(global);
 

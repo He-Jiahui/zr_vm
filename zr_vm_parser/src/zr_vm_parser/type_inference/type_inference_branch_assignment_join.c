@@ -9,6 +9,7 @@
 #include "type_inference_constant_eval.h"
 #include "type_inference_semantic_facts.h"
 
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_parser_conf.h"
 
@@ -445,6 +446,8 @@ static TZrBool type_inference_branch_assignment_push_replay_scope(
     if (falseBranch
             ? ZrParser_TypeInference_PushFalseBranchNumericRangeScope(cs, condition, scope)
             : ZrParser_TypeInference_PushTrueBranchNumericRangeScope(cs, condition, scope)) {
+        /* Source declaration facts were recorded by the real block check. */
+        cs->typeEnv->semanticContext = ZR_NULL;
         return ZR_TRUE;
     }
 
@@ -504,6 +507,129 @@ static TZrBool type_inference_branch_assignment_store_replayed_binding(SZrCompil
     return ZR_TRUE;
 }
 
+/* Range replay is an optional proof, not a second source check. Keep the source
+ * compiler diagnostic and canonical facts intact even when a trial fails. */
+static TZrBool type_inference_branch_assignment_infer_replay_type(SZrCompilerState *cs,
+                                                                  SZrAstNode *value,
+                                                                  const SZrType *annotation,
+                                                                  SZrInferredType *type) {
+    SZrSemanticContext *semanticContext;
+    SZrFileRange errorLocation;
+    const TZrChar *errorMessage;
+    TZrChar *errorStorage;
+    TZrSize errorCapacity;
+    TZrBool recoverableError, suppressOutput, success;
+
+    if (cs->hasError || cs->hasStructuredError || cs->hasFatalError || cs->hasCompileTimeError) {
+        return ZR_FALSE;
+    }
+    semanticContext = cs->semanticContext;
+    errorLocation = cs->errorLocation;
+    errorMessage = cs->errorMessage;
+    errorStorage = cs->errorMessageStorage;
+    errorCapacity = cs->errorMessageStorageCapacity;
+    recoverableError = cs->hadRecoverableError;
+    suppressOutput = cs->suppressErrorOutput;
+    cs->semanticContext = ZR_NULL;
+    cs->errorMessage = ZR_NULL;
+    cs->errorMessageStorage = ZR_NULL;
+    cs->errorMessageStorageCapacity = 0;
+    cs->suppressErrorOutput = ZR_TRUE;
+
+    if (annotation == ZR_NULL) {
+        success = value != ZR_NULL && ZrParser_ExpressionType_Infer(cs, value, type);
+    } else {
+        success = ZrParser_AstTypeToInferredType_Convert(cs, annotation, type);
+        if (success && value != ZR_NULL) {
+            SZrInferredType initializer;
+            ZrParser_InferredType_Init(cs->state, &initializer, ZR_VALUE_TYPE_OBJECT);
+            success = ZrParser_ExpressionType_Infer(cs, value, &initializer);
+            if (success) {
+                (void)ZrParser_TypeInference_TryApplyInitializerNumericRange(cs->state, type, &initializer);
+            }
+            ZrParser_InferredType_Free(cs->state, &initializer);
+        }
+    }
+    success = success && !cs->hasError && !cs->hasStructuredError &&
+              !cs->hasFatalError && !cs->hasCompileTimeError;
+    ZrParser_Compiler_ClearStructuredError(cs);
+    if (cs->errorMessageStorage != ZR_NULL) {
+        ZrCore_Memory_Allocate(cs->state->global, cs->errorMessageStorage,
+                cs->errorMessageStorageCapacity, 0, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    }
+    cs->hasError = ZR_FALSE;
+    cs->hasFatalError = ZR_FALSE;
+    cs->hasCompileTimeError = ZR_FALSE;
+    cs->hadRecoverableError = recoverableError;
+    cs->suppressErrorOutput = suppressOutput;
+    cs->errorMessage = errorMessage;
+    cs->errorMessageStorage = errorStorage;
+    cs->errorMessageStorageCapacity = errorCapacity;
+    cs->errorLocation = errorLocation;
+    cs->semanticContext = semanticContext;
+    return success;
+}
+
+/* Do not introduce imports, calls or other effects by replaying a declaration
+ * initializer that the range pass did not previously evaluate. */
+static TZrBool type_inference_branch_assignment_can_replay_initializer(const SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    switch (node->type) {
+        case ZR_AST_IDENTIFIER_LITERAL:
+        case ZR_AST_BOOLEAN_LITERAL:
+        case ZR_AST_INTEGER_LITERAL:
+        case ZR_AST_FLOAT_LITERAL:
+        case ZR_AST_STRING_LITERAL:
+        case ZR_AST_CHAR_LITERAL:
+        case ZR_AST_NULL_LITERAL:
+            return ZR_TRUE;
+        case ZR_AST_PRIMARY_EXPRESSION:
+            return (node->data.primaryExpression.members == ZR_NULL ||
+                    node->data.primaryExpression.members->count == 0) &&
+                   type_inference_branch_assignment_can_replay_initializer(node->data.primaryExpression.property);
+        case ZR_AST_UNARY_EXPRESSION: {
+            const TZrChar *op = node->data.unaryExpression.op.op;
+            return op != ZR_NULL && (*op == '+' || *op == '-' || *op == '~' || *op == '!') && op[1] == '\0' &&
+                   type_inference_branch_assignment_can_replay_initializer(node->data.unaryExpression.argument);
+        }
+        case ZR_AST_BINARY_EXPRESSION:
+            return type_inference_branch_assignment_can_replay_initializer(node->data.binaryExpression.left) &&
+                   type_inference_branch_assignment_can_replay_initializer(node->data.binaryExpression.right);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool type_inference_branch_assignment_replay_declaration(SZrCompilerState *cs,
+                                                                  SZrAstNode *node,
+                                                                  const SZrTypeInferenceBranchAssignmentPlan *plan) {
+    const SZrVariableDeclaration *declaration = &node->data.variableDeclaration;
+    SZrAstNode *pattern = declaration->pattern;
+    SZrAstNode *value = declaration->value;
+    SZrInferredType type;
+    TZrBool success;
+
+    if (pattern == ZR_NULL || pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        /* The current range plan commits by name. Never commit a shadowed
+         * local assignment as if it were an assignment to the parent. */
+        type_inference_branch_assignment_plan_contains(plan, pattern->data.identifier.name)) {
+        return ZR_FALSE;
+    }
+    if (!type_inference_branch_assignment_can_replay_initializer(value)) {
+        value = ZR_NULL; /* Shadow the outer binding without trying to prove a value. */
+    }
+    ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+    success = ((value == ZR_NULL && declaration->typeInfo == ZR_NULL) ||
+               type_inference_branch_assignment_infer_replay_type(cs, value, declaration->typeInfo, &type)) &&
+              ZrParser_TypeEnvironment_RegisterVariableExWithContext(
+                      cs->state, cs->typeEnv, pattern->data.identifier.name, &type,
+                      node, pattern->location, pattern->data.identifier.syntaxContext);
+    ZrParser_InferredType_Free(cs->state, &type);
+    return success;
+}
+
 static TZrBool type_inference_branch_assignment_replay_assignment(SZrCompilerState *cs,
                                                                   SZrAstNode *assignmentNode,
                                                                   SZrTypeInferenceBranchAssignmentResult *result) {
@@ -522,7 +648,7 @@ static TZrBool type_inference_branch_assignment_replay_assignment(SZrCompilerSta
     }
 
     ZrParser_InferredType_Init(cs->state, &rhsType, ZR_VALUE_TYPE_OBJECT);
-    success = ZrParser_ExpressionType_Infer(cs, right, &rhsType) &&
+    success = type_inference_branch_assignment_infer_replay_type(cs, right, ZR_NULL, &rhsType) &&
               type_inference_branch_assignment_numeric_range(&rhsType, &minValue, &maxValue) &&
               type_inference_branch_assignment_store_replayed_binding(cs, name, &rhsType) &&
               type_inference_branch_assignment_result_store_type(cs->state, result, name, &rhsType);
@@ -622,6 +748,12 @@ static TZrBool type_inference_branch_assignment_replay_branch(SZrCompilerState *
                 return ZR_FALSE;
             }
             replayed = ZR_TRUE;
+            continue;
+        }
+        if (expression->type == ZR_AST_VARIABLE_DECLARATION) {
+            if (!type_inference_branch_assignment_replay_declaration(cs, expression, plan)) {
+                return ZR_FALSE;
+            }
             continue;
         }
         if (expression->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
@@ -781,6 +913,18 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
         !type_inference_branch_assignment_plan_extend(cs->state, &targetPlan, &thenPlan) ||
         !type_inference_branch_assignment_plan_extend(cs->state, &targetPlan, &elsePlan)) {
         goto cleanup;
+    }
+
+    /* The join only models writes to incoming numeric bindings. Do not
+     * re-infer unrelated RHSs, or reject a numeric path because of a dead one. */
+    const SZrTypeInferenceBranchAssignmentPlan *activeTargets = conditionKnown
+            ? (conditionValue ? &thenPlan : &elsePlan) : &targetPlan;
+    for (index = 0; index < type_inference_branch_assignment_plan_target_count(activeTargets); ++index) {
+        SZrString *name = type_inference_branch_assignment_plan_target_at(activeTargets, index);
+        const SZrTypeBinding *binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
+        if (binding == ZR_NULL || !ZR_VALUE_IS_TYPE_NUMBER(binding->type.baseType)) {
+            goto cleanup;
+        }
     }
 
     initialized =

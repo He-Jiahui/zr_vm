@@ -21,6 +21,11 @@ void type_inference_cache_begin(SZrCompilerState *cs, SZrAstNode *node,
                                 SZrExpressionTypeCache *cache);
 void type_inference_cache_end(SZrCompilerState *cs, SZrExpressionTypeCache *cache);
 
+/* Like expression inference, but retain a genuinely unbound bare key as a READ fact. */
+TZrBool type_inference_computed_key_infer(SZrCompilerState *cs,
+                                         SZrAstNode *node,
+                                         SZrInferredType *result);
+
 typedef struct SZrGenericCallBinding {
     const SZrTypeGenericParameterInfo *parameterInfo;
     TZrBool isBound;
@@ -317,7 +322,7 @@ void type_inference_record_external_member_reference_fact(
 void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
                                                            SZrAstNode *node,
                                                            const SZrTypeBinding *binding);
-void type_inference_record_member_write_reference_fact(SZrCompilerState *cs, SZrAstNode *node);
+TZrBool type_inference_record_member_write_reference_fact(SZrCompilerState *cs, SZrAstNode *node);
 void type_inference_record_array_index_bounds_diagnostic_fact(SZrCompilerState *cs,
                                                               SZrAstNode *memberNode,
                                                               const SZrInferredType *elementType,

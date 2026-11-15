@@ -5,7 +5,9 @@
 #include "zr_vm_language_server/lsp_uri.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/writer.h"
 
@@ -15,6 +17,7 @@
 static SZrState *g_state;
 /* 与当前 g_state 配对的文档和项目索引上下文，由 tearDown 释放。 */
 static SZrLspContext *g_context;
+static SZrArray g_diagnostics;
 /* 普通调用定义查询返回的位置指针及数组缓冲区，均由本测试持有。 */
 static SZrArray g_plainLocations;
 /* cast 操作数定义查询单独收集，避免与普通调用结果混用。 */
@@ -47,6 +50,7 @@ void setUp(void) {
     TEST_ASSERT_NOT_NULL(g_state);
     g_context = ZrLanguageServer_LspContext_New(g_state);
     TEST_ASSERT_NOT_NULL(g_context);
+    ZrCore_Array_Construct(&g_diagnostics);
     ZrCore_Array_Construct(&g_plainLocations);
     ZrCore_Array_Construct(&g_castLocations);
     g_projectPath[0] = g_binaryPath[0] = g_intermediatePath[0] = g_mainPath[0] = '\0';
@@ -54,6 +58,9 @@ void setUp(void) {
 
 /* Unity 即使断言中止也执行此回调；按位置、上下文、VM 的依赖顺序释放。 */
 void tearDown(void) {
+    if (g_diagnostics.isValid) {
+        ZrLanguageServer_Lsp_FreeDiagnostics(g_state, &g_diagnostics);
+    }
     free_locations(&g_plainLocations);
     free_locations(&g_castLocations);
     ZrLanguageServer_LspContext_Free(g_state, g_context);
@@ -218,12 +225,94 @@ static void test_native_cast_operand_retains_external_identity_and_navigation(vo
     assert_cast_preserves_external_call(uri, source, "sqrt");
 }
 
-/* CTest language_server_cast_operand_facts 通过 Unity 逐例执行四种 provider 场景。 */
+static void assert_string_length_fact(SZrString *uri, const char *source,
+                                      SZrSemanticContext *context, const char *name,
+                                      TZrSize occurrence) {
+    SZrFilePosition position = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            g_context, uri, find_position(source, name, occurrence));
+    const SZrSemanticReferenceFact *fact = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            context, ZrParser_FileRange_Create(position, position, uri),
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    const SZrCanonicalTypeNode *type;
+    const SZrCanonicalTypeNode *receiver;
+
+    TEST_ASSERT_NOT_NULL(fact);
+    TEST_ASSERT_TRUE_MESSAGE(fact->isResolved, name);
+    TEST_ASSERT_FALSE(fact->hasDefinitionRange);
+    type = ZrParser_CanonicalType_Find(context, fact->typeId);
+    TEST_ASSERT_NOT_NULL(type);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, type->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, type->data.primitive.valueType);
+    receiver = ZrParser_CanonicalType_Find(context, fact->receiverTypeId);
+    TEST_ASSERT_NOT_NULL(receiver);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, receiver->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, receiver->data.primitive.valueType);
+}
+
+/* Both forms must retain the builtin type; a real missing member stays an error. */
+static void test_string_length_properties_resolve_inside_and_outside_cast(void) {
+    const char *source = "fn measure(token: string): int { return token.length; }\n"
+                         "class Pointer {\n"
+                         "    pri fn count(token: string): int {\n"
+                         "        let count = <int> token.length;\n"
+                         "        return count;\n"
+                         "    }\n"
+                         "}\n"
+                         "fn bytes(token: string): int { return token.byteLength; }\n"
+                         "fn invalid(token: string): int { return <int> token.missing; }\n";
+    SZrString *uri = ZrCore_String_CreateFromNative(g_state, "file:///string_length_cast_operand.zr");
+    SZrSemanticAnalyzer *analyzer;
+    TZrSize missingMembers = 0;
+
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_UpdateDocument(g_state, g_context, uri, source, strlen(source), 1));
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(g_state, g_context, uri);
+    TEST_ASSERT_NOT_NULL(analyzer);
+    assert_string_length_fact(uri, source, analyzer->semanticContext, "length", 0);
+    assert_string_length_fact(uri, source, analyzer->semanticContext, "length", 1);
+    assert_string_length_fact(uri, source, analyzer->semanticContext, "byteLength", 0);
+
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDiagnostics(g_state, g_context, uri, &g_diagnostics));
+    for (TZrSize index = 0; index < g_diagnostics.length; ++index) {
+        const SZrLspDiagnostic *diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&g_diagnostics, index);
+        if (diagnostic->code != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(diagnostic->code), "member_not_found") == 0) {
+            SZrLspPosition missing = find_position(source, "missing", 0);
+            TEST_ASSERT_EQUAL_UINT(missing.line, diagnostic->range.start.line);
+            TEST_ASSERT_EQUAL_UINT(missing.character, diagnostic->range.start.character);
+            TEST_ASSERT_EQUAL_UINT(missing.character + strlen("missing"), diagnostic->range.end.character);
+            ++missingMembers;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(1, missingMembers);
+}
+
+static void test_string_length_builtin_cannot_be_written(void) {
+    const char *source = "fn resize(): void {\n"
+                         "    var text = \"abc\";\n"
+                         "    text.byteLength = 2;\n"
+                         "}\n";
+    SZrString *uri = ZrCore_String_CreateFromNative(g_state, "file:///string_length_write.zr");
+    SZrLspPosition member = find_position(source, "byteLength", 0);
+    const SZrLspDiagnostic *diagnostic;
+
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_UpdateDocument(g_state, g_context, uri, source, strlen(source), 1));
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDiagnostics(g_state, g_context, uri, &g_diagnostics));
+    TEST_ASSERT_EQUAL_UINT(1, g_diagnostics.length);
+    diagnostic = *(SZrLspDiagnostic **)ZrCore_Array_Get(&g_diagnostics, 0);
+    TEST_ASSERT_EQUAL_STRING("const_assignment", ZrCore_String_GetNativeString(diagnostic->code));
+    TEST_ASSERT_EQUAL_UINT(member.line, diagnostic->range.start.line);
+    TEST_ASSERT_EQUAL_UINT(member.character, diagnostic->range.start.character);
+    TEST_ASSERT_EQUAL_UINT(member.character + strlen("byteLength"), diagnostic->range.end.character);
+}
+
+/* CTest language_server_cast_operand_facts runs the provider and builtin cases. */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_binary_cast_operand_retains_external_identity_and_navigation);
     RUN_TEST(test_binary_cast_operand_with_current_intermediate);
     RUN_TEST(test_binary_cast_operand_with_stale_intermediate);
     RUN_TEST(test_native_cast_operand_retains_external_identity_and_navigation);
+    RUN_TEST(test_string_length_properties_resolve_inside_and_outside_cast);
+    RUN_TEST(test_string_length_builtin_cannot_be_written);
     return UNITY_END();
 }
