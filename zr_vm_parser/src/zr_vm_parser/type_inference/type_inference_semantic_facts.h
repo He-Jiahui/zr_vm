@@ -125,8 +125,11 @@ void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
 void type_inference_record_member_access_reference_fact(SZrCompilerState *cs,
                                                         SZrAstNode *node);
 
-void type_inference_record_member_write_reference_fact(SZrCompilerState *cs,
-                                                       SZrAstNode *node);
+void type_inference_record_builtin_member_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *memberNode, const SZrInferredType *receiverType,
+        const SZrInferredType *valueType);
+
+TZrBool type_inference_record_member_write_reference_fact(SZrCompilerState *cs, SZrAstNode *node);
 
 void type_inference_record_array_index_bounds_diagnostic_fact(SZrCompilerState *cs,
                                                               SZrAstNode *memberNode,
