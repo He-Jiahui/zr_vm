@@ -10,6 +10,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/utf8.h"
 #include "zr_vm_language_server/semantic_analyzer.h"
 #include "interface/lsp_interface_internal.h"
 #include "zr_vm_parser/parser.h"
@@ -496,6 +497,10 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (fileVersion->textBlock != ZR_NULL &&
+        fileVersion->textBlock->contentGeneration == ZR_MAX_SIZE) {
+        return ZR_FALSE;
+    }
     contentGeneration = fileVersion->textBlock != ZR_NULL ?
         fileVersion->textBlock->contentGeneration + 1 :
         1;
@@ -603,8 +608,9 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
 }
 
 /**
- * @brief 汇合磁盘缓存和打开文档更新，先验证版本序，再选择相同文本、token 复用或重解析。
- * @note 打开文档可接管同版本的磁盘合成快照；其他同版或倒退版本均被拒绝。
+ * @brief 汇合磁盘缓存和打开文档更新；客户端版本只在同一次 open epoch 内单调。
+ * @note closed -> open 接收真实客户端全文及其版本；实际磁盘变化保留 client version，
+ *       两者均创建新内容代际并禁止复用旧 epoch 的 token/AST。未变磁盘保持快路径。
  */
 static TZrBool incremental_parser_update_file(
         SZrState *state,
@@ -613,7 +619,8 @@ static TZrBool incremental_parser_update_file(
         const TZrChar *content,
         TZrSize contentLength,
         TZrSize version,
-        TZrBool isOpenDocument) {
+        TZrBool isOpenDocument,
+        TZrBool isClosedDiskRefresh) {
     if (state == ZR_NULL || parser == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -621,14 +628,17 @@ static TZrBool incremental_parser_update_file(
     // 查找是否已存在
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
-        TZrBool isOpeningSyntheticSnapshot =
-                isOpenDocument && !fileVersion->isOpenDocument &&
-                version == fileVersion->version;
-        if (!isOpeningSyntheticSnapshot && version <= fileVersion->version) {
+        TZrBool isNewOpenEpoch = isOpenDocument && !fileVersion->isOpenDocument;
+        TZrBool contentUnchanged = file_version_content_equals(fileVersion, content, contentLength);
+        TZrBool replacesSource = isNewOpenEpoch || (isClosedDiskRefresh && !contentUnchanged);
+
+        /* 磁盘/provider 不能接管尚未关闭的编辑器全文，即使它携带更高版本。 */
+        if ((!isOpenDocument && fileVersion->isOpenDocument) ||
+            (!isNewOpenEpoch && !isClosedDiskRefresh && version <= fileVersion->version)) {
             return ZR_FALSE;
         }
-        /* 同内容接管或推进版本不改变 AST；无差异意味着没有局部失效范围。 */
-        if (file_version_content_equals(fileVersion, content, contentLength)) {
+        /* 只有同一来源内的普通更新可以只推进版本，来源替换必须换 owned block。 */
+        if (!replacesSource && contentUnchanged) {
             fileVersion->version = version;
             fileVersion->isOpenDocument = isOpenDocument;
             ZrLanguageServer_IncrementalChange_Reset(uri, &fileVersion->lastChangeInfo);
@@ -645,7 +655,8 @@ static TZrBool incremental_parser_update_file(
                 content,
                 contentLength,
                 &changeInfo);
-        changeInfo.isTokenEquivalent = fileVersion->ast != ZR_NULL &&
+        changeInfo.isTokenEquivalent = !replacesSource &&
+                                       fileVersion->ast != ZR_NULL &&
                                        !fileVersion->isDirty &&
                                        !fileVersion->usesFallbackAst &&
                                        ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
@@ -664,6 +675,10 @@ static TZrBool incremental_parser_update_file(
                 &changeInfo);
         if (updated) {
             fileVersion->isOpenDocument = isOpenDocument;
+            if (replacesSource) {
+                fileVersion->hasIncrementalInfo = ZR_FALSE;
+                fileVersion->previousContentHasCurrentAst = ZR_FALSE;
+            }
         }
         return updated;
     } else {
@@ -706,10 +721,31 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
             content,
             contentLength,
             version,
+            ZR_FALSE,
             ZR_FALSE);
 }
 
-/** @brief 接收 LSP 打开文档的内存文本，其版本可在首次打开时接管同版磁盘快照。 */
+/** @brief 私有的完整磁盘刷新；文本代际与客户端版本分离，且绝不覆盖 open overlay。 */
+TZrBool ZrLanguageServer_IncrementalParser_UpdateClosedDocument(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength) {
+    SZrFileVersion *fileVersion;
+
+    if (content == ZR_NULL || memchr(content, '\0', contentLength) != ZR_NULL ||
+        !ZrCore_Utf8_IsValid((TZrNativeString)content, contentLength)) {
+        return ZR_FALSE;
+    }
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    return incremental_parser_update_file(
+            state, parser, uri, content, contentLength,
+            fileVersion != ZR_NULL ? fileVersion->version : 0,
+            ZR_FALSE, ZR_TRUE);
+}
+
+/** @brief 接收 LSP 内存文本；closed -> open 建立新的客户端版本 epoch，后续更新仍须递增。 */
 TZrBool ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
         SZrState *state,
         SZrIncrementalParser *parser,
@@ -724,7 +760,8 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
             content,
             contentLength,
             version,
-            ZR_TRUE);
+            ZR_TRUE,
+            ZR_FALSE);
 }
 
 /** @brief 为干净 AST 的重复读取保存内容指纹；调用方拥有返回的分配内存。 */
