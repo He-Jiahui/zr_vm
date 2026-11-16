@@ -534,9 +534,66 @@ static SZrTypeEnvironment *semantic_typecheck_push_loop_range_scope(
     return savedEnv;
 }
 
-/* A failed optional join must not resurrect a preheader singleton. Rebuild the
- * same may-write overlay and copy only its declared/unknown types into the
- * current lexical scope; never publish a loop-local binding or source fact. */
+/* A narrowly proved exception to unknown-on-failed-replay: at a function's
+ * top-level while(value-bool-parameter), a straight-line primitive body that
+ * cannot write that parameter has no nonzero-iteration normal exit. A true
+ * condition loops forever (or throws out of this function); only the false
+ * preheader reaches the next statement. This does not refine the loop body. */
+static TZrBool semantic_typecheck_while_normal_exit_is_preheader(
+        SZrSemanticAnalyzer *analyzer, const SZrAstNode *node) {
+    SZrCompilerState *cs = analyzer->compilerState;
+    const SZrAstNode *function = cs->currentFunctionNode;
+    const SZrAstNode *condition;
+    const SZrSemanticSymbolRecord *symbol;
+    const SZrTypeBinding *binding;
+    const SZrAstNodeArray *statements;
+    const SZrParameter *parameter;
+    TZrBool directLoop = ZR_FALSE, ownParameter = ZR_FALSE;
+    if (cs->hasError || cs->hasStructuredError || cs->hasFatalError || cs->hasCompileTimeError ||
+        node->type != ZR_AST_WHILE_LOOP || function == ZR_NULL ||
+        function->type != ZR_AST_FUNCTION_DECLARATION || function->data.functionDeclaration.body == ZR_NULL ||
+        function->data.functionDeclaration.body->type != ZR_AST_BLOCK) return ZR_FALSE;
+    statements = function->data.functionDeclaration.body->data.block.body;
+    for (TZrSize index = 0; statements != ZR_NULL && index < statements->count; ++index) {
+        const SZrAstNode *statement = statements->nodes[index];
+        if (statement != ZR_NULL && statement->type == ZR_AST_EXPRESSION_STATEMENT) statement = statement->data.expressionStatement.expr;
+        if (statement == node) directLoop = ZR_TRUE;
+    }
+    if (!directLoop) return ZR_FALSE; /* In particular, exclude enclosing try/catch. */
+    condition = node->data.whileLoop.cond;
+    while (condition != ZR_NULL && condition->type == ZR_AST_PRIMARY_EXPRESSION &&
+           (condition->data.primaryExpression.members == ZR_NULL || condition->data.primaryExpression.members->count == 0)) {
+        condition = condition->data.primaryExpression.property;
+    }
+    if (condition == ZR_NULL || condition->type != ZR_AST_IDENTIFIER_LITERAL) return ZR_FALSE;
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv, condition->data.identifier.name, condition->data.identifier.syntaxContext);
+    if (binding == ZR_NULL || binding->type.baseType != ZR_VALUE_TYPE_BOOL ||
+        binding->type.referenceAccess != ZR_REFERENCE_ACCESS_NONE) return ZR_FALSE;
+    symbol = ZrParser_Semantic_FindSymbolById(analyzer->semanticContext, binding->symbolId);
+    if (symbol == ZR_NULL || symbol->astNode == ZR_NULL || symbol->astNode->type != ZR_AST_PARAMETER) return ZR_FALSE;
+    parameter = &symbol->astNode->data.parameter;
+    if (parameter->passingMode != ZR_PARAMETER_PASSING_MODE_VALUE || parameter->sourcePassingForm != ZR_PARAMETER_SOURCE_VALUE ||
+        (parameter->typeInfo != ZR_NULL && parameter->typeInfo->referenceAccess != ZR_REFERENCE_ACCESS_NONE)) return ZR_FALSE;
+    const SZrAstNodeArray *parameters = function->data.functionDeclaration.params;
+    for (TZrSize index = 0; parameters != ZR_NULL && index < parameters->count; ++index) {
+        if (parameters->nodes[index] == symbol->astNode) ownParameter = ZR_TRUE;
+    }
+    if (!ownParameter || node->data.whileLoop.block == ZR_NULL || node->data.whileLoop.block->type != ZR_AST_BLOCK ||
+        semantic_typecheck_node_may_write_range(node->data.whileLoop.block, binding, cs->typeEnv)) return ZR_FALSE;
+    statements = node->data.whileLoop.block->data.block.body;
+    for (TZrSize index = 0; statements != ZR_NULL && index < statements->count; ++index) {
+        const SZrAstNode *statement = statements->nodes[index];
+        if (statement != ZR_NULL && statement->type == ZR_AST_EXPRESSION_STATEMENT) statement = statement->data.expressionStatement.expr;
+        if (statement == ZR_NULL || statement->type != ZR_AST_ASSIGNMENT_EXPRESSION ||
+            !semantic_typecheck_syntax_is_primitive(statement->data.assignmentExpression.right, cs->typeEnv)) return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+/* A failed optional join must not resurrect a preheader singleton without an
+ * independent normal-exit proof. Otherwise copy only the may-write bindings'
+ * declared/unknown types into the current scope, never a loop-local binding. */
 static void semantic_typecheck_join_loop_ranges(
         SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     SZrAstNode *condition = node->type == ZR_AST_WHILE_LOOP ? node->data.whileLoop.cond :
@@ -555,7 +612,7 @@ static void semantic_typecheck_join_loop_ranges(
             joined = ZrParser_TypeInference_TryJoinForeachNumericAssignments(analyzer->compilerState, node);
         }
     }
-    if (joined) return;
+    if (joined || semantic_typecheck_while_normal_exit_is_preheader(analyzer, node)) return;
     /* A false loop cannot write through its body or step; only an unsupported
      * for initializer may still have invalidated an incoming range. */
     const SZrAstNode *writes = neverRuns

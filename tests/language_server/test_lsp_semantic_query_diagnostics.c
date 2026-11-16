@@ -513,6 +513,22 @@ static void test_lsp_diagnostics_preserve_unwritten_loop_ranges(SZrState *state)
          "fn f(flag: bool, choose: bool): int { var values = [1,2]; var index = 2; var other = 0; "
          "while (flag) { other = other + (((choose && flag) ? (1 + 0) : (2 + 0))); "
          "return values[index]; } return 0; }", 1},
+        {"failed pure replay has only a zero-iteration normal exit",
+         "fn f(flag: bool): int { var values = [1,2]; var index: int = 2; var other: int = 0; "
+         "while (flag) { other = index + 1; index = index + 1; } return values[index]; }", 1},
+        {"break forbids preheader-only normal-exit proof",
+         "fn f(flag: bool): int { var values = [1,2]; var index: int = -1; var other: int = 0; "
+         "while (flag) { other = index + 1; index = index + 1; break; } return values[index]; }", 0},
+        {"condition write forbids preheader-only normal-exit proof",
+         "fn f(flag: bool): int { var values = [1,2]; var index: int = -1; var other: int = 0; "
+         "while (flag) { other = index + 1; index = index + 1; flag = false; } return values[index]; }", 0},
+        {"ref condition forbids preheader-only normal-exit proof",
+         "fn f(flag: ref bool): int { var values = [1,2]; var index: int = -1; var other: int = 0; "
+         "while (flag) { other = index + 1; index = index + 1; } return values[index]; }", 0},
+        {"call effect forbids preheader-only normal-exit proof",
+         "fn stop(flag: ref bool): int { flag = false; return 1; } "
+         "fn f(flag: bool): int { var values = [1,2]; var index: int = -1; var other: int = 0; "
+         "while (flag) { other = index + 1; index = index + stop(ref flag); } return values[index]; }", 0},
         {"for preserves invariant out-of-bounds index",
          "fn f(flag: bool): int { var values = [1,2]; var index = 2; "
          "for (; flag; ) { return values[index]; } return 0; }", 1},
