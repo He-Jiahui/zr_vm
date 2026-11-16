@@ -6,6 +6,8 @@
 #include "interface/lsp_interface_internal.h"
 #include "zr_vm_parser/semantic_query.h"
 
+#include <string.h>
+
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node) {
     if (node == ZR_NULL || state == ZR_NULL) {
         return ZR_NULL;
@@ -363,6 +365,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 先撤销 borrowed mirrors，再销毁旧 owning state；异常清理不能借回已释放的 context。 */
+    analyzer->semanticContext = ZR_NULL;
+    analyzer->hirModule = ZR_NULL;
     if (analyzer->compilerState == ZR_NULL) {
         analyzer->compilerState =
             (SZrCompilerState *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrCompilerState));
@@ -372,7 +377,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
     } else {
         ZrParser_CompilerState_Free(analyzer->compilerState);
     }
-
+    /* Init 的数组申请可 Throw；首次和复用都须留下安全的未发布 NULL owning slots。 */
+    memset(analyzer->compilerState, 0, sizeof(*analyzer->compilerState));
     ZrParser_CompilerState_Init(analyzer->compilerState, state);
     if (analyzer->compilerState->semanticContext != ZR_NULL) {
         analyzer->compilerState->semanticContext->externalProviderGeneration =

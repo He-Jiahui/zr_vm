@@ -1386,6 +1386,7 @@ static TZrBool lsp_update_document(
     TZrBool analyzeSuccess;
     TZrBool parsed;
     TZrBool replacesSource;
+    TZrBool previousHadParseErrors;
     SZrFileVersion *previousFileVersion;
     TZrBool preserveScopedQueryCache = ZR_FALSE;
     TZrBool retainCurrentAst = ZR_FALSE;
@@ -1408,6 +1409,7 @@ static TZrBool lsp_update_document(
     }
 
     previousFileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    previousHadParseErrors = previousFileVersion != ZR_NULL && previousFileVersion->parserDiagnostics.length > 0;
     if (isClosedDiskRefresh && previousFileVersion != ZR_NULL) {
         if (previousFileVersion->isOpenDocument) {
             return ZR_FALSE;
@@ -1540,8 +1542,9 @@ static TZrBool lsp_update_document(
             return ZR_FALSE;
         }
 
-        /* 来源替换后的错误文本只有当前诊断，不能分析恢复树或借回上一 epoch 的 typed 状态。 */
-        if (replacesSource && fileVersion->parserDiagnostics.length > 0) {
+        /* closed 磁盘错误只发布诊断；editor 当前字节的 fresh recovery AST 沿用原 partial 分析。
+         * 旧 epoch 的 AST/typed 已在新 Parse 前撤销，不可把新恢复树误判为旧 fallback。 */
+        if (isClosedDiskRefresh && fileVersion->parserDiagnostics.length > 0) {
             if (fileVersion->ast != ZR_NULL) {
                 ZrParser_Ast_Free(state, fileVersion->ast);
                 fileVersion->ast = ZR_NULL;
@@ -1604,6 +1607,13 @@ static TZrBool lsp_update_document(
                            ? ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri)
                            : ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
         if (allowProjectRefresh && projectIndex != ZR_NULL) {
+            /* parser 错误修复后，旧契约不证明 importer 曾成功消费该模块；即使公开签名不变也重析。 */
+            if (previousHadParseErrors && fileVersion->parserDiagnostics.length == 0) {
+                SZrLspProjectFileRecord *record = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri);
+                if (record != ZR_NULL) {
+                    record->hasPublicContractHash = ZR_FALSE;
+                }
+            }
             TZrBool refreshed = ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
                                                                                        context,
                                                                                        uri,
@@ -1611,10 +1621,15 @@ static TZrBool lsp_update_document(
                                                                                        contentLength,
                                                                                        ZR_FALSE);
             if (!refreshed) {
-                ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+                if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) == analyzer) {
+                    ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+                }
                 return ZR_FALSE;
             }
             analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
+            if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+                return ZR_FALSE;
+            }
             if (!analyzeSuccess) {
                 ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             } else {
@@ -1626,6 +1641,9 @@ static TZrBool lsp_update_document(
 
         analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
                 state, context, uri, analyzer, ast);
+        if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+            return ZR_FALSE;
+        }
         if (!analyzeSuccess) {
             ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             return ZR_FALSE;

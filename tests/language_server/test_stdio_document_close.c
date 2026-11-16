@@ -838,6 +838,10 @@ static void test_bad_dependency_invalidates_importer_and_editor_repair_restores_
     const char *mainSource = "module main;\nlet peerModule = import(\"peer\");\npub fn importedValue(): int { return peerModule.peerValue(); }\n";
     const char *badPeer = "module peer;\r\npub fn peerValue( {\r\n";
     const char *repairedPeer = "module peer;\r\npub fn peerValue(): int { return 19; }\r\n";
+    const char *mainSourceUpdated = "module main;\nlet peerModule = import(\"peer\");\npub fn importedValue(): int { var updated = 1; return peerModule.peerValue() + updated; }\n";
+    const char *sameContractBadPeer = "module peer;\r\npub fn peerValue(): int { return 19 }\r\n";
+    SZrLspProjectIndex *projectIndex;
+    TZrSize unavailableContractCount;
     const char *otherSource = "module other_error;\npub fn independent(): int { return 1; }\n";
     const char *otherError = "\"unfinished other editor\r\n";
     const char *callLine = strstr(mainSource, "pub fn importedValue");
@@ -941,6 +945,49 @@ static void test_bad_dependency_invalidates_importer_and_editor_repair_restores_
     free_diagnostics_array(g_server->state, &diagnostics);
     TEST_ASSERT_EQUAL_PTR(mainBlock, mainVersion->textBlock);
     assert_main_content(mainSource);
+
+    /* 物理 peer 删除后强制 main 新 AST 分析，不能靠先前健康 analyzer 或旧磁盘蒙混。 */
+    TEST_ASSERT_EQUAL_INT(0, remove(g_peerPath));
+    TEST_ASSERT_EQUAL_INT(1, notify_watch(g_peerUri, 3));
+    use_document_uri(g_mainUri);
+    TEST_ASSERT_EQUAL_INT(1, notify_full_change(mainSourceUpdated, 11));
+    TEST_ASSERT_EQUAL_UINT64(11, mainVersion->version);
+    TEST_ASSERT_EQUAL_UINT64(2, peerVersion->version);
+    TEST_ASSERT_TRUE(peerVersion->isOpenDocument);
+    callLine = strstr(mainSourceUpdated, "pub fn importedValue");
+    callToken = strstr(callLine, "peerValue");
+    position.character = (TZrInt32)(callToken - callLine);
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDefinition(g_server->state, g_server->context, g_mainUri, position, &locations));
+    TEST_ASSERT_TRUE(locations.length > 0);
+    location = (SZrLspLocation **)ZrCore_Array_Get(&locations, 0);
+    TEST_ASSERT_NOT_NULL(location);
+    TEST_ASSERT_NOT_NULL(*location);
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspUri_Equivalent((*location)->uri, g_peerUri));
+    TEST_ASSERT_EQUAL_INT(1, (*location)->range.start.line);
+    free_locations_array(g_server->state, &locations);
+
+    /* ordinary open 的 last-good 政策保留；修复成同一公开签名也必须重析真实反向 importer。 */
+    use_document_uri(g_peerUri);
+    TEST_ASSERT_EQUAL_INT(1, notify_full_change(sameContractBadPeer, 3));
+    TEST_ASSERT_TRUE(peerVersion->parserDiagnostics.length > 0);
+    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(g_server->context, g_peerUri);
+    TEST_ASSERT_NOT_NULL(projectIndex);
+    unavailableContractCount = projectIndex->publicContractHashUnavailableCount;
+    TEST_ASSERT_EQUAL_INT(1, notify_full_change(repairedPeer, 4));
+    TEST_ASSERT_EQUAL_UINT64(4, peerVersion->version);
+    TEST_ASSERT_EQUAL_UINT64(0, peerVersion->parserDiagnostics.length);
+    TEST_ASSERT_TRUE(projectIndex->publicContractHashUnavailableCount > unavailableContractCount);
+    TEST_ASSERT_TRUE(projectIndex->lastReverseDependencyReanalysisCount > 0);
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDefinition(g_server->state, g_server->context, g_mainUri, position, &locations));
+    TEST_ASSERT_TRUE(locations.length > 0);
+    location = (SZrLspLocation **)ZrCore_Array_Get(&locations, 0);
+    TEST_ASSERT_NOT_NULL(location);
+    TEST_ASSERT_NOT_NULL(*location);
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspUri_Equivalent((*location)->uri, g_peerUri));
+    free_locations_array(g_server->state, &locations);
+    assert_main_content(mainSourceUpdated);
+    TEST_ASSERT_EQUAL_PTR(otherBlock, otherVersion->textBlock);
+    TEST_ASSERT_EQUAL_UINT64(otherDiagnosticCount, otherVersion->parserDiagnostics.length);
     ZrLanguageServer_LspSemanticSnapshot_Release(g_server->state, snapshot);
 }
 
@@ -983,10 +1030,21 @@ static void test_equivalent_uri_epoch_clears_canonical_semantic_history(void) {
 /* 真正的语法错误仍提交磁盘/编辑器全文与诊断，不能把旧 typed 状态伪装成新文本的健康分析。 */
 static void test_malformed_disk_and_editor_keep_current_text_without_old_analyzer(void) {
     const char *badDisk = "\"unfinished disk\r\n";
-    const char *badEditor = "module main;\r\n// \xe4\xb8\xad\xf0\x9f\x98\x80\r\npub fn editorBroken( {\r\n";
+    const char *badEditor = "module main;\r\n// \xe4\xb8\xad\xf0\x9f\x98\x80\r\npub fn editorValue(): int { return 9; }\r\npub fn beforeError(): int { return editorValue(); }\r\npub fn editorUse(): int {\r\n    var editorLocal = 1 + 2;\r\n    editorLoc\r\n    return editorLocal;\r\n}\r\n";
+    const char *callLine = strstr(badEditor, "pub fn beforeError");
+    const char *callToken = strstr(callLine, "editorValue");
+    SZrLspPosition position = {3, (TZrInt32)(callToken - callLine)};
     SZrFileVersion *fileVersion;
     SZrFileVersionContentBlock *badBlock;
     TZrSize badDiagnosticCount;
+    TZrSize diskGeneration;
+    TZrUInt64 editorOwnerKey;
+    TZrUInt64 editorSourceOrigin;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspSemanticSnapshot *partialSnapshot;
+    SZrArray diagnostics = {0};
+    SZrArray locations = {0};
+    SZrLspLocation **location;
 
     g_server->deferDiagnostics = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrLanguageServer_LspWorkspace_AddFolder(g_server->state, g_server->context, g_rootUri));
@@ -1009,18 +1067,45 @@ static void test_malformed_disk_and_editor_keep_current_text_without_old_analyze
     TEST_ASSERT_EQUAL_UINT64(badDiagnosticCount, fileVersion->parserDiagnostics.length);
     TEST_ASSERT_NULL(fileVersion->ast);
     TEST_ASSERT_NULL(ZrLanguageServer_Lsp_FindAnalyzer(g_server->state, g_server->context, g_mainUri));
+    diskGeneration = fileVersion->textBlock->contentGeneration;
 
     TEST_ASSERT_EQUAL_INT(1, notify_open(badEditor, 1));
     TEST_ASSERT_TRUE(fileVersion->isOpenDocument);
     TEST_ASSERT_EQUAL_UINT64(1, fileVersion->version);
+    TEST_ASSERT_TRUE(fileVersion->textBlock != badBlock);
+    TEST_ASSERT_TRUE(fileVersion->textBlock->contentGeneration > diskGeneration);
     TEST_ASSERT_TRUE(fileVersion->parserDiagnostics.length > 0);
-    TEST_ASSERT_NULL(fileVersion->ast);
-    TEST_ASSERT_NULL(ZrLanguageServer_Lsp_FindAnalyzer(g_server->state, g_server->context, g_mainUri));
+    TEST_ASSERT_NOT_NULL(fileVersion->ast);
+    TEST_ASSERT_FALSE(fileVersion->usesFallbackAst);
+    editorOwnerKey = ZrParser_Ownership_Key(fileVersion->ast->ownership);
+    editorSourceOrigin = ZrParser_Ownership_SourceOrigin(fileVersion->ast->ownership);
+    TEST_ASSERT_TRUE(editorOwnerKey != 0 && editorSourceOrigin != 0);
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(g_server->state, g_server->context, g_mainUri);
+    TEST_ASSERT_NOT_NULL(analyzer);
+    TEST_ASSERT_EQUAL_PTR(fileVersion->ast, analyzer->ast);
+    partialSnapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(g_server->state, g_server->context, g_mainUri);
+    TEST_ASSERT_NOT_NULL(partialSnapshot);
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspSemanticSnapshot_Validate(g_server->state, g_server->context, partialSnapshot));
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDiagnostics(g_server->state, g_server->context, g_mainUri, &diagnostics));
+    TEST_ASSERT_TRUE(diagnostics.length > 0);
+    free_diagnostics_array(g_server->state, &diagnostics);
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_GetDefinition(g_server->state, g_server->context, g_mainUri, position, &locations));
+    TEST_ASSERT_TRUE(locations.length > 0);
+    location = (SZrLspLocation **)ZrCore_Array_Get(&locations, 0);
+    TEST_ASSERT_NOT_NULL(location);
+    TEST_ASSERT_NOT_NULL(*location);
+    TEST_ASSERT_TRUE(ZrLanguageServer_LspUri_Equivalent((*location)->uri, g_mainUri));
+    TEST_ASSERT_EQUAL_INT(2, (*location)->range.start.line);
+    free_locations_array(g_server->state, &locations);
+    ZrLanguageServer_LspSemanticSnapshot_Release(g_server->state, partialSnapshot);
     assert_main_content(badEditor);
     write_source(g_mainPath, g_diskSource);
     TEST_ASSERT_EQUAL_INT(1, notify_watch(g_mainUri, 2));
     assert_main_content(badEditor);
     TEST_ASSERT_TRUE(fileVersion->parserDiagnostics.length > 0);
+    TEST_ASSERT_FALSE(fileVersion->usesFallbackAst);
+    TEST_ASSERT_EQUAL_UINT64(editorOwnerKey, ZrParser_Ownership_Key(fileVersion->ast->ownership));
+    TEST_ASSERT_EQUAL_UINT64(editorSourceOrigin, ZrParser_Ownership_SourceOrigin(fileVersion->ast->ownership));
     TEST_ASSERT_EQUAL_INT(1, notify_full_change(g_overlaySource, 2));
     TEST_ASSERT_EQUAL_UINT64(0, fileVersion->parserDiagnostics.length);
     TEST_ASSERT_NOT_NULL(ZrLanguageServer_Lsp_FindAnalyzer(g_server->state, g_server->context, g_mainUri));

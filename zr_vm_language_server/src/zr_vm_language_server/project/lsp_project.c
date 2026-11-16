@@ -8,6 +8,9 @@
 #include "metadata/lsp_virtual_document_identity.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_parser/semantic_relations.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
@@ -31,12 +34,24 @@
 
 /* 同步 Analyze 期间临时替换全局 sourceLoader；保存原回调及其 userData 以便项目解析失败时回退。
  * 此结构在调用栈上，不能被异步加载器留存。 */
+typedef struct SZrLspProjectOpenDocumentReader SZrLspProjectOpenDocumentReader;
 typedef struct SZrLspProjectSourceLoaderContext {
     SZrLspProjectIndex *projectIndex;
+    SZrLspContext *context;
+    SZrState *state;
     FZrIoLoadSource fallbackSourceLoader;
     TZrPtr fallbackSourceLoaderUserData;
     TZrPtr fallbackUserData;
+    SZrLspProjectOpenDocumentReader *openReaders;
 } SZrLspProjectSourceLoaderContext;
+
+/* 每个内存 IO 独占一个内容引用；调用者侧 Analyze frame 兜底回收未 close 的 reader。 */
+struct SZrLspProjectOpenDocumentReader {
+    SZrLspProjectSourceLoaderContext *owner;
+    SZrLspProjectOpenDocumentReader *next;
+    SZrFileVersionContentSnapshot snapshot;
+    TZrBool delivered;
+};
 
 /* 语义分析器回调借用本次请求的项目作用域，分析结束后必须清空回调以免悬垂。 */
 typedef struct SZrLspProjectVirtualDeclarationUriResolverContext {
@@ -44,6 +59,26 @@ typedef struct SZrLspProjectVirtualDeclarationUriResolverContext {
     SZrLspContext *context;
     SZrLspProjectIndex *projectIndex;
 } SZrLspProjectVirtualDeclarationUriResolverContext;
+
+/* 此 record 位于 TryRun 调用者，不会随受保护 Analyze 的 longjmp 一起丢弃。 */
+typedef struct SZrLspProjectAnalysisInvocation {
+    SZrState *state;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *ast;
+    SZrGcRootLease uriRoot;
+    SZrLspProjectSourceLoaderContext loader;
+    SZrLspProjectVirtualDeclarationUriResolverContext resolver;
+    FZrIoLoadSource previousSourceLoader;
+    TZrPtr previousSourceLoaderUserData;
+    FZrSemanticVirtualDeclarationUriResolver previousResolver;
+    TZrPtr previousResolverUserData;
+    TZrBool installed;
+    TZrBool loaderInstalled;
+    TZrBool normalCompleted;
+    TZrBool result;
+} SZrLspProjectAnalysisInvocation;
 
 /* 语义分析器只需要可导航的虚拟声明 URI；在本次同步分析期间借用解析上下文，
  * 由元数据提供者把外部来源映射回当前项目的声明视图。 */
@@ -298,28 +333,142 @@ static TZrBool project_load_resolved_file_to_io(SZrState *state,
     return ZR_TRUE;
 }
 
-/* 项目候选未命中时恢复原加载器的 userData 语境，保持外层注册的源加载行为。 */
+static TZrBytePtr project_open_document_read(SZrState *state, TZrPtr customData, TZrSize *size) {
+    SZrLspProjectOpenDocumentReader *reader = (SZrLspProjectOpenDocumentReader *)customData;
+    ZR_UNUSED_PARAMETER(state);
+    *size = 0;
+    if (reader == ZR_NULL || reader->delivered) {
+        return ZR_NULL;
+    }
+    reader->delivered = ZR_TRUE;
+    *size = reader->snapshot.contentLength;
+    return (TZrBytePtr)reader->snapshot.content;
+}
+
+static void project_open_document_close(SZrState *state, TZrPtr customData) {
+    SZrLspProjectOpenDocumentReader *reader = (SZrLspProjectOpenDocumentReader *)customData;
+    SZrLspProjectOpenDocumentReader **link;
+    ZR_UNUSED_PARAMETER(state);
+    if (reader == ZR_NULL) {
+        return;
+    }
+    link = &reader->owner->openReaders;
+    while (*link != ZR_NULL && *link != reader) {
+        link = &(*link)->next;
+    }
+    if (*link != reader) {
+        return;
+    }
+    *link = reader->next;
+    state = reader->owner->state;
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &reader->snapshot);
+    ZrCore_Memory_RawFree(state->global, reader, sizeof(*reader));
+}
+
+typedef enum EZrLspProjectOpenDocumentIoResult {
+    ZR_LSP_PROJECT_IO_NOT_OPEN,
+    ZR_LSP_PROJECT_IO_OPEN_READY,
+    ZR_LSP_PROJECT_IO_UNAVAILABLE
+} EZrLspProjectOpenDocumentIoResult;
+
+/* 不能提供 open 来源或不能判定身份时不得落回磁盘；仅明确 NOT_OPEN 才保留原磁盘策略。 */
+static EZrLspProjectOpenDocumentIoResult project_open_document_to_io(
+        SZrState *state, SZrLspProjectSourceLoaderContext *context,
+        const TZrChar *path, SZrIo *io) {
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrLspProjectOpenDocumentReader *reader;
+    SZrLspSemanticSnapshot *activeSnapshot;
+
+    if (context->context == ZR_NULL || context->context->parser == ZR_NULL) {
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    /* URI 创建可能 Throw；此前尚无新 IO owner。随后 Raw 分配与 Acquire 均不触发 GC。 */
+    uri = ZrLanguageServer_LspUri_FromNativePath(state, path);
+    if (uri == ZR_NULL) {
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context->context, uri);
+    if (fileVersion == ZR_NULL || !fileVersion->isOpenDocument) {
+        return ZR_LSP_PROJECT_IO_NOT_OPEN;
+    }
+    if (fileVersion->isDesynchronized) {
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    reader = (SZrLspProjectOpenDocumentReader *)ZrCore_Memory_RawMalloc(state->global, sizeof(*reader));
+    if (reader == ZR_NULL) {
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    memset(reader, 0, sizeof(*reader));
+    reader->owner = context;
+    reader->next = context->openReaders;
+    context->openReaders = reader;
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &reader->snapshot)) {
+        project_open_document_close(state, reader);
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    activeSnapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(context->context);
+    if (activeSnapshot != ZR_NULL &&
+        !ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
+                state, context->context, activeSnapshot, fileVersion->uri)) {
+        project_open_document_close(state, reader);
+        return ZR_LSP_PROJECT_IO_UNAVAILABLE;
+    }
+    ZrCore_Io_Init(state, io, project_open_document_read, project_open_document_close, reader);
+    io->isBinary = ZR_FALSE;
+    return ZR_LSP_PROJECT_IO_OPEN_READY;
+}
+
+typedef struct SZrLspProjectFallbackInvocation {
+    SZrLspProjectSourceLoaderContext *context;
+    TZrNativeString sourcePath;
+    TZrNativeString md5;
+    SZrIo *io;
+    TZrPtr previousUserData;
+    TZrPtr previousSourceLoaderUserData;
+    TZrBool normalCompleted;
+    TZrBool result;
+} SZrLspProjectFallbackInvocation;
+
+static void project_source_loader_fallback_call(SZrState *state, TZrPtr arguments) {
+    SZrLspProjectFallbackInvocation *invocation = (SZrLspProjectFallbackInvocation *)arguments;
+    state->global->userData = invocation->context->fallbackUserData;
+    state->global->sourceLoaderUserData = invocation->context->fallbackSourceLoaderUserData;
+    invocation->result = invocation->context->fallbackSourceLoader(
+            state, invocation->sourcePath, invocation->md5, invocation->io);
+    invocation->normalCompleted = ZR_TRUE;
+}
+
+/* fallback 也可能 Throw，须先恢复自己的临时 userdata 再把原 status 向父调用传播。 */
 static TZrBool project_source_loader_invoke_fallback(SZrState *state,
                                                      SZrLspProjectSourceLoaderContext *context,
                                                      TZrNativeString sourcePath,
                                                      TZrNativeString md5,
                                                      SZrIo *io) {
-    TZrPtr previousUserData;
-    TZrPtr previousSourceLoaderUserData;
-    TZrBool success;
+    SZrLspProjectFallbackInvocation invocation = {0};
+    EZrThreadStatus status;
 
     if (state == ZR_NULL || state->global == ZR_NULL || context == ZR_NULL || context->fallbackSourceLoader == ZR_NULL) {
         return ZR_FALSE;
     }
-
-    previousUserData = state->global->userData;
-    previousSourceLoaderUserData = state->global->sourceLoaderUserData;
-    state->global->userData = context->fallbackUserData;
-    state->global->sourceLoaderUserData = context->fallbackSourceLoaderUserData;
-    success = context->fallbackSourceLoader(state, sourcePath, md5, io);
-    state->global->userData = previousUserData;
-    state->global->sourceLoaderUserData = previousSourceLoaderUserData;
-    return success;
+    invocation.context = context;
+    invocation.sourcePath = sourcePath;
+    invocation.md5 = md5;
+    invocation.io = io;
+    invocation.previousUserData = state->global->userData;
+    invocation.previousSourceLoaderUserData = state->global->sourceLoaderUserData;
+    status = ZrCore_Exception_TryRun(state, project_source_loader_fallback_call, &invocation);
+    if (state->global->userData == context->fallbackUserData) {
+        state->global->userData = invocation.previousUserData;
+    }
+    if (state->global->sourceLoaderUserData == context->fallbackSourceLoaderUserData) {
+        state->global->sourceLoaderUserData = invocation.previousSourceLoaderUserData;
+    }
+    if (!invocation.normalCompleted) {
+        ZrCore_Exception_Throw(state, status);
+        return ZR_FALSE;
+    }
+    return invocation.result;
 }
 
 /* 语义分析期间优先按项目 source/binary 根解析导入；未命中才交还原加载器。
@@ -340,9 +489,14 @@ static TZrBool project_source_loader(SZrState *state,
         return project_source_loader_invoke_fallback(state, context, sourcePath, md5, io);
     }
 
-    if (project_resolve_source_path(context->projectIndex, sourcePath, resolvedPath, sizeof(resolvedPath)) &&
-        ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return project_load_resolved_file_to_io(state, resolvedPath, ZR_FALSE, io);
+    if (project_resolve_source_path(context->projectIndex, sourcePath, resolvedPath, sizeof(resolvedPath))) {
+        EZrLspProjectOpenDocumentIoResult overlay = project_open_document_to_io(state, context, resolvedPath, io);
+        if (overlay != ZR_LSP_PROJECT_IO_NOT_OPEN) {
+            return overlay == ZR_LSP_PROJECT_IO_OPEN_READY;
+        }
+        if (ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
+            return project_load_resolved_file_to_io(state, resolvedPath, ZR_FALSE, io);
+        }
     }
 
     if (project_resolve_binary_path(context->projectIndex, sourcePath, resolvedPath, sizeof(resolvedPath)) &&
@@ -350,6 +504,109 @@ static TZrBool project_source_loader(SZrState *state,
         return project_load_resolved_file_to_io(state, resolvedPath, ZR_TRUE, io);
     }
     return project_source_loader_invoke_fallback(state, context, sourcePath, md5, io);
+}
+
+static void project_analysis_call(SZrState *state, TZrPtr arguments) {
+    SZrLspProjectAnalysisInvocation *invocation = (SZrLspProjectAnalysisInvocation *)arguments;
+    SZrSemanticAnalyzer *analyzer = invocation->analyzer;
+
+    if (!ZrCore_Gc_RootLeaseAcquire(state, &invocation->uri->super, &invocation->uriRoot) ||
+        ZrLanguageServer_Lsp_FindAnalyzer(state, invocation->context, invocation->uri) != analyzer) {
+        invocation->normalCompleted = ZR_TRUE;
+        return;
+    }
+    invocation->previousResolver = analyzer->virtualDeclarationUriResolver;
+    invocation->previousResolverUserData = analyzer->virtualDeclarationUriResolverUserData;
+    /* 只装 top-level 字段。PrepareState 会把它们带到新 context；不要通过旧 borrowed mirror 递归。 */
+    analyzer->virtualDeclarationUriResolver = project_resolve_virtual_declaration_uri;
+    analyzer->virtualDeclarationUriResolverUserData = &invocation->resolver;
+    invocation->installed = ZR_TRUE;
+    if (invocation->loader.projectIndex != ZR_NULL) {
+        invocation->previousSourceLoader = state->global->sourceLoader;
+        invocation->previousSourceLoaderUserData = state->global->sourceLoaderUserData;
+        invocation->loader.fallbackSourceLoader = invocation->previousSourceLoader;
+        invocation->loader.fallbackSourceLoaderUserData = invocation->previousSourceLoaderUserData;
+        invocation->loader.fallbackUserData = state->global->userData;
+        state->global->sourceLoaderUserData = &invocation->loader;
+        state->global->sourceLoader = project_source_loader;
+        invocation->loaderInstalled = ZR_TRUE;
+    }
+    invocation->result = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, invocation->ast);
+    invocation->normalCompleted = ZR_TRUE;
+}
+
+/* 全部退出（包括 Throw(FINE)）先清自己装入的回调和 IO，再传播原异常；清理不分配/不改异常槽。 */
+static TZrBool project_analyze_with_source_view(
+        SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
+        SZrString *uri, SZrSemanticAnalyzer *analyzer, SZrAstNode *ast) {
+    SZrLspProjectAnalysisInvocation invocation = {0};
+    EZrThreadStatus status;
+
+    if (uri == ZR_NULL || state->global == ZR_NULL ||
+        ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        return ZR_FALSE;
+    }
+    invocation.state = state;
+    invocation.context = context;
+    invocation.uri = uri;
+    invocation.analyzer = analyzer;
+    invocation.ast = ast;
+    invocation.loader.projectIndex = projectIndex;
+    invocation.loader.context = context;
+    invocation.loader.state = state;
+    invocation.resolver.state = state;
+    invocation.resolver.context = context;
+    invocation.resolver.projectIndex = projectIndex;
+    status = ZrCore_Exception_TryRun(state, project_analysis_call, &invocation);
+
+    if (invocation.loaderInstalled && state->global->sourceLoaderUserData == &invocation.loader) {
+        if (state->global->sourceLoader == project_source_loader) {
+            state->global->userData = invocation.loader.fallbackUserData;
+            state->global->sourceLoader = invocation.previousSourceLoader;
+        }
+        state->global->sourceLoaderUserData = invocation.previousSourceLoaderUserData;
+    }
+    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        invocation.result = ZR_FALSE;
+    } else if (invocation.installed) {
+        FZrSemanticVirtualDeclarationUriResolver restoreResolver = invocation.previousResolver;
+        TZrPtr restoreData = invocation.previousResolverUserData;
+        TZrBool ownsResolver = analyzer->virtualDeclarationUriResolver == project_resolve_virtual_declaration_uri &&
+                               analyzer->virtualDeclarationUriResolverUserData == &invocation.resolver;
+        SZrSemanticContext *currentContext = analyzer->compilerState != ZR_NULL
+                                                ? analyzer->compilerState->semanticContext : ZR_NULL;
+        if (!ownsResolver) {
+            restoreResolver = analyzer->virtualDeclarationUriResolver;
+            restoreData = analyzer->virtualDeclarationUriResolverUserData;
+        }
+        /* 首次和复用 CS 都在 Init 前清零；只读当前 owning slot，不能解引用旧 analyzer mirror。 */
+        if (currentContext != ZR_NULL &&
+            currentContext->virtualDeclarationUriResolver == project_resolve_virtual_declaration_uri &&
+            currentContext->virtualDeclarationUriResolverUserData == &invocation.resolver) {
+            ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(currentContext, restoreResolver, restoreData);
+        }
+        if (ownsResolver) {
+            analyzer->virtualDeclarationUriResolver = restoreResolver;
+            analyzer->virtualDeclarationUriResolverUserData = restoreData;
+        }
+        if (!invocation.normalCompleted) {
+            analyzer->semanticContext = ZR_NULL;
+            analyzer->hirModule = ZR_NULL;
+            analyzer->ast = ZR_NULL;
+            if (analyzer->cache != ZR_NULL) {
+                analyzer->cache->isValid = ZR_FALSE;
+            }
+        }
+    }
+    while (invocation.loader.openReaders != ZR_NULL) {
+        project_open_document_close(state, invocation.loader.openReaders);
+    }
+    ZrCore_Gc_RootLeaseRelease(state->global, &invocation.uriRoot);
+    if (!invocation.normalCompleted) {
+        ZrCore_Exception_Throw(state, status);
+        return ZR_FALSE;
+    }
+    return invocation.result;
 }
 
 /* 先读取 AST 导入并注册项目 native 描述插件，使后续语义分析能解析插件声明。 */
@@ -1804,11 +2061,6 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
                                                  TZrBool forceSemanticCacheReset) {
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
-    FZrIoLoadSource previousSourceLoader = ZR_NULL;
-    TZrPtr previousUserData = ZR_NULL;
-    TZrPtr previousSourceLoaderUserData = ZR_NULL;
-    SZrLspProjectSourceLoaderContext sourceLoaderContext;
-    SZrLspProjectVirtualDeclarationUriResolverContext virtualUriResolverContext;
     TZrBool analyzeSuccess;
     TZrSize currentAstHash;
     TZrBool sameAstAsCachedAnalysis;
@@ -1851,32 +2103,12 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
     }
     project_preload_descriptor_plugin_imports(state, projectIndex, fileVersion->ast);
-    virtualUriResolverContext.state = state;
-    virtualUriResolverContext.context = context;
-    virtualUriResolverContext.projectIndex = projectIndex;
-    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-            analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
-    if (state->global != ZR_NULL) {
-        sourceLoaderContext.projectIndex = projectIndex;
-        sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
-        previousUserData = state->global->userData;
-        previousSourceLoaderUserData = state->global->sourceLoaderUserData;
-        sourceLoaderContext.fallbackUserData = previousUserData;
-        sourceLoaderContext.fallbackSourceLoaderUserData = previousSourceLoaderUserData;
-        previousSourceLoader = state->global->sourceLoader;
-        state->global->sourceLoaderUserData = &sourceLoaderContext;
-        state->global->sourceLoader = project_source_loader;
+    analyzeSuccess = project_analyze_with_source_view(state, context, projectIndex, uri, analyzer, fileVersion->ast);
+    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        return ZR_FALSE;
     }
-    analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, fileVersion->ast);
     if (analyzeSuccess && analyzer->compilerState != ZR_NULL && currentModuleKey != ZR_NULL) {
         analyzer->compilerState->currentModuleKey = currentModuleKey;
-    }
-    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-            analyzer, ZR_NULL, ZR_NULL);
-    if (state->global != ZR_NULL) {
-        state->global->userData = previousUserData;
-        state->global->sourceLoaderUserData = previousSourceLoaderUserData;
-        state->global->sourceLoader = previousSourceLoader;
     }
 
     if (!analyzeSuccess) {
@@ -1896,11 +2128,6 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
                                                     SZrSemanticAnalyzer *analyzer,
                                                     SZrAstNode *ast) {
     SZrLspProjectIndex *projectIndex;
-    FZrIoLoadSource previousSourceLoader = ZR_NULL;
-    TZrPtr previousUserData = ZR_NULL;
-    TZrPtr previousSourceLoaderUserData = ZR_NULL;
-    SZrLspProjectSourceLoaderContext sourceLoaderContext;
-    SZrLspProjectVirtualDeclarationUriResolverContext virtualUriResolverContext;
     TZrBool analyzeSuccess;
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
@@ -1918,15 +2145,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
 
     projectIndex = uri != ZR_NULL ? ZrLanguageServer_LspProject_FindProjectForUri(context, uri) : ZR_NULL;
     if (projectIndex == ZR_NULL || state->global == ZR_NULL) {
-        virtualUriResolverContext.state = state;
-        virtualUriResolverContext.context = context;
-        virtualUriResolverContext.projectIndex = projectIndex;
-        ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-                analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
-        analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
-        ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-                analyzer, ZR_NULL, ZR_NULL);
-        return analyzeSuccess;
+        return project_analyze_with_source_view(state, context, projectIndex, uri, analyzer, ast);
     }
     if (uri != ZR_NULL &&
         ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
@@ -1945,29 +2164,10 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
     }
 
     project_preload_descriptor_plugin_imports(state, projectIndex, ast);
-    virtualUriResolverContext.state = state;
-    virtualUriResolverContext.context = context;
-    virtualUriResolverContext.projectIndex = projectIndex;
-    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-            analyzer, project_resolve_virtual_declaration_uri, &virtualUriResolverContext);
-    sourceLoaderContext.projectIndex = projectIndex;
-    sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
-    previousUserData = state->global->userData;
-    previousSourceLoaderUserData = state->global->sourceLoaderUserData;
-    sourceLoaderContext.fallbackUserData = previousUserData;
-    sourceLoaderContext.fallbackSourceLoaderUserData = previousSourceLoaderUserData;
-    previousSourceLoader = state->global->sourceLoader;
-    state->global->sourceLoaderUserData = &sourceLoaderContext;
-    state->global->sourceLoader = project_source_loader;
-
-    analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
-
-    ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
-            analyzer, ZR_NULL, ZR_NULL);
-
-    state->global->userData = previousUserData;
-    state->global->sourceLoaderUserData = previousSourceLoaderUserData;
-    state->global->sourceLoader = previousSourceLoader;
+    analyzeSuccess = project_analyze_with_source_view(state, context, projectIndex, uri, analyzer, ast);
+    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        return ZR_FALSE;
+    }
     if (analyzeSuccess && analyzer->compilerState != ZR_NULL && currentModuleKey != ZR_NULL) {
         analyzer->compilerState->currentModuleKey = currentModuleKey;
     }
