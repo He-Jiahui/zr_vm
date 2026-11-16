@@ -187,6 +187,9 @@ jobs:
         run: >-
           cmake --build "D:/cargo-targets/zr-ci" --config Debug --parallel 2
           --target zr_vm_cli_executable zr_vm_language_server_stdio
+          zr_vm_language_server_stdio_document_close_test
+          zr_vm_language_server_inlay_semantic_facts_test
+          zr_vm_language_server_lsp_project_features_test
           zr_vm_parser_test zr_vm_expression_fragment_parser_test
           zr_vm_async_function_access_modifier_test
           zr_vm_aot_c_iterator_contracts_test
@@ -201,17 +204,25 @@ jobs:
         run: |
           $listed = ctest --test-dir $env:BUILD_DIR -C Debug --show-only=json-v1 | ConvertFrom-Json
           $actual = @($listed.tests | ForEach-Object { $_.name })
-          $required = @('expression_fragment_parser', 'async_function_access_modifier', 'function_instruction_verify', 'aot_llvm_specialized_cast_fusion', 'source_parameter_binding', 'source_parameter_binding_project', 'fused_add_operand_packing', 'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary')
+          $required = @('language_server_stdio_document_close', 'expression_fragment_parser', 'async_function_access_modifier', 'function_instruction_verify', 'aot_llvm_specialized_cast_fusion', 'source_parameter_binding', 'source_parameter_binding_project', 'fused_add_operand_packing', 'fused_add_loop_repro_interp', 'fused_add_loop_repro_binary', 'fused_add_loop_callback_result_repro_interp', 'fused_add_loop_callback_result_repro_binary')
           $missing = @($required | Where-Object { $_ -notin $actual })
           if ($missing.Count) { throw "Missing required CTest registrations: $($missing -join ', ')" }
       - name: Run Windows parser, CLI, and fused-add regressions
         run: >-
           ctest --test-dir "D:/cargo-targets/zr-ci"
           -C Debug --output-on-failure --no-tests=error
-          -R '^(expression_fragment_parser|async_function_access_modifier|function_instruction_verify|aot_llvm_specialized_cast_fusion|source_parameter_binding|source_parameter_binding_project|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary)$'
+          -R '^(language_server_stdio_document_close|expression_fragment_parser|async_function_access_modifier|function_instruction_verify|aot_llvm_specialized_cast_fusion|source_parameter_binding|source_parameter_binding_project|fused_add_operand_packing|fused_add_loop_repro_interp|fused_add_loop_repro_binary|fused_add_loop_callback_result_repro_interp|fused_add_loop_callback_result_repro_binary)$'
       - name: Run Windows resolver regression executable
         working-directory: D:/cargo-targets/zr-ci\bin\Debug
         run: .\zr_vm_project_import_resolver_test.exe
+      - name: Run Windows LSP source handoff regressions
+        working-directory: D:/cargo-targets/zr-ci
+        shell: pwsh
+        run: |
+          foreach ($test in @('zr_vm_language_server_inlay_semantic_facts_test', 'zr_vm_language_server_lsp_project_features_test')) {
+            & ".\bin\Debug\$test.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$test failed with exit code $LASTEXITCODE" }
+          }
       - name: Upload Windows failure logs
         if: failure()
         uses: actions/upload-artifact@v4

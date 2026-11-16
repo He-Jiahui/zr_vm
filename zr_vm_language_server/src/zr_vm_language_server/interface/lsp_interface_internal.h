@@ -253,6 +253,9 @@ ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnal
 ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrString *uri);
+/** 私有 map-only 身份核对/回收入口；不登记快照依赖，不改变 provider/LRU 或创建分析器。 */
+SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzerUntracked(
+        SZrState *state, SZrLspContext *context, SZrString *uri);
 /** 文档关闭或替换时解除分析器索引并回收其语义状态。 */
 void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state,
                                          SZrLspContext *context,
@@ -265,6 +268,20 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                                                 TZrSize contentLength,
                                                 TZrSize version,
                                                 TZrBool allowProjectRefresh);
+/** 关闭文档的磁盘刷新不消费客户端版本；拒绝覆盖仍打开的 overlay。 */
+TZrBool ZrLanguageServer_IncrementalParser_UpdateClosedDocument(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength);
+/** stdio 已读到完整磁盘字节后的私有入口：保持 closed 来源并刷新项目，不合成 editor 版本。 */
+TZrBool ZrLanguageServer_Lsp_UpdateClosedDocument(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength);
 /** 上下文销毁时释放其持有的项目索引与文件记录。 */
 void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *context);
 /** 更新项目源码图，并按调用方要求选择局部传播或全量重新扫描。 */

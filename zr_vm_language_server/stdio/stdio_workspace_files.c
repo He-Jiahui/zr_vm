@@ -5,9 +5,8 @@
 #include "project/lsp_workspace.h"
 
 /* stdio 只负责协议通知与项目索引的边界，项目层接口持有索引和分析器生命周期。 */
-TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
-                                                              SZrLspContext *context,
-                                                              SZrString *uri);
+TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocuments(
+        SZrState *state, SZrLspContext *context, SZrString *uri);
 TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri);
@@ -124,11 +123,15 @@ static int handle_single_workspace_file_change(SZrStdioServer *server, SZrString
         return 0;
     }
 
-    /* TODO: 删除事件先于打开覆盖层检查；若客户端在 didClose 前通知删除仍打开的 URI，
-     * 项目层可能移除该文档的 parser/analyzer，需核对通知顺序并补交错回归。 */
+    /* 所有磁盘事件（包括删除）的移除与空诊断发布都必须晚于 overlay 所有权判断。 */
+    if (workspace_file_has_open_overlay(server, uri)) {
+        return 1;
+    }
+
     if (changeType == 3) {
         if (workspace_file_string_ends_with(uri, ".zrp")) {
-            ZrLanguageServer_LspProject_RemoveProjectByProjectUri(server->state, server->context, uri);
+            ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocuments(
+                    server->state, server->context, uri);
             publish_empty_diagnostics(server, uri);
             return 1;
         }
@@ -153,10 +156,6 @@ static int handle_single_workspace_file_change(SZrStdioServer *server, SZrString
     }
 
     if (workspace_file_string_ends_with(uri, ".zrp") || workspace_file_string_ends_with(uri, ".zr")) {
-        /* didOpen/didChange 持有编辑器覆盖层；磁盘监听不能替换尚未保存的内容。 */
-        if (workspace_file_has_open_overlay(server, uri)) {
-            return 1;
-        }
         return update_document_contents_from_disk(server, uri);
     }
 

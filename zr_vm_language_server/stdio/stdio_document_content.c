@@ -1,5 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "zr_vm_core/utf8.h"
+#include "interface/lsp_interface_internal.h"
+#include "project/lsp_workspace.h"
 
 /** 借用 parser 中当前 URI 的文件版本，供通知入口判断编辑是否真正提交。 */
 SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri) {
@@ -180,55 +182,60 @@ int update_document_contents(SZrStdioServer *server,
     return updateOk;
 }
 
-/** @brief 用磁盘内容重建关闭文档或文件事件的版本，成功后清除失同步状态。
- * BUG: 合成版本递增后，同一连接再次 didOpen 的客户端版本可能更低，parser 因单调门禁拒绝新全文。
- * TODO: 读取失败前已移除旧 parser/analyzer 状态；核对文件事件和 didSave 是否应保留旧状态。
- * TODO: 手工清理未调用语义历史快照的 RemoveUri；核对关闭后旧快照是否仍应可查询。 */
+/** @brief 事务式刷新 closed 磁盘内容：资格、完整读取、无物理 NUL 及 UTF-8 验证先于缓存失效。
+ * 文本字节与长度按 rb 读取结果传递（不经 strlen/EOL 规范化）；client version 不由磁盘推进。
+ * 显式 didClose 的失败 detach 策略仍由该通知处理器负责，不属于本刷新函数的失败副作用。 */
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri) {
     char *sourceCode;
     size_t sourceLength;
     SZrFileVersion *fileVersion;
     TZrSize version;
+    TZrSize previousGeneration;
+    int contentUnchanged;
     int success;
 
-    if (server == ZR_NULL || uri == ZR_NULL || server->state == ZR_NULL || server->state->global == ZR_NULL) {
+    if (server == ZR_NULL || uri == ZR_NULL || server->state == ZR_NULL ||
+        server->state->global == ZR_NULL || server->context == ZR_NULL ||
+        server->context->parser == ZR_NULL) {
         return 0;
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
-    version = fileVersion != ZR_NULL ? fileVersion->version + 1 : 0;
-    if (server->context != ZR_NULL) {
-        SZrTypeValue key;
-        SZrHashKeyValuePair *pair;
-
-        ZrCore_Value_InitAsRawObject(server->state, &key, &uri->super);
-        pair = ZrCore_HashSet_Find(server->state, &server->context->uriToAnalyzerMap, &key);
-        if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-            SZrSemanticAnalyzer *analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
-            if (analyzer != ZR_NULL) {
-                ZrLanguageServer_SemanticAnalyzer_Free(server->state, analyzer);
-            }
-        }
-        ZrCore_HashSet_Remove(server->state, &server->context->uriToAnalyzerMap, &key);
-
-        if (server->context->parser != ZR_NULL) {
-            ZrLanguageServer_IncrementalParser_RemoveFile(server->state, server->context->parser, uri);
-        }
+    if ((fileVersion != ZR_NULL && fileVersion->isOpenDocument) ||
+        !ZrLanguageServer_LspWorkspace_CanProcessFileEvent(server->context, uri)) {
+        return 0;
     }
-
     sourceCode = read_document_text_from_uri(uri, &sourceLength);
     if (sourceCode == ZR_NULL) {
         return 0;
     }
 
-    success = update_document_contents(server, uri, sourceCode, sourceLength, version);
+    /* 读取结束再次核对来源；私有 parser 入口在实际提交处也拒绝覆盖 open overlay。 */
+    fileVersion = get_file_version_for_uri(server, uri);
+    if ((fileVersion != ZR_NULL && fileVersion->isOpenDocument) ||
+        !ZrLanguageServer_LspWorkspace_CanProcessFileEvent(server->context, uri) ||
+        memchr(sourceCode, '\0', sourceLength) != ZR_NULL ||
+        !ZrCore_Utf8_IsValid((TZrNativeString)sourceCode, (TZrSize)sourceLength)) {
+        free(sourceCode);
+        return 0;
+    }
+    version = fileVersion != ZR_NULL ? fileVersion->version : 0;
+    previousGeneration = fileVersion != ZR_NULL && fileVersion->textBlock != ZR_NULL
+                             ? fileVersion->textBlock->contentGeneration : 0;
+    contentUnchanged = fileVersion != ZR_NULL && fileVersion->textBlock != ZR_NULL &&
+                       fileVersion->textBlock->contentLength == (TZrSize)sourceLength &&
+                       (sourceLength == 0 || memcmp(fileVersion->textBlock->content, sourceCode, sourceLength) == 0);
+    (void)ZrLanguageServer_Lsp_UpdateClosedDocument(
+            server->state, server->context, uri, sourceCode, (TZrSize)sourceLength);
+    fileVersion = get_file_version_for_uri(server, uri);
+    success = fileVersion != ZR_NULL && !fileVersion->isOpenDocument &&
+              fileVersion->textBlock != ZR_NULL &&
+              (contentUnchanged || fileVersion->textBlock->contentGeneration > previousGeneration) &&
+              document_contents_were_committed(server, uri, sourceCode, sourceLength, version);
     free(sourceCode);
     if (success) {
-        fileVersion = get_file_version_for_uri(server, uri);
-        if (fileVersion != ZR_NULL) {
-            fileVersion->isOpenDocument = ZR_FALSE;
-            clear_document_desynchronization(server, uri);
-        }
+        clear_document_desynchronization(server, uri);
+        publish_diagnostics(server, uri);
     }
     return success;
 }
