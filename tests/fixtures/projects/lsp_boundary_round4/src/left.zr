@@ -1,0 +1,5 @@
+pub class Box<T> {
+    pub var value: T;
+    pub @constructor(value: T) { this.value = value; }
+    pub fn read(): T { return this.value; }
+}

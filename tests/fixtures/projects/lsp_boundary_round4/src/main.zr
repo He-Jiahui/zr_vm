@@ -1,0 +1,36 @@
+let left = import(".left");
+let right = import(".right");
+let container = import("zr.container");
+
+pub fn writeLeft(box: left.Box<int>, value: int): int {
+    box.value = value;
+    return box.value;
+}
+pub fn writeRight(box: right.Box<string>, value: string): string {
+    box.value = value;
+    return box.value;
+}
+pub fn counter(seed: int): fn() -> int {
+    var box = new left.Box<int>(seed);
+    return fn(): int {
+        box.value += 1;
+        return box.value;
+    };
+}
+pub fn run(): int {
+    let values = new container.Array<int>();
+    let tick = counter(20);
+    var index = 0;
+    while (index < 3) {
+        values.add(tick());
+        index += 1;
+    }
+    var keyCalls = 0;
+    let nextKey = fn(): int { keyCalls += 1; return 2; };
+    values[nextKey()] += 0;
+    let label = new right.Box<string>("😀中文");
+    { let index = 1; if (index == 1) { label.value = "kept"; } }
+    if (keyCalls != 1 || label.value != "kept") { return -1; }
+    return values[2];
+}
+return run();
