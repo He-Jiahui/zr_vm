@@ -20,6 +20,8 @@
 
 #include "zr_vm_core/task_runtime.h"
 #include "zr_vm_core/utf8.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_parser/compiler.h"
 
 #include "zr_vm_lib_ffi/module.h"
@@ -1236,14 +1238,30 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
     return analyzer;
 }
 
+/* 私有回收/身份核对只访问已登记 map：不登记依赖、不准备 provider、不触发分析或 LRU。 */
+SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzerUntracked(
+        SZrState *state, SZrLspContext *context, SZrString *uri) {
+    SZrTypeValue key;
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
+    pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
+    if (pair == ZR_NULL) {
+        pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
+    }
+    return pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER
+               ? (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer : ZR_NULL;
+}
+
 /**
  * @brief 只查找现有文档分析器，并在活动语义快照中登记依赖。
  * @details 诊断、悬停及快照提供者用此避免无意新建分析器；别名 URI 仍按原生路径匹配。
  */
 SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
-    SZrTypeValue key;
-    SZrHashKeyValuePair *pair;
-
+    SZrSemanticAnalyzer *analyzer;
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1251,24 +1269,13 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
         (void)ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
                 state, context, context->activeSemanticSnapshot, uri);
     }
-
-    ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
-    pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
-    if (pair == ZR_NULL) {
-        pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
-    }
-    if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-        SZrSemanticAnalyzer *analyzer =
-                (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri);
+    if (analyzer != ZR_NULL) {
         ZrLanguageServer_SemanticAnalyzer_SetExternalProviderGeneration(
-                state,
-                analyzer,
-                context->semanticSnapshotProviderGeneration);
+                state, analyzer, context->semanticSnapshotProviderGeneration);
         ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
-        return analyzer;
     }
-
-    return ZR_NULL;
+    return analyzer;
 }
 
 /** @brief 文档分析失败或关闭后同步移除快照缓存和 URI 映射，避免后续查询读取旧语义。 */
@@ -1340,9 +1347,8 @@ SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *cont
     return ZrParser_FilePosition_Create(0, 0, 0);
 }
 
-/* 来源替换不能让 importer 在旧 producer AST/事实释放后继续使用 typed 快捷路径。
- * 保守失效已登记该 URI 的项目语义；成功解析后的正常 refresh 会重新 bootstrap 已载入文档，
- * 失败则保留各自 parser/overlay；旧 typed 不可用，健康 importer 可按原策略重分析并发布真实导入错误。 */
+/* 当前来源错误或更新失败时撤销已登记该 URI 的项目 authority；保留各自 parser/overlay。
+ * 健康来源不走此保守失效，仍由现公开契约和实际依赖边决定是否重析 importer。 */
 static void lsp_invalidate_source_projects(SZrState *state, SZrLspContext *context, SZrString *uri) {
     TZrBool invalidated = ZR_FALSE;
 
@@ -1369,6 +1375,76 @@ static void lsp_invalidate_source_projects(SZrState *state, SZrLspContext *conte
     }
 }
 
+static TZrBool lsp_analyze_committed_document(
+        SZrState *state, SZrLspContext *context, SZrString *uri,
+        const TZrChar *content, TZrSize contentLength, TZrBool allowProjectRefresh,
+        TZrBool isClosedDiskRefresh, TZrBool replacesSource, TZrBool previousHadParseErrors);
+
+typedef struct SZrLspSourceReplacementInvocation {
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrFileVersionContentSnapshot content;
+    SZrGcRootLease uriRoot;
+    SZrGcRootLease canonicalUriRoot;
+    TZrBool allowProjectRefresh;
+    TZrBool isClosedDiskRefresh;
+    TZrBool previousHadParseErrors;
+    TZrBool normalCompleted;
+    TZrBool result;
+} SZrLspSourceReplacementInvocation;
+
+static void lsp_source_replacement_call(SZrState *state, TZrPtr arguments) {
+    SZrLspSourceReplacementInvocation *invocation = (SZrLspSourceReplacementInvocation *)arguments;
+    if (ZrCore_Gc_RootLeaseAcquire(state, &invocation->uri->super, &invocation->uriRoot) &&
+        ZrCore_Gc_RootLeaseAcquire(state, &invocation->content.uri->super, &invocation->canonicalUriRoot)) {
+        invocation->result = lsp_analyze_committed_document(
+                state, invocation->context, invocation->uri,
+                invocation->content.content, invocation->content.contentLength,
+                invocation->allowProjectRefresh, invocation->isClosedDiskRefresh,
+                ZR_TRUE, invocation->previousHadParseErrors);
+    }
+    invocation->normalCompleted = ZR_TRUE;
+}
+
+/* 仅来源替换保护完整 Parse/语义提交，普通 open 内更新沿用原路径。
+ * 健康导入者保留自有编译元数据，交由公开契约决定；失败才保守撤销确切项目 authority。 */
+static TZrBool lsp_complete_source_replacement(
+        SZrState *state, SZrLspContext *context, SZrString *uri,
+        TZrBool allowProjectRefresh, TZrBool isClosedDiskRefresh, TZrBool previousHadParseErrors) {
+    SZrLspSourceReplacementInvocation invocation = {0};
+    SZrFileVersion *current;
+    TZrBool sameSource;
+    EZrThreadStatus status;
+
+    invocation.context = context;
+    invocation.uri = uri;
+    invocation.allowProjectRefresh = allowProjectRefresh;
+    invocation.isClosedDiskRefresh = isClosedDiskRefresh;
+    invocation.previousHadParseErrors = previousHadParseErrors;
+    /* Acquire 只增加 block 引用、不分配/不 Throw；record 在 TryRun 调用者侧持有。 */
+    current = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, current, &invocation.content)) {
+        lsp_invalidate_source_projects(state, context, uri);
+        return ZR_FALSE;
+    }
+    status = ZrCore_Exception_TryRun(state, lsp_source_replacement_call, &invocation);
+    /* 仅 nontracking parser lookup；不以 FindAnalyzer 的 TrackDependency 路径做异常清理。 */
+    current = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, invocation.content.uri);
+    sameSource = current != ZR_NULL && current->textBlock == invocation.content.contentBlock &&
+                 current->textBlock->contentGeneration == invocation.content.contentGeneration;
+    if ((!invocation.normalCompleted || !invocation.result) && sameSource) {
+        lsp_invalidate_source_projects(state, context, invocation.content.uri);
+    }
+    ZrCore_Gc_RootLeaseRelease(state->global, &invocation.canonicalUriRoot);
+    ZrCore_Gc_RootLeaseRelease(state->global, &invocation.uriRoot);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &invocation.content);
+    if (!invocation.normalCompleted) {
+        ZrCore_Exception_Throw(state, status);
+        return ZR_FALSE;
+    }
+    return sameSource && invocation.result;
+}
+
 /**
  * @brief 统一处理编辑器缓冲区与项目磁盘文件的解析、索引和语义缓存更新。
  * @details 项目刷新权限与磁盘来源分开：stdio closed 刷新也刷新项目，但永不成为 editor epoch。
@@ -1383,16 +1459,10 @@ static TZrBool lsp_update_document(
         TZrSize version,
         TZrBool allowProjectRefresh,
         TZrBool isClosedDiskRefresh) {
-    TZrBool analyzeSuccess;
-    TZrBool parsed;
     TZrBool replacesSource;
     TZrBool previousHadParseErrors;
+    TZrBool canClassifyPreviousAst;
     SZrFileVersion *previousFileVersion;
-    TZrBool preserveScopedQueryCache = ZR_FALSE;
-    TZrBool retainCurrentAst = ZR_FALSE;
-    TZrBool retainPreviousSemanticAst = ZR_FALSE;
-    SZrSemanticAnalyzer *existingAnalyzer = ZR_NULL;
-    SZrAstNode *retainedAst = ZR_NULL;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
@@ -1410,6 +1480,9 @@ static TZrBool lsp_update_document(
 
     previousFileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     previousHadParseErrors = previousFileVersion != ZR_NULL && previousFileVersion->parserDiagnostics.length > 0;
+    canClassifyPreviousAst = previousFileVersion != ZR_NULL && previousFileVersion->ast != ZR_NULL &&
+                             !previousFileVersion->isDirty && !previousFileVersion->usesFallbackAst &&
+                             !previousHadParseErrors;
     if (isClosedDiskRefresh && previousFileVersion != ZR_NULL) {
         if (previousFileVersion->isOpenDocument) {
             return ZR_FALSE;
@@ -1441,12 +1514,17 @@ static TZrBool lsp_update_document(
         return ZR_FALSE;
     }
 
-    /* 全文成功提交后先撤销 typed/history/scoped borrow，再摘下并释放旧 AST。
-     * 来源替换不保 fallback；旧 AST 不跨新 Parse 的 OOM/非局部 Throw 留在 C 局部 owner 中。 */
+    /* 先撤销 producer 自己的 typed/history/scoped borrow，再释放旧 AST，不把它当新 epoch fallback。
+     * SOURCE import 的 importer 元数据由各自 compilerState 拥有；健康更新仍交现公开契约/依赖边判定。 */
     if (replacesSource) {
         SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
         SZrAstNode *previousAst;
-        lsp_invalidate_source_projects(state, context, fileVersion->uri);
+        if (canClassifyPreviousAst) {
+            SZrFileChangeInfo classified = fileVersion->lastChangeInfo;
+            /* 只复制 impact 值，不留下旧 AST 的 declaration range/sourceName，也不开增量复用。 */
+            ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange(fileVersion->ast, &classified);
+            fileVersion->lastChangeInfo.impact = classified.impact;
+        }
         ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
         previousAst = fileVersion->ast;
         fileVersion->ast = ZR_NULL;
@@ -1458,6 +1536,27 @@ static TZrBool lsp_update_document(
             ZrParser_Ast_Free(state, previousAst);
         }
     }
+
+    if (replacesSource) {
+        return lsp_complete_source_replacement(
+                state, context, uri, allowProjectRefresh, isClosedDiskRefresh, previousHadParseErrors);
+    }
+    return lsp_analyze_committed_document(state, context, uri, content, contentLength,
+                                           allowProjectRefresh, isClosedDiskRefresh, ZR_FALSE,
+                                           previousHadParseErrors);
+}
+
+static TZrBool lsp_analyze_committed_document(
+        SZrState *state, SZrLspContext *context, SZrString *uri,
+        const TZrChar *content, TZrSize contentLength, TZrBool allowProjectRefresh,
+        TZrBool isClosedDiskRefresh, TZrBool replacesSource, TZrBool previousHadParseErrors) {
+    TZrBool analyzeSuccess;
+    TZrBool parsed;
+    TZrBool preserveScopedQueryCache = ZR_FALSE;
+    TZrBool retainCurrentAst = ZR_FALSE;
+    TZrBool retainPreviousSemanticAst = ZR_FALSE;
+    SZrSemanticAnalyzer *existingAnalyzer = ZR_NULL;
+    SZrAstNode *retainedAst = ZR_NULL;
 
     /* 工程清单属于项目发现输入，不交给普通源码的语义分析器。 */
     if (lsp_string_ends_with_native(uri, ".zrp")) {
@@ -1542,6 +1641,11 @@ static TZrBool lsp_update_document(
             return ZR_FALSE;
         }
 
+        if (replacesSource && fileVersion->parserDiagnostics.length > 0) {
+            /* 当前来源确实有错：撤旧 importer authority，再允许 editor 的当前 fresh partial 分析。 */
+            lsp_invalidate_source_projects(state, context, fileVersion->uri);
+        }
+
         /* closed 磁盘错误只发布诊断；editor 当前字节的 fresh recovery AST 沿用原 partial 分析。
          * 旧 epoch 的 AST/typed 已在新 Parse 前撤销，不可把新恢复树误判为旧 fallback。 */
         if (isClosedDiskRefresh && fileVersion->parserDiagnostics.length > 0) {
@@ -1621,13 +1725,13 @@ static TZrBool lsp_update_document(
                                                                                        contentLength,
                                                                                        ZR_FALSE);
             if (!refreshed) {
-                if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) == analyzer) {
+                if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) == analyzer) {
                     ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
                 }
                 return ZR_FALSE;
             }
             analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
-            if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+            if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
                 return ZR_FALSE;
             }
             if (!analyzeSuccess) {
@@ -1641,7 +1745,7 @@ static TZrBool lsp_update_document(
 
         analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(
                 state, context, uri, analyzer, ast);
-        if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
             return ZR_FALSE;
         }
         if (!analyzeSuccess) {

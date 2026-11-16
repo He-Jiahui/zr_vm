@@ -253,6 +253,9 @@ ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnal
 ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrString *uri);
+/** 私有 map-only 身份核对/回收入口；不登记快照依赖，不改变 provider/LRU 或创建分析器。 */
+SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzerUntracked(
+        SZrState *state, SZrLspContext *context, SZrString *uri);
 /** 文档关闭或替换时解除分析器索引并回收其语义状态。 */
 void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state,
                                          SZrLspContext *context,

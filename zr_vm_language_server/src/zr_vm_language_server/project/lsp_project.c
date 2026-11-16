@@ -511,7 +511,7 @@ static void project_analysis_call(SZrState *state, TZrPtr arguments) {
     SZrSemanticAnalyzer *analyzer = invocation->analyzer;
 
     if (!ZrCore_Gc_RootLeaseAcquire(state, &invocation->uri->super, &invocation->uriRoot) ||
-        ZrLanguageServer_Lsp_FindAnalyzer(state, invocation->context, invocation->uri) != analyzer) {
+        ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, invocation->context, invocation->uri) != analyzer) {
         invocation->normalCompleted = ZR_TRUE;
         return;
     }
@@ -543,7 +543,7 @@ static TZrBool project_analyze_with_source_view(
     EZrThreadStatus status;
 
     if (uri == ZR_NULL || state->global == ZR_NULL ||
-        ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+        ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
         return ZR_FALSE;
     }
     invocation.state = state;
@@ -566,7 +566,7 @@ static TZrBool project_analyze_with_source_view(
         }
         state->global->sourceLoaderUserData = invocation.previousSourceLoaderUserData;
     }
-    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+    if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
         invocation.result = ZR_FALSE;
     } else if (invocation.installed) {
         FZrSemanticVirtualDeclarationUriResolver restoreResolver = invocation.previousResolver;
@@ -2104,7 +2104,7 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     }
     project_preload_descriptor_plugin_imports(state, projectIndex, fileVersion->ast);
     analyzeSuccess = project_analyze_with_source_view(state, context, projectIndex, uri, analyzer, fileVersion->ast);
-    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+    if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
         return ZR_FALSE;
     }
     if (analyzeSuccess && analyzer->compilerState != ZR_NULL && currentModuleKey != ZR_NULL) {
@@ -2165,7 +2165,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
 
     project_preload_descriptor_plugin_imports(state, projectIndex, ast);
     analyzeSuccess = project_analyze_with_source_view(state, context, projectIndex, uri, analyzer, ast);
-    if (ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri) != analyzer) {
+    if (ZrLanguageServer_Lsp_FindAnalyzerUntracked(state, context, uri) != analyzer) {
         return ZR_FALSE;
     }
     if (analyzeSuccess && analyzer->compilerState != ZR_NULL && currentModuleKey != ZR_NULL) {

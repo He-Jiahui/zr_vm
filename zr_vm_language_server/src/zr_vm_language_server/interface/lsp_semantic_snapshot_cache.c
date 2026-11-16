@@ -39,7 +39,7 @@ static void snapshot_cache_release_entry(
         return;
     }
 
-    currentAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(
+    currentAnalyzer = ZrLanguageServer_Lsp_FindAnalyzerUntracked(
             state,
             context,
             entry->uri);
