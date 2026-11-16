@@ -506,6 +506,13 @@ static void test_lsp_diagnostics_preserve_unwritten_loop_ranges(SZrState *state)
         {"unrelated loop write does not erase out-of-bounds index",
          "fn f(flag: bool): int { var values = [1,2]; var index = 2; var other = 0; "
          "while (flag) { other = other + 1; return values[index]; } return 0; }", 1},
+        {"parenthesized primitive arithmetic preserves invariant index",
+         "fn f(flag: bool): int { var values = [1,2]; var index = 2; var other = 0; "
+         "while (flag) { other = other + (((1 + 1))); return values[index]; } return 0; }", 1},
+        {"wrapped primitive logical ternary preserves invariant index",
+         "fn f(flag: bool, choose: bool): int { var values = [1,2]; var index = 2; var other = 0; "
+         "while (flag) { other = other + (((choose && flag) ? (1 + 0) : (2 + 0))); "
+         "return values[index]; } return 0; }", 1},
         {"for preserves invariant out-of-bounds index",
          "fn f(flag: bool): int { var values = [1,2]; var index = 2; "
          "for (; flag; ) { return values[index]; } return 0; }", 1},
