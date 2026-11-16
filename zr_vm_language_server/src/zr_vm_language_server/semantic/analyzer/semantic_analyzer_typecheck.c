@@ -287,8 +287,22 @@ static TZrBool semantic_typecheck_syntax_is_primitive(
         case ZR_AST_BINARY_EXPRESSION:
             return semantic_typecheck_syntax_is_primitive(node->data.binaryExpression.left, typeEnv) &&
                    semantic_typecheck_syntax_is_primitive(node->data.binaryExpression.right, typeEnv);
+        case ZR_AST_LOGICAL_EXPRESSION:
+            return semantic_typecheck_syntax_is_primitive(node->data.logicalExpression.left, typeEnv) &&
+                   semantic_typecheck_syntax_is_primitive(node->data.logicalExpression.right, typeEnv);
         case ZR_AST_UNARY_EXPRESSION:
             return semantic_typecheck_syntax_is_primitive(node->data.unaryExpression.argument, typeEnv);
+        case ZR_AST_CONDITIONAL_EXPRESSION:
+            return semantic_typecheck_syntax_is_primitive(node->data.conditionalExpression.test, typeEnv) &&
+                   semantic_typecheck_syntax_is_primitive(node->data.conditionalExpression.consequent, typeEnv) &&
+                   semantic_typecheck_syntax_is_primitive(node->data.conditionalExpression.alternate, typeEnv);
+        case ZR_AST_PRIMARY_EXPRESSION:
+            /* Parentheses do not change nominal builtin-ness. An actual member
+             * still needs the restrictive builtin-array proof below. */
+            if (node->data.primaryExpression.members == ZR_NULL || node->data.primaryExpression.members->count == 0) {
+                return semantic_typecheck_syntax_is_primitive(node->data.primaryExpression.property, typeEnv);
+            }
+            /* fall through */
         default: {
             const SZrInferredType *type = semantic_typecheck_syntax_binding_type(node, typeEnv);
             return type != ZR_NULL && (ZR_VALUE_IS_TYPE_NUMBER(type->baseType) ||
