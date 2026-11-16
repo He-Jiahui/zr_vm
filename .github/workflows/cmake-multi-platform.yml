@@ -45,7 +45,6 @@ jobs:
             build_type: Debug
             c_compiler: cl
             cpp_compiler: cl
-          # Keep the extension's locked Playwright supported by the runner image.
           - os: ubuntu-24.04
             build_type: Release
             c_compiler: gcc

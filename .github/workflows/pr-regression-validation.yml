@@ -16,7 +16,7 @@ concurrency:
 jobs:
   linux-full:
     name: Linux Debug full build (${{ matrix.compiler }})
-    # Playwright 1.58.2 has Chromium builds for Ubuntu 24.04.
+    # Keep npm's pinned Playwright browser installer on a supported Linux image.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
