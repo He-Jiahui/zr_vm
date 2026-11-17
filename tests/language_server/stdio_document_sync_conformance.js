@@ -189,6 +189,8 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             assert(cleanOpen.some((symbol) => symbol && symbol.name === cleanOpenName),
                    `a rejected open must not block the first valid open, actual=${JSON.stringify(cleanOpen)}`);
 
+            const beforeFull = await snapshot('before-rejected-full-change');
+            assert(beforeFull.version === 1, 'opening another document must not change the baseline client version');
             const truncatedName = `JsonZeroTruncatedFull${suffix}`;
             client.notify('textDocument/didChange', {
                 textDocument: { uri, version: 2 },
@@ -196,8 +198,8 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             });
             assertContentModified(await queryHover(client, uri, id('full-change-gate')), 'decoded-zero full change');
             const afterFull = await snapshot('rejected-full-state');
-            assert(JSON.stringify(afterFull) === JSON.stringify(before),
-                   `rejected full change must preserve version and diagnostic generation, before=${JSON.stringify(before)} after=${JSON.stringify(afterFull)}`);
+            assert(JSON.stringify(afterFull) === JSON.stringify(beforeFull),
+                   `rejected full change must preserve version and diagnostic generation, before=${JSON.stringify(beforeFull)} after=${JSON.stringify(afterFull)}`);
             await expectClass(originalName);
             await expectClass(originalSuffix);
             await expectClass(truncatedName, false);
