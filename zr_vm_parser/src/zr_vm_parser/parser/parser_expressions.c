@@ -236,45 +236,45 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
                 nextToken == ZR_TK_LBRACE || nextToken == ZR_TK_BANG || nextToken == ZR_TK_TILDE ||
                 nextToken == ZR_TK_PLUS || nextToken == ZR_TK_MINUS || nextToken == ZR_TK_DOLLAR ||
                 nextToken == ZR_TK_NEW || nextToken == ZR_TK_USING || nextToken == ZR_TK_LESS_THAN) {
-                // 是类型转换表达式
-                SZrAstNode *expression = parse_unary_expression(ps); // 递归解析表达式
-
-                if (expression != ZR_NULL) {
-                    SZrFileRange endLoc = get_current_location(ps);
-                    SZrFileRange castLoc;
-                    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &castLoc)) {
-                        free_owned_type(ps->state, targetType);
-                        ZrParser_Ast_Free(ps->state, expression);
-                        ps->suppressErrorOutput = savedSuppressErrorOutput;
-                        ps->errorCallback = savedErrorCallback;
-                        ps->structuredErrorCallback = savedStructuredErrorCallback;
-                        ps->errorUserData = savedErrorUserData;
-                        return ZR_NULL;
-                    }
-                    SZrAstNode *node = create_ast_node(ps, ZR_AST_TYPE_CAST_EXPRESSION, castLoc);
-                    if (node != ZR_NULL) {
-                        ps->suppressErrorOutput = savedSuppressErrorOutput;
-                        ps->errorCallback = savedErrorCallback;
-                        ps->structuredErrorCallback = savedStructuredErrorCallback;
-                        ps->errorUserData = savedErrorUserData;
-                        ps->hasError = cursor.hasError;
-                        ps->errorMessage = cursor.errorMessage;
-                        node->data.typeCastExpression.targetType = targetType;
-                        node->data.typeCastExpression.expression = expression;
-                        return node;
-                    }
-                }
-
-                // BUG: cast 节点分配失败只释放 targetType，已解析的 expression 泄漏；游标未复原且分配错误仍留在状态中。
-                // 如果创建节点失败，释放类型
-                ZrParser_Ast_Free(ps->state, expression);
-                if (targetType != ZR_NULL) {
-                    free_owned_type(ps->state, targetType);
-                }
+                // The complete <type> operand prefix commits to a cast; errors below cannot fall back to a primary expression.
                 ps->suppressErrorOutput = savedSuppressErrorOutput;
                 ps->errorCallback = savedErrorCallback;
                 ps->structuredErrorCallback = savedStructuredErrorCallback;
                 ps->errorUserData = savedErrorUserData;
+                if (ps->hasError || (ps->hasFatalError && !cursor.hasFatalError)) {
+                    free_owned_type(ps->state, targetType);
+                    if (!ps->hasNestingError) report_error(ps, "Invalid cast target");
+                    return ZR_NULL;
+                }
+
+                SZrAstNode *expression = parse_unary_expression(ps); // The cast operand is no longer speculative.
+                if (expression == ZR_NULL || ps->hasError || (ps->hasFatalError && !cursor.hasFatalError) ||
+                    ps->lexer->hasSourceEvidenceError) {
+                    if (expression != ZR_NULL) ZrParser_Ast_Free(ps->state, expression);
+                    free_owned_type(ps->state, targetType);
+                    if (!ps->hasError && !ps->hasNestingError && !cursor.hasFatalError &&
+                        !ps->lexer->hasSourceEvidenceError)
+                        report_error(ps, "Invalid cast operand");
+                    return ZR_NULL;
+                }
+                SZrFileRange endLoc = get_current_location(ps);
+                SZrFileRange castLoc;
+                if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &castLoc)) {
+                    free_owned_type(ps->state, targetType);
+                    ZrParser_Ast_Free(ps->state, expression);
+                    return ZR_NULL;
+                }
+                SZrAstNode *node = create_ast_node(ps, ZR_AST_TYPE_CAST_EXPRESSION, castLoc);
+                if (node != ZR_NULL) {
+                    ps->hasError = cursor.hasError;
+                    ps->errorMessage = cursor.errorMessage;
+                    node->data.typeCastExpression.targetType = targetType;
+                    node->data.typeCastExpression.expression = expression;
+                    return node;
+                }
+                ZrParser_Ast_Free(ps->state, expression);
+                free_owned_type(ps->state, targetType);
+                return ZR_NULL;
             } else {
                 // 不是类型转换，恢复状态
                 restore_parser_cursor(ps, &cursor);
