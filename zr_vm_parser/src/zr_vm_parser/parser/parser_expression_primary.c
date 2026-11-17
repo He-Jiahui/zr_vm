@@ -162,7 +162,7 @@ static SZrAstNode *try_parse_generic_type_member_root(SZrParserState *ps) {
     ps->errorMessage = ZR_NULL;
 
     target = parse_generic_construct_target(ps);
-    if (target != ZR_NULL && !ps->lexer->hasSourceEvidenceError &&
+    if (target != ZR_NULL && !ps->hasError && !ps->lexer->hasSourceEvidenceError &&
         ps->lexer->t.token == ZR_TK_DOT) {
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
@@ -326,7 +326,7 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
     ps->errorMessage = ZR_NULL;
     startLoc = get_current_location(ps);
     typeInfo = parse_type(ps);
-    if (typeInfo == ZR_NULL || ps->lexer->hasSourceEvidenceError ||
+    if (typeInfo == ZR_NULL || ps->hasError || ps->lexer->hasSourceEvidenceError ||
         !type_literal_probe_has_unambiguous_marker(typeInfo) ||
         !type_literal_probe_is_terminator(ps->lexer->t.token)) {
         if (typeInfo != ZR_NULL) {
@@ -446,7 +446,7 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
     ps->errorMessage = ZR_NULL;
 
     genericArguments = parse_generic_argument_list(ps);
-    if (genericArguments == ZR_NULL || ps->lexer->hasSourceEvidenceError ||
+    if (genericArguments == ZR_NULL || ps->hasError || ps->lexer->hasSourceEvidenceError ||
         ps->lexer->t.token != ZR_TK_LPAREN) {
         if (genericArguments != ZR_NULL) {
             free_ast_node_array_with_elements(ps->state, genericArguments);

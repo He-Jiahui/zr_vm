@@ -122,12 +122,130 @@ static void test_unknown_operand_does_not_invent_a_resolved_call_target(void) {
     TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, call.targetSymbolId);
 }
 
-/* 独立 CTest cast_operand_facts 经此入口执行四个回归场景。 */
+/* Count synchronous parser error events, never a recovered AST or hasError. */
+typedef struct SZrProbeDiagnostics {
+    TZrUInt32 legacyErrors, structuredErrors, structuredNonErrors, invalidStructured;
+} SZrProbeDiagnostics;
+
+static void capture_probe_legacy_error(TZrPtr userData, const SZrFileRange *location,
+                                       const TZrChar *message, EZrToken token) {
+    SZrProbeDiagnostics *capture = userData;
+    (void)location;
+    (void)message;
+    (void)token;
+    ++capture->legacyErrors;
+}
+
+static void capture_probe_structured_error(TZrPtr userData, const SZrStructuredDiagnostic *diagnostic,
+                                           EZrToken token) {
+    SZrProbeDiagnostics *capture = userData;
+    (void)token;
+    if (diagnostic == ZR_NULL) {
+        ++capture->invalidStructured;
+        return;
+    }
+    switch (diagnostic->severity) {
+        case ZR_STRUCTURED_DIAGNOSTIC_ERROR:
+            ++capture->structuredErrors;
+            break;
+        case ZR_STRUCTURED_DIAGNOSTIC_WARNING:
+        case ZR_STRUCTURED_DIAGNOSTIC_INFO:
+        case ZR_STRUCTURED_DIAGNOSTIC_HINT:
+            ++capture->structuredNonErrors;
+            break;
+        default:
+            ++capture->invalidStructured;
+            break;
+    }
+}
+
+static SZrProbeDiagnostics parse_probe_source(const char *source) {
+    SZrProbeDiagnostics capture = {0};
+    SZrParserState parser = {0};
+    SZrString *uri = ZrCore_String_CreateFromNative(g_state, "cast_probe_recovery.zr");
+    TEST_ASSERT_NOT_NULL(uri);
+    ZrParser_State_Init(&parser, g_state, source, strlen(source), uri);
+    parser.errorCallback = capture_probe_legacy_error;
+    parser.structuredErrorCallback = capture_probe_structured_error;
+    parser.errorUserData = &capture;
+    parser.suppressErrorOutput = ZR_TRUE;
+    /* Parse only. No module resolution, compilation, or evaluation of the input. */
+    g_ast = ZrParser_ParseWithState(&parser);
+    ZrParser_State_Free(&parser);
+    return capture; /* g_ast remains owned by tearDown, including on assertion failure. */
+}
+
+static const SZrAstNode *find_probe_binding(const char *name) {
+    if (g_ast == ZR_NULL || g_ast->type != ZR_AST_SCRIPT) return ZR_NULL;
+    const SZrAstNodeArray *statements = g_ast->data.script.statements;
+    if (statements == ZR_NULL || statements->nodes == ZR_NULL) return ZR_NULL;
+    for (TZrSize i = 0; i < statements->count; ++i) {
+        const SZrAstNode *statement = statements->nodes[i];
+        if (statement == ZR_NULL || statement->type != ZR_AST_VARIABLE_DECLARATION) continue;
+        const SZrAstNode *binding = statement->data.variableDeclaration.pattern;
+        if (binding == ZR_NULL || binding->type != ZR_AST_IDENTIFIER_LITERAL ||
+            binding->data.identifier.name == ZR_NULL) continue;
+        const char *spelling = ZrCore_String_GetNativeString(binding->data.identifier.name);
+        if (spelling != ZR_NULL && strcmp(spelling, name) == 0) return statement;
+    }
+    return ZR_NULL;
+}
+
+static void assert_probe_reports_error(const char *source, TZrBool expectGood) {
+    const SZrProbeDiagnostics capture = parse_probe_source(source);
+    TEST_ASSERT_EQUAL_UINT32(0, capture.invalidStructured);
+    TEST_ASSERT_TRUE_MESSAGE(capture.legacyErrors != 0 || capture.structuredErrors != 0, source);
+    /* Fatal syntax may return no AST. Ordinary recovery must retain the next binding. */
+    if (expectGood && g_ast != ZR_NULL) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(find_probe_binding("good"), "Recovered script lost the trailing good binding");
+    }
+}
+
+static void test_standalone_cast_operand_error_is_reported(void) {
+    assert_probe_reports_error("<int> import(\"ghost\")?.[0]; let good = 1;", ZR_TRUE);
+}
+
+static void test_type_literal_probe_error_is_reported(void) {
+    assert_probe_reports_error("int[zr.import(\"ghost\")]; let good = 1;", ZR_TRUE);
+}
+
+static void test_explicit_generic_call_probe_error_is_reported(void) {
+    assert_probe_reports_error("factory<int[zr.import(\"ghost\")]>(); let good = 1;", ZR_TRUE);
+}
+
+static void test_plain_import_recovery_reports_error(void) {
+    assert_probe_reports_error("let broken = import(\"ghost\") + ; let good = 1;", ZR_TRUE);
+}
+
+static void test_generic_member_expression_reports_invalid_type_argument(void) {
+    /* Whole-expression control, not a claim of a distinct generic-member commit bug. */
+    assert_probe_reports_error("Foo<int[zr.import(\"ghost\")]>.member;", ZR_FALSE);
+}
+
+static void test_valid_cast_has_no_parser_diagnostic(void) {
+    const SZrProbeDiagnostics capture = parse_probe_source("var result = <int> 3.5;");
+    const SZrAstNode *declaration = find_probe_binding("result");
+    TEST_ASSERT_EQUAL_UINT32(0, capture.invalidStructured);
+    TEST_ASSERT_EQUAL_UINT32(0, capture.legacyErrors);
+    TEST_ASSERT_EQUAL_UINT32(0, capture.structuredErrors);
+    TEST_ASSERT_EQUAL_UINT32(0, capture.structuredNonErrors);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_NOT_NULL(declaration->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_CAST_EXPRESSION, declaration->data.variableDeclaration.value->type);
+}
+
+/* 独立 CTest cast_operand_facts 保留原四例，并执行全部新增语法回归。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cast_keeps_operand_type_distinct_from_target_type);
     RUN_TEST(test_nested_casts_publish_each_operand_type);
     RUN_TEST(test_cast_publishes_call_identity_and_original_return_type);
     RUN_TEST(test_unknown_operand_does_not_invent_a_resolved_call_target);
+    RUN_TEST(test_standalone_cast_operand_error_is_reported);
+    RUN_TEST(test_type_literal_probe_error_is_reported);
+    RUN_TEST(test_explicit_generic_call_probe_error_is_reported);
+    RUN_TEST(test_plain_import_recovery_reports_error);
+    RUN_TEST(test_generic_member_expression_reports_invalid_type_argument);
+    RUN_TEST(test_valid_cast_has_no_parser_diagnostic);
     return UNITY_END();
 }
