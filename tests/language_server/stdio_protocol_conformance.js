@@ -1554,6 +1554,89 @@ async function testMalformedFramesCloseWithFailure(serverPath) {
     }
 }
 
+/** C 字符串不可保真的 ID 不得被截成另一个 ID，也不得提前完成 initialize。 */
+async function testDecodedZeroRequestIdentity(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const zero = String.fromCharCode(0);
+        const payload = initializePayload(`json-zero-id${zero}distinct-tail`);
+        assert(JSON.stringify(payload).includes(String.raw`\u0000`),
+               'the request identity control must contain an active JSON zero escape');
+        client.sendPayload(payload);
+        assertErrorEnvelope(await client.nextMessage(RESPONSE_TIMEOUT_MS), null, -32600,
+                            'unrepresentable request identity');
+        await initialize(client, 'initialize-after-rejected-zero-id');
+        client.notify('initialized', {});
+        const literalId = String.raw`literal-id-\u0000-is-text`;
+        const result = await client.request('workspace/symbol', { query: 'NoJsonZeroIdentityFixture' },
+                                            literalId, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(result, literalId, 'literal backslash in an ordinary string ID');
+        assert(Array.isArray(result.result), 'the ordinary request after identity rejection must succeed');
+        const shutdown = await client.request('shutdown', undefined, 'json-zero-id-shutdown', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(shutdown, 'json-zero-id-shutdown', 'identity test shutdown');
+        client.notify('exit', {});
+        assert(await client.waitForExit(RESPONSE_TIMEOUT_MS) === 0, 'identity test server must exit normally');
+    });
+}
+
+/** 原始帧长度必须覆盖全部字节；坏 JSON 是可恢复的 parse error，而非 reader 断链。 */
+async function testUnrepresentableRawString(serverPath, label, rawStringBytes) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, `${label}-initialize`);
+        client.notify('initialized', {});
+        const body = '{"jsonrpc":"2.0","id":"' + label + '","method":"workspace/symbol",' +
+                     '"params":{"query":"before' + rawStringBytes + 'after"}}';
+        client.sendRawFrame(encodeRawJsonFrame(body));
+        assertErrorEnvelope(await client.nextMessage(RESPONSE_TIMEOUT_MS), null, -32700, label);
+        const response = await client.request('workspace/symbol', { query: 'NoJsonZeroFrameFixture' },
+                                               `${label}-next-frame`, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(response, `${label}-next-frame`, `${label} next-frame recovery`);
+        assert(Array.isArray(response.result), `${label}: a following valid frame must produce real results`);
+        const shutdown = await client.request('shutdown', undefined, `${label}-shutdown`, RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(shutdown, `${label}-shutdown`, `${label} shutdown`);
+        client.notify('exit', {});
+        assert(await client.waitForExit(RESPONSE_TIMEOUT_MS) === 0, `${label}: server must exit normally`);
+    });
+}
+
+async function testPhysicalZeroInJsonString(serverPath) {
+    await testUnrepresentableRawString(serverPath, 'physical-zero-json-string', String.fromCharCode(0));
+}
+
+async function testInvalidUnicodeHexInJsonString(serverPath) {
+    await testUnrepresentableRawString(serverPath, 'invalid-unicode-hex-json-string', String.raw`\u00G0`);
+}
+
+/** 不可表示的方法通知既不能被当成 exit，也不能产生意外错误响应。 */
+async function testUnrepresentableMethodNotifications(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'zero-method-initialize');
+        client.notify('initialized', {});
+        const zero = String.fromCharCode(0);
+        for (const [label, prefix] of [['control-prefix', 'exit'], ['empty-prefix', '']]) {
+            client.notify(`${prefix}${zero}not-a-method`, {});
+            const barrierId = `zero-method-${label}-barrier`;
+            const response = await client.request('workspace/symbol', { query: 'NoZeroMethodFixture' },
+                                                   barrierId, RESPONSE_TIMEOUT_MS);
+            assertSuccessEnvelope(response, barrierId, `${label} notification must not stop the reader`);
+            assert(Array.isArray(response.result), `${label} must leave the initialized session usable`);
+            await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        }
+        client.sendPayload({ jsonrpc: '1.0', method: 'unknown-method' });
+        assertErrorEnvelope(await client.nextMessage(RESPONSE_TIMEOUT_MS), null, -32600,
+                            'malformed JSON-RPC version must not become a quiet notification');
+        client.sendPayload({ jsonrpc: '2.0', [`method${zero}tail`]: 'exit' });
+        assertErrorEnvelope(await client.nextMessage(RESPONSE_TIMEOUT_MS), null, -32600,
+                            'an untrustworthy method key is still an invalid envelope');
+        client.sendPayload({ jsonrpc: '2.0', id: null, method: `exit${zero}tail` });
+        assertErrorEnvelope(await client.nextMessage(RESPONSE_TIMEOUT_MS), null, -32600,
+                            'explicit null ID is a request and must retain an error response');
+        const shutdown = await client.request('shutdown', undefined, 'zero-method-shutdown', RESPONSE_TIMEOUT_MS);
+        assertSuccessEnvelope(shutdown, 'zero-method-shutdown', 'method notification shutdown');
+        client.notify('exit', {});
+        assert(await client.waitForExit(RESPONSE_TIMEOUT_MS) === 0, 'method notification test must exit normally');
+    });
+}
+
 /** 供 CTest 与信封变异测试共用用例表，避免两套预期分叉。 */
 function protocolCases() {
     return [
@@ -1612,6 +1695,10 @@ function protocolCases() {
         ['workspace diagnostic partial results', testWorkspaceDiagnosticPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
+        ['decoded zero request identity is not truncated', testDecodedZeroRequestIdentity],
+        ['physical zero JSON string is rejected before dispatch', testPhysicalZeroInJsonString],
+        ['invalid Unicode hex JSON string preserves framing', testInvalidUnicodeHexInJsonString],
+        ['unrepresentable method notifications remain quiet', testUnrepresentableMethodNotifications],
     ];
 }
 

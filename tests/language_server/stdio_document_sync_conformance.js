@@ -115,6 +115,181 @@ function notifyInvalidUtf8DidChange(client, uri, version) {
     client.sendRawFrame(Buffer.concat([header, body]));
 }
 
+// 所有 URI 均属于本组独占临时目录；只经真实子进程的 JSON-RPC 输入观察状态。
+async function testDecodedZeroDocumentInputs(serverPath, encoding) {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-vm-json-zero-'));
+    const rootUri = pathToFileURL(directory).href;
+    const uri = pathToFileURL(path.join(directory, 'buffer.zr')).href;
+    const unopenedUri = pathToFileURL(path.join(directory, 'rejected-open.zr')).href;
+    const suffix = encoding === 'utf-8' ? 'Utf8' : 'Utf16';
+    const zero = String.fromCharCode(0);
+    const originalName = `JsonZeroOriginal${suffix}`;
+    const originalSuffix = `JsonZeroSuffix${suffix}`;
+    const originalText = `class ${originalName} { }\nclass ${originalSuffix} { }\n`;
+    let sequence = 0;
+    const id = (label) => `json-zero-${suffix}-${label}-${++sequence}`;
+
+    try {
+        await withClient(serverPath, async (client) => {
+            const capabilities = await initialize(client, {
+                general: { positionEncodings: [encoding] },
+            }, rootUri);
+            const negotiated = capabilities.positionEncoding === undefined ? 'utf-16' : capabilities.positionEncoding;
+            assert(negotiated === encoding, `JSON zero controls must really negotiate ${encoding}`);
+
+            async function expectClass(name, present = true) {
+                const symbols = await queryWorkspaceSymbols(client, name, id(name));
+                const matches = symbols.filter((symbol) => symbol && symbol.name === name);
+                assert(present ? matches.length === 1 : matches.length === 0,
+                       `${name} presence=${present}, actual=${JSON.stringify(symbols)}`);
+                if (present) {
+                    assert(matches[0].location && matches[0].location.uri === uri,
+                           `${name} must belong to the original document, actual=${JSON.stringify(matches[0])}`);
+                }
+            }
+            async function snapshot(label) {
+                const response = await client.request('workspace/diagnostic', {
+                    previousResultIds: [],
+                }, id(label), RESPONSE_TIMEOUT_MS);
+                assert(response && !response.error && response.result && Array.isArray(response.result.items),
+                       `${label} must return workspace diagnostic state, actual=${JSON.stringify(response)}`);
+                const reports = response.result.items.filter((item) => item && item.uri === uri);
+                assert(reports.length === 1 && reports[0].kind === 'full' && Array.isArray(reports[0].items) &&
+                       typeof reports[0].resultId === 'string' && reports[0].resultId.length !== 0,
+                       `${label} must identify the full open-document snapshot, actual=${JSON.stringify(response)}`);
+                return { version: reports[0].version, resultId: reports[0].resultId };
+            }
+            client.notify('textDocument/didOpen', {
+                textDocument: { uri, languageId: 'zr', version: 1, text: originalText },
+            });
+            await expectClass(originalName);
+            await expectClass(originalSuffix);
+            const before = await snapshot('initial-state');
+            assert(before.version === 1, 'the baseline snapshot must expose client version 1');
+
+            const rejectedOpenName = `JsonZeroRejectedOpen${suffix}`;
+            const badOpenText = `class ${rejectedOpenName} { }${zero}\nclass HiddenOpenTail${suffix} { }`;
+            const badOpen = {
+                textDocument: { uri: unopenedUri, languageId: 'zr', version: 1, text: badOpenText },
+            };
+            assert(JSON.stringify(badOpen).includes(String.raw`\u0000`),
+                   'the normal writer must send an active JSON zero escape, not a physical frame zero');
+            client.notify('textDocument/didOpen', badOpen);
+            // 此正常响应也是通知之后的 FIFO barrier；不能用“通知没回复”代替状态断言。
+            const rejectedOpen = await queryWorkspaceSymbols(client, rejectedOpenName, id('rejected-open'));
+            assert(!rejectedOpen.some((symbol) => symbol && symbol.name === rejectedOpenName),
+                   `didOpen must not register a truncated prefix, actual=${JSON.stringify(rejectedOpen)}`);
+            const cleanOpenName = `JsonZeroCleanOpen${suffix}`;
+            client.notify('textDocument/didOpen', {
+                textDocument: {
+                    uri: unopenedUri, languageId: 'zr', version: 1,
+                    text: `class ${cleanOpenName} { }`,
+                },
+            });
+            const cleanOpen = await queryDocumentSymbols(client, unopenedUri, id('same-version-clean-open'));
+            assert(cleanOpen.some((symbol) => symbol && symbol.name === cleanOpenName),
+                   `a rejected open must not block the first valid open, actual=${JSON.stringify(cleanOpen)}`);
+
+            const beforeFull = await snapshot('before-rejected-full-change');
+            assert(beforeFull.version === 1, 'opening another document must not change the baseline client version');
+            const truncatedName = `JsonZeroTruncatedFull${suffix}`;
+            client.notify('textDocument/didChange', {
+                textDocument: { uri, version: 2 },
+                contentChanges: [{ text: `class ${truncatedName} { }${zero}\nclass HiddenFullTail${suffix} { }` }],
+            });
+            assertContentModified(await queryHover(client, uri, id('full-change-gate')), 'decoded-zero full change');
+            const afterFull = await snapshot('rejected-full-state');
+            assert(JSON.stringify(afterFull) === JSON.stringify(beforeFull),
+                   `rejected full change must preserve version and diagnostic generation, before=${JSON.stringify(beforeFull)} after=${JSON.stringify(afterFull)}`);
+            await expectClass(originalName);
+            await expectClass(originalSuffix);
+            await expectClass(truncatedName, false);
+            // 重用被拒版本，避免只比较相同文本时漏掉客户端版本被偷偷推进。
+            client.notify('textDocument/didChange', {
+                textDocument: { uri, version: 2 }, contentChanges: [{ text: originalText }],
+            });
+            const recovered = await queryDocumentSymbols(client, uri, id('same-version-full-recovery'));
+            assert(recovered.some((symbol) => symbol && symbol.name === originalName),
+                   `valid full text at the rejected version must recover, actual=${JSON.stringify(recovered)}`);
+            const beforeBatch = await snapshot('before-batch');
+            assert(beforeBatch.version === 2, 'only the successful full recovery may advance version');
+
+            const partialName = `JsonZeroPartial${suffix}`;
+            const partialSuffix = `JsonZeroPartialSuffix${suffix}`;
+            client.notify('textDocument/didChange', {
+                textDocument: { uri, version: 3 },
+                contentChanges: [
+                    {
+                        range: { start: { line: 0, character: 6 }, end: { line: 0, character: 6 + originalName.length } },
+                        text: partialName,
+                    },
+                    {
+                        range: { start: { line: 1, character: 6 }, end: { line: 1, character: 6 + originalSuffix.length } },
+                        text: `${partialSuffix}${zero}HiddenReplacementTail`,
+                    },
+                ],
+            });
+            assertContentModified(await queryHover(client, uri, id('batch-change-gate')), 'decoded-zero batch');
+            const afterBatch = await snapshot('rejected-batch-state');
+            assert(JSON.stringify(afterBatch) === JSON.stringify(beforeBatch),
+                   `no part of a rejected batch may publish, before=${JSON.stringify(beforeBatch)} after=${JSON.stringify(afterBatch)}`);
+            await expectClass(originalName);
+            await expectClass(originalSuffix);
+            await expectClass(partialName, false);
+            await expectClass(partialSuffix, false);
+
+            const unicode = String.fromCodePoint(0x10000);
+            const literalName = `JsonZeroLiteral${suffix}`;
+            const literalLine = `let glyph = "${unicode}"; class ${literalName} { }`;
+            const literalText = `// Literal backslash sequence: \\u0000 and an escaped quote: "\n${literalLine}\n`;
+            assert(!literalText.includes(zero) && JSON.stringify(literalText).includes(String.raw`\\u0000`),
+                   'literal backslash-u0000 must remain distinct from an active zero escape');
+            client.notify('textDocument/didChange', {
+                textDocument: { uri, version: 3 }, contentChanges: [{ text: literalText }],
+            });
+            const literalSymbols = await queryDocumentSymbols(client, uri, id('literal-unicode-recovery'));
+            assert(literalSymbols.some((symbol) => symbol && symbol.name === literalName),
+                   `literal escape and U+10000 recovery must succeed, actual=${JSON.stringify(literalSymbols)}`);
+            const end = literalLine.indexOf(literalName) + literalName.length;
+            const character = encoding === 'utf-8' ? Buffer.byteLength(literalLine.slice(0, end), 'utf8') : end;
+            assert(Buffer.byteLength(unicode, 'utf8') === 4 && unicode.length === 2,
+                   'the positive control must actually distinguish UTF-8 bytes and UTF-16 units');
+            client.notify('textDocument/didChange', {
+                textDocument: { uri, version: 4 },
+                contentChanges: [{
+                    range: { start: { line: 1, character }, end: { line: 1, character } },
+                    rangeLength: 0, text: 'AfterUnicode',
+                }],
+            });
+            const unicodeSymbols = await queryDocumentSymbols(client, uri, id('encoded-offset-after-unicode'));
+            assert(unicodeSymbols.some((symbol) => symbol && symbol.name === `${literalName}AfterUnicode`),
+                   `the negotiated offset after U+10000 must be applied exactly, actual=${JSON.stringify(unicodeSymbols)}`);
+            const beforeBadUri = await snapshot('before-invalid-uri');
+            assert(beforeBadUri.version === 4, 'the valid Unicode edit must publish version 4');
+            const badUri = `${uri}${zero}not-the-original-uri`;
+            const badUriResponse = await client.request('textDocument/documentSymbol', {
+                textDocument: { uri: badUri },
+            }, id('unrepresentable-uri'), RESPONSE_TIMEOUT_MS);
+            assert(badUriResponse && badUriResponse.error && badUriResponse.error.code === -32602 &&
+                   !Object.prototype.hasOwnProperty.call(badUriResponse, 'result'),
+                   `an unrepresentable URI must be InvalidParams, actual=${JSON.stringify(badUriResponse)}`);
+            client.notify('textDocument/didClose', { textDocument: { uri: badUri } });
+            const afterBadClose = await queryDocumentSymbols(client, uri, id('prefix-uri-still-open'));
+            assert(afterBadClose.some((symbol) => symbol && symbol.name === `${literalName}AfterUnicode`),
+                   `an invalid URI must not close or desynchronize the original overlay, actual=${JSON.stringify(afterBadClose)}`);
+            const afterBadUri = await snapshot('after-invalid-uri');
+            assert(JSON.stringify(afterBadUri) === JSON.stringify(beforeBadUri),
+                   `invalid URI traffic must preserve the real open snapshot, before=${JSON.stringify(beforeBadUri)} after=${JSON.stringify(afterBadUri)}`);
+            const shutdown = await client.request('shutdown', undefined, id('shutdown'), RESPONSE_TIMEOUT_MS);
+            assert(shutdown && !shutdown.error && shutdown.result === null, 'the conformance session must shut down normally');
+            client.notify('exit', {});
+            assert(await client.waitForExit(RESPONSE_TIMEOUT_MS) === 0, 'the conformance server must exit with status zero');
+        });
+    } finally {
+        fs.rmdirSync(directory);
+    }
+}
+
 // CTest 入口依次核对文档版本、增量原子性、编码边界及关闭/保存后的磁盘回退。
 // 不修改仓内 fixture；唯一磁盘写入由 withTemporaryDiskDocument 限定在系统临时目录。
 async function main() {
@@ -623,6 +798,8 @@ async function main() {
                    `didSave without text must refresh the disk document generation, actual=${JSON.stringify(diskSymbols)}`);
         });
     });
+    await testDecodedZeroDocumentInputs(serverPath, 'utf-16');
+    await testDecodedZeroDocumentInputs(serverPath, 'utf-8');
     console.log('stdio document sync conformance passed');
 }
 
