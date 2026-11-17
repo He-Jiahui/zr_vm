@@ -1,6 +1,248 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_json_builder.h"
 
+/* Only recognize active escapes inside string tokens; cJSON validates the
+ * syntax and supplies the parsed end. Return 1 for a token, 0 for exhaustion,
+ * and -1 for a malformed string escape or boundary. */
+static int stdio_next_json_string(const char **cursor, const char *end, TZrBool *hasNul) {
+    const char *p = (const char *)memchr(*cursor, '"', (size_t)(end - *cursor));
+
+    *hasNul = ZR_FALSE;
+    if (p == NULL) {
+        return 0;
+    }
+    for (++p; p < end; ++p) {
+        if (*p == '"') {
+            *cursor = p + 1;
+            return 1;
+        }
+        if (*p != '\\') {
+            continue;
+        }
+        if (++p == end) {
+            return -1;
+        }
+        if (*p == 'u') {
+            TZrBool isZero = ZR_TRUE;
+
+            if (end - p < 5) {
+                return -1;
+            }
+            for (int i = 1; i <= 4; ++i) {
+                char digit = p[i];
+
+                if (!(digit >= '0' && digit <= '9') &&
+                    !(digit >= 'a' && digit <= 'f') && !(digit >= 'A' && digit <= 'F')) {
+                    return -1;
+                }
+                isZero = isZero && digit == '0';
+            }
+            *hasNul = *hasNul || isZero;
+            p += 4;
+        }
+    }
+    return -1;
+}
+
+enum {
+    ZR_STDIO_NUL_ID = 1U << 0,
+    ZR_STDIO_NUL_ENVELOPE = 1U << 1,
+    ZR_STDIO_NUL_CANCEL_ID = 1U << 2,
+    ZR_STDIO_NUL_URI = 1U << 3,
+    ZR_STDIO_NUL_OPEN_TEXT = 1U << 4,
+    ZR_STDIO_NUL_VERSION = 1U << 5,
+    ZR_STDIO_NUL_CHANGE = 1U << 6,
+    ZR_STDIO_NUL_PARAMS = 1U << 7,
+    ZR_STDIO_NUL_METHOD = 1U << 8,
+};
+
+typedef struct SZrStdioJsonField {
+    const char *name;
+    unsigned int keyIssue;
+    unsigned int stringIssue;
+    const struct SZrStdioJsonField *objectFields;
+    const struct SZrStdioJsonField *arrayItem;
+} SZrStdioJsonField;
+
+/* Version and range keys select when and where document text is committed. */
+static const SZrStdioJsonField stdio_json_edit_position_fields[] = {
+    {ZR_LSP_FIELD_LINE, ZR_STDIO_NUL_CHANGE, 0, NULL, NULL},
+    {ZR_LSP_FIELD_CHARACTER, ZR_STDIO_NUL_CHANGE, 0, NULL, NULL},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_edit_range_fields[] = {
+    {ZR_LSP_FIELD_START, ZR_STDIO_NUL_CHANGE, 0, stdio_json_edit_position_fields, NULL},
+    {ZR_LSP_FIELD_END, ZR_STDIO_NUL_CHANGE, 0, stdio_json_edit_position_fields, NULL},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_edit_fields[] = {
+    {ZR_LSP_FIELD_TEXT, ZR_STDIO_NUL_CHANGE, ZR_STDIO_NUL_CHANGE, NULL, NULL},
+    {ZR_LSP_FIELD_RANGE, ZR_STDIO_NUL_CHANGE, 0, stdio_json_edit_range_fields, NULL},
+    {ZR_LSP_FIELD_RANGE_LENGTH, ZR_STDIO_NUL_CHANGE, 0, NULL, NULL},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_edit_item = {NULL, 0, 0, stdio_json_edit_fields, NULL};
+static const SZrStdioJsonField stdio_json_document_fields[] = {
+    {ZR_LSP_FIELD_URI, ZR_STDIO_NUL_URI, ZR_STDIO_NUL_URI, NULL, NULL},
+    {ZR_LSP_FIELD_TEXT, ZR_STDIO_NUL_OPEN_TEXT, ZR_STDIO_NUL_OPEN_TEXT, NULL, NULL},
+    {ZR_LSP_FIELD_VERSION, ZR_STDIO_NUL_VERSION, 0, NULL, NULL},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_params_fields[] = {
+    {ZR_LSP_JSON_RPC_FIELD_ID, ZR_STDIO_NUL_CANCEL_ID, ZR_STDIO_NUL_CANCEL_ID, NULL, NULL},
+    {ZR_LSP_FIELD_TEXT_DOCUMENT, ZR_STDIO_NUL_URI, 0, stdio_json_document_fields, NULL},
+    {ZR_LSP_FIELD_CONTENT_CHANGES, ZR_STDIO_NUL_CHANGE, 0, NULL, &stdio_json_edit_item},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_envelope_fields[] = {
+    {ZR_LSP_JSON_RPC_FIELD_ID, ZR_STDIO_NUL_ID, ZR_STDIO_NUL_ID, NULL, NULL},
+    {ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_STDIO_NUL_ENVELOPE, ZR_STDIO_NUL_ENVELOPE, NULL, NULL},
+    {ZR_LSP_JSON_RPC_FIELD_METHOD, ZR_STDIO_NUL_ENVELOPE, ZR_STDIO_NUL_METHOD, NULL, NULL},
+    {ZR_LSP_JSON_RPC_FIELD_PARAMS, ZR_STDIO_NUL_PARAMS, 0, stdio_json_params_fields, NULL},
+    {0},
+};
+static const SZrStdioJsonField stdio_json_root = {NULL, 0, 0, stdio_json_envelope_fields, NULL};
+
+/* Bind the raw tokens in cJSON's order: each object key before its value,
+ * array items and siblings in wire order. Recursion follows the parsed tree,
+ * so the parser's nesting limit also bounds this walk. */
+static TZrBool stdio_match_json_strings(const cJSON *node,
+                                        const SZrStdioJsonField *field,
+                                        const char **cursor,
+                                        const char *end,
+                                        unsigned int *issues) {
+    TZrBool hasNul;
+    TZrBool isObject = cJSON_IsObject(node) != 0;
+    unsigned int seen = 0;
+
+    if (cJSON_IsString(node)) {
+        if (node->valuestring == NULL || stdio_next_json_string(cursor, end, &hasNul) != 1) {
+            return ZR_FALSE;
+        }
+        if (hasNul && field != NULL) {
+            *issues |= field->stringIssue;
+        }
+    }
+    for (const cJSON *child = node->child; child != NULL; child = child->next) {
+        const SZrStdioJsonField *childField = NULL;
+
+        if (isObject) {
+            if (child->string == NULL || stdio_next_json_string(cursor, end, &hasNul) != 1) {
+                return ZR_FALSE;
+            }
+            if (field != NULL && field->objectFields != NULL) {
+                const SZrStdioJsonField *fields = field->objectFields;
+
+                /* Case-sensitive lookup consumes the first matching node. A
+                 * truncated key can only flag a collision, never select a
+                 * trusted field or open a path to trusted descendants. */
+                for (unsigned int i = 0; fields[i].name != NULL; ++i) {
+                    unsigned int bit = 1U << i;
+
+                    if ((seen & bit) == 0 && strcmp(child->string, fields[i].name) == 0) {
+                        seen |= bit;
+                        if (hasNul) {
+                            *issues |= fields[i].keyIssue;
+                        } else {
+                            childField = &fields[i];
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if (field != NULL && cJSON_IsArray(node)) {
+            childField = field->arrayItem;
+        }
+        if (!stdio_match_json_strings(child, childField, cursor, end, issues)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+/* Called only after checking the selected identity keys and JSON-RPC version
+ * string for NUL. The attributed method escape proves the string is nonempty
+ * even when its C prefix is empty. Bad params still do not warrant a reply. */
+static TZrBool stdio_bad_method_is_notification(const cJSON *message) {
+    const char *version = cJSON_GetStringValue(
+            cJSON_GetObjectItemCaseSensitive(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC));
+
+    return cJSON_IsObject(message) &&
+           version != NULL && strcmp(version, ZR_LSP_JSON_RPC_VERSION) == 0 &&
+           cJSON_IsString(cJSON_GetObjectItemCaseSensitive(message, ZR_LSP_JSON_RPC_FIELD_METHOD)) &&
+           cJSON_GetObjectItemCaseSensitive(message, ZR_LSP_JSON_RPC_FIELD_ID) == NULL;
+}
+
+static EZrStdioIngressStatus stdio_check_json_ingress(const cJSON *message,
+                                                      const char *payload,
+                                                      const char *parsedEnd) {
+    const char *cursor = payload;
+    TZrBool candidate = ZR_FALSE;
+    TZrBool hasNul;
+    int tokenStatus;
+    unsigned int issues = 0;
+    SZrJsonRpcEnvelope envelope;
+    TZrBool didOpen;
+    TZrBool didChange;
+
+    /* Ignore unparsed trailing input just as ParseWithLength does. Without a
+     * backslash there cannot be a Unicode escape, and without active zero
+     * escapes there is no need to walk the tree. */
+    if (memchr(payload, '\\', (size_t)(parsedEnd - payload)) == NULL) {
+        return ZR_STDIO_INGRESS_OK;
+    }
+    while ((tokenStatus = stdio_next_json_string(&cursor, parsedEnd, &hasNul)) == 1) {
+        candidate = candidate || hasNul;
+    }
+    if (tokenStatus < 0) {
+        return ZR_STDIO_INGRESS_PARSE_ERROR;
+    }
+    if (!candidate) {
+        return ZR_STDIO_INGRESS_OK;
+    }
+
+    cursor = payload;
+    if (!stdio_match_json_strings(message, &stdio_json_root, &cursor, parsedEnd, &issues) ||
+        stdio_next_json_string(&cursor, parsedEnd, &hasNul) != 0 || (issues & ZR_STDIO_NUL_ID) != 0) {
+        return ZR_STDIO_INGRESS_UNSAFE_ID;
+    }
+    if ((issues & ZR_STDIO_NUL_ENVELOPE) != 0) {
+        return ZR_STDIO_INGRESS_INVALID_ENVELOPE;
+    }
+    if ((issues & ZR_STDIO_NUL_METHOD) != 0) {
+        return stdio_bad_method_is_notification(message) ? ZR_STDIO_INGRESS_IGNORE_NOTIFICATION
+                                                        : ZR_STDIO_INGRESS_INVALID_ENVELOPE;
+    }
+    if ((issues & ZR_STDIO_NUL_PARAMS) != 0) {
+        return ZR_STDIO_INGRESS_INVALID_PARAMS;
+    }
+    if (issues == 0 ||
+        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, NULL) != ZR_JSON_RPC_ENVELOPE_OK) {
+        return ZR_STDIO_INGRESS_OK;
+    }
+
+    didOpen = strcmp(envelope.method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_OPEN) == 0;
+    didChange = strcmp(envelope.method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CHANGE) == 0;
+    /* URI rejection wins over edit rejection, so desync cannot use an alias.
+     * Ordinary requests use textDocument for desync/snapshot checks;
+     * initialize and shutdown do not. Only document notifications use it. */
+    if ((issues & ZR_STDIO_NUL_URI) != 0 &&
+        (didOpen || didChange || strcmp(envelope.method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CLOSE) == 0 ||
+         strcmp(envelope.method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE) == 0 ||
+         (envelope.isRequest && strcmp(envelope.method, ZR_LSP_METHOD_INITIALIZE) != 0 &&
+          strcmp(envelope.method, ZR_LSP_METHOD_SHUTDOWN) != 0))) {
+        return ZR_STDIO_INGRESS_INVALID_PARAMS;
+    }
+    if (((issues & ZR_STDIO_NUL_CANCEL_ID) != 0 && strcmp(envelope.method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) ||
+        (didOpen && (issues & (ZR_STDIO_NUL_OPEN_TEXT | ZR_STDIO_NUL_VERSION)) != 0)) {
+        return ZR_STDIO_INGRESS_INVALID_PARAMS;
+    }
+    if (didChange && (issues & (ZR_STDIO_NUL_CHANGE | ZR_STDIO_NUL_VERSION)) != 0) {
+        return ZR_STDIO_INGRESS_INVALID_CHANGE;
+    }
+    return ZR_STDIO_INGRESS_OK;
+}
+
 /* 为响应复制请求 ID；数值 ID 保持 JSON 数值类型，返回树归响应信封。 */
 static cJSON *duplicate_id(const cJSON *id) {
     char number[64];
@@ -66,7 +308,7 @@ static void stdio_request_input_wait(SZrStdioRequestInputState *input) {
 /* 输入线程将 JSON 树及预留结果移交主线程；队列节点和消息由 Take/Free 接管。 */
 static void stdio_request_enqueue(SZrStdioServer *server,
                                   cJSON *message,
-                                  TZrBool isParseError,
+                                  EZrStdioIngressStatus ingressStatus,
                                   EZrStdioRequestReservation requestReservation) {
     SZrStdioInboundMessage *inbound;
     SZrStdioRequestInputState *input;
@@ -85,7 +327,7 @@ static void stdio_request_enqueue(SZrStdioServer *server,
     }
 
     inbound->message = message;
-    inbound->isParseError = isParseError;
+    inbound->ingressStatus = ingressStatus;
     inbound->requestReservation = requestReservation;
     input = &server->requestInput;
     stdio_request_input_lock(input);
@@ -102,24 +344,15 @@ static void stdio_request_enqueue(SZrStdioServer *server,
 }
 
 /* 读线程先分类并预留请求，以便后来到达的取消通知作用于排队或执行中的 ID。 */
-static TZrBool stdio_request_handle_input_message(SZrStdioServer *server, cJSON *message) {
+static TZrBool stdio_request_handle_input_message(SZrStdioServer *server,
+                                                 cJSON *message,
+                                                 EZrStdioIngressStatus ingressStatus) {
     SZrJsonRpcEnvelope envelope;
-    const cJSON *errorId = ZR_NULL;
     EZrStdioRequestReservation requestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
     TZrBool shouldStopReader = ZR_FALSE;
 
-    /* TODO: cJSON 解析返回 NULL 也可能源于分配失败；需核查能否区分内存故障
-     * 与无效 JSON，避免把有效请求错误地报告为 Parse error。 */
-    if (message == NULL) {
-        stdio_request_enqueue(server,
-                              NULL,
-                              ZR_TRUE,
-                              ZR_STDIO_REQUEST_RESERVATION_NONE);
-        return ZR_FALSE;
-    }
-
-    if (ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
-        ZR_JSON_RPC_ENVELOPE_OK) {
+    if (ingressStatus == ZR_STDIO_INGRESS_OK &&
+        ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, NULL) == ZR_JSON_RPC_ENVELOPE_OK) {
         /* 取消走旁路，不受主线程长请求阻塞；ID 只借用本消息直到 Cancel 返回。 */
         if (envelope.isNotification && strcmp(envelope.method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
             const cJSON *id = cJSON_GetObjectItemCaseSensitive(envelope.params,
@@ -136,7 +369,7 @@ static TZrBool stdio_request_handle_input_message(SZrStdioServer *server, cJSON 
             shouldStopReader = ZR_TRUE;
         }
     }
-    stdio_request_enqueue(server, message, ZR_FALSE, requestReservation);
+    stdio_request_enqueue(server, message, ingressStatus, requestReservation);
     return shouldStopReader;
 }
 
@@ -161,6 +394,9 @@ static void stdio_request_read_loop(SZrStdioServer *server) {
         char *payload = NULL;
         TZrSize payloadLength = 0;
         EZrStdioFrameReadStatus frameStatus;
+        EZrStdioIngressStatus ingressStatus = ZR_STDIO_INGRESS_PARSE_ERROR;
+        cJSON *message = NULL;
+        const char *parsedEnd = NULL;
 
         if (stdio_request_input_is_stop_requested(&server->requestInput)) {
             break;
@@ -181,9 +417,19 @@ static void stdio_request_read_loop(SZrStdioServer *server) {
             break;
         }
 
-        cJSON *message = cJSON_ParseWithLength(payload, payloadLength);
+        /* Reject physical zeros in the frame, not the reader's extra NUL.
+         * Keep cJSON's existing flags and report its null result (including
+         * allocation failure) as a parse error, as before. */
+        if (memchr(payload, '\0', payloadLength) == NULL) {
+            message = cJSON_ParseWithLengthOpts(payload, payloadLength, &parsedEnd, 0);
+            if (message != NULL) {
+                ingressStatus = parsedEnd != NULL && parsedEnd > payload && parsedEnd <= payload + payloadLength
+                                        ? stdio_check_json_ingress(message, payload, parsedEnd)
+                                        : ZR_STDIO_INGRESS_UNSAFE_ID;
+            }
+        }
         free(payload);
-        if (stdio_request_handle_input_message(server, message)) {
+        if (stdio_request_handle_input_message(server, message, ingressStatus)) {
             break;
         }
     }
@@ -326,7 +572,7 @@ void ZrLanguageServer_StdioRequestInput_Free(SZrStdioServer *server) {
 /* 主线程领取最早入队消息；关闭后仍先耗尽队列，再以 false 告知主循环退出。 */
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
-                                                 TZrBool *outIsParseError,
+                                                 EZrStdioIngressStatus *outIngressStatus,
                                                  EZrStdioRequestReservation *outRequestReservation) {
     SZrStdioRequestInputState *input;
     SZrStdioInboundMessage *inbound;
@@ -334,14 +580,14 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
     if (outMessage != NULL) {
         *outMessage = NULL;
     }
-    if (outIsParseError != NULL) {
-        *outIsParseError = ZR_FALSE;
+    if (outIngressStatus != NULL) {
+        *outIngressStatus = ZR_STDIO_INGRESS_OK;
     }
     if (outRequestReservation != NULL) {
         *outRequestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
     }
     if (server == NULL || !server->requestInput.isInitialized || outMessage == NULL ||
-        outIsParseError == NULL || outRequestReservation == NULL) {
+        outIngressStatus == NULL || outRequestReservation == NULL) {
         return ZR_FALSE;
     }
 
@@ -364,7 +610,7 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
 
     /* 消息树和预留结果交主线程，节点在此释放；调用方处理后删除 JSON。 */
     *outMessage = inbound->message;
-    *outIsParseError = inbound->isParseError;
+    *outIngressStatus = inbound->ingressStatus;
     *outRequestReservation = inbound->requestReservation;
     free(inbound);
     return ZR_TRUE;

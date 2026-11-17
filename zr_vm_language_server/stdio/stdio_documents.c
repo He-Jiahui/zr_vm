@@ -117,8 +117,7 @@ static TZrBool content_changes_is_single_full_replacement(const cJSON *changes) 
 }
 
 /** @brief 从 textDocument 参数取得 URI，供文档通知与诊断请求共用入口校验。
- * outUriText 借用 params 的 JSON 字符串，outUri 借用服务器 URI 缓存；均不得由调用方释放。
- * BUG: 带 \\u0000 的 JSON URI 未拒绝，缓存层 strcmp/strlen 只见前缀，可能定位另一文档。 */
+ * outUriText 借用 params 的 JSON 字符串，outUri 借用服务器 URI 缓存；均不得由调用方释放。 */
 int get_uri_from_text_document(SZrStdioServer *server,
                                const cJSON *params,
                                const char **outUriText,
@@ -164,8 +163,7 @@ int get_uri_and_position(SZrStdioServer *server,
 }
 
 /** @brief 尝试以客户端全文和版本建立打开文档快照并推送 parser 当前诊断；成功后解除失同步。
- * BUG: 磁盘快照版本可能高于同一连接再次 didOpen 的版本，parser 拒绝提交后旧磁盘文本仍可被查询。
- * BUG: JSON 的 \\u0000 经 cJSON 解码后被 strlen 截断，成功通知却只提交前半段正文。 */
+ * BUG: 磁盘快照版本可能高于同一连接再次 didOpen 的版本，parser 拒绝提交后旧磁盘文本仍可被查询。 */
 int handle_did_open(SZrStdioServer *server, const cJSON *params) {
     const cJSON *textDocument;
     const cJSON *textJson;
@@ -204,6 +202,17 @@ int handle_did_open(SZrStdioServer *server, const cJSON *params) {
     }
     clear_document_desynchronization(server, uri);
     return 1;
+}
+
+/* Ingress has already checked the URI path. Reject the batch without applying
+ * any edits or advancing the version, using the same gate as other failed edits. */
+void reject_did_change_ingress(SZrStdioServer *server, const cJSON *params) {
+    const char *uriText;
+    SZrString *uri;
+
+    if (get_uri_from_text_document(server, params, &uriText, &uri)) {
+        mark_document_desynchronized(server, uri);
+    }
 }
 
 /** @brief 在已打开快照上按顺序提交版本递增的编辑；失败时要求后续全文替换重新同步。

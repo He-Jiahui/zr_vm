@@ -280,7 +280,7 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             const afterBadUri = await snapshot('after-invalid-uri');
             assert(JSON.stringify(afterBadUri) === JSON.stringify(beforeBadUri),
                    `invalid URI traffic must preserve the real open snapshot, before=${JSON.stringify(beforeBadUri)} after=${JSON.stringify(afterBadUri)}`);
-            const shutdown = await client.request('shutdown', null, id('shutdown'), RESPONSE_TIMEOUT_MS);
+            const shutdown = await client.request('shutdown', undefined, id('shutdown'), RESPONSE_TIMEOUT_MS);
             assert(shutdown && !shutdown.error && shutdown.result === null, 'the conformance session must shut down normally');
             client.notify('exit', {});
             assert(await client.waitForExit(RESPONSE_TIMEOUT_MS) === 0, 'the conformance server must exit with status zero');

@@ -90,8 +90,6 @@ SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText) {
         return ZR_NULL;
     }
 
-    /* BUG: JSON 的 URI 字段若含 \u0000，cJSON 解码后本层的 strcmp/strlen 只见
-     * 前缀；不同原始 URI 会碰撞到同一缓存键，随后请求可能定位错误文档。 */
     for (index = 0; index < server->uriCache.count; index++) {
         if (strcmp(server->uriCache.items[index].text, uriText) == 0) {
             return server->uriCache.items[index].value;
@@ -153,7 +151,7 @@ int main(void) {
     /* Take 转移 JSON 树所有权；各错误出口删除树，正常请求完成后再删除。 */
     for (;;) {
         cJSON *message = NULL;
-        TZrBool isParseError = ZR_FALSE;
+        EZrStdioIngressStatus ingressStatus;
         EZrStdioRequestReservation requestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
         SZrJsonRpcEnvelope envelope;
         EZrJsonRpcEnvelopeStatus envelopeStatus;
@@ -163,17 +161,37 @@ int main(void) {
 
         if (!ZrLanguageServer_StdioRequestInput_Take(server,
                                                       &message,
-                                                      &isParseError,
+                                                      &ingressStatus,
                                                       &requestReservation)) {
             break;
         }
 
-        if (isParseError) {
+        if (ingressStatus == ZR_STDIO_INGRESS_PARSE_ERROR) {
             send_error_response(NULL, ZR_LSP_JSON_RPC_PARSE_ERROR_CODE, "Parse error");
+            cJSON_Delete(message);
+            continue;
+        }
+        if (ingressStatus == ZR_STDIO_INGRESS_UNSAFE_ID) {
+            send_error_response(NULL, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
+            cJSON_Delete(message);
+            continue;
+        }
+        if (ingressStatus == ZR_STDIO_INGRESS_IGNORE_NOTIFICATION) {
+            cJSON_Delete(message);
             continue;
         }
 
         envelopeStatus = ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId);
+        if (ingressStatus == ZR_STDIO_INGRESS_INVALID_ENVELOPE) {
+            /* Only the independently checked ID is usable from this envelope. */
+            envelopeStatus = ZR_JSON_RPC_ENVELOPE_INVALID_REQUEST;
+        } else if (ingressStatus != ZR_STDIO_INGRESS_OK && envelopeStatus == ZR_JSON_RPC_ENVELOPE_OK) {
+            envelopeStatus = ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS;
+            if (ingressStatus == ZR_STDIO_INGRESS_INVALID_CHANGE && envelope.isNotification &&
+                ZrLanguageServer_StdioLifecycle_CanProcessRequest(&server->lifecycle)) {
+                reject_did_change_ingress(server, envelope.params);
+            }
+        }
         if (envelopeStatus != ZR_JSON_RPC_ENVELOPE_OK) {
             if (envelopeStatus == ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS && envelope.isNotification) {
                 fprintf(stderr, "Ignoring invalid JSON-RPC notification params for %s\n",

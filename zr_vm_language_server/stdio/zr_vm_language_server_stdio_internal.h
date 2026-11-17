@@ -102,10 +102,21 @@ typedef struct SZrStdioRequestProgress {
     TZrBool workDoneBegan;
 } SZrStdioRequestProgress;
 
+/* Only OK may reach the registry or dispatch; UNSAFE_ID must not echo an ID. */
+typedef enum EZrStdioIngressStatus {
+    ZR_STDIO_INGRESS_OK = 0,
+    ZR_STDIO_INGRESS_PARSE_ERROR,
+    ZR_STDIO_INGRESS_UNSAFE_ID,
+    ZR_STDIO_INGRESS_INVALID_ENVELOPE,
+    ZR_STDIO_INGRESS_INVALID_PARAMS,
+    ZR_STDIO_INGRESS_INVALID_CHANGE,
+    ZR_STDIO_INGRESS_IGNORE_NOTIFICATION,
+} EZrStdioIngressStatus;
+
 /* 读线程入队、主线程 Take 的转移单元；message 和预留结果保持同帧配对。 */
 typedef struct SZrStdioInboundMessage {
     cJSON *message;
-    TZrBool isParseError;
+    EZrStdioIngressStatus ingressStatus;
     EZrStdioRequestReservation requestReservation;
     struct SZrStdioInboundMessage *next;
 } SZrStdioInboundMessage;
@@ -186,7 +197,7 @@ void ZrLanguageServer_StdioRequestInput_Join(SZrStdioServer *server);
 void ZrLanguageServer_StdioRequestInput_Free(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
-                                                 TZrBool *outIsParseError,
+                                                 EZrStdioIngressStatus *outIngressStatus,
                                                  EZrStdioRequestReservation *outRequestReservation);
 void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const cJSON *id);
 TZrBool ZrLanguageServer_StdioRequestInput_IsActiveCancelled(SZrStdioServer *server);
@@ -339,6 +350,7 @@ TZrBool document_is_desynchronized(SZrStdioServer *server, SZrString *uri);
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri);
 int handle_did_open(SZrStdioServer *server, const cJSON *params);
 int handle_did_change(SZrStdioServer *server, const cJSON *params);
+void reject_did_change_ingress(SZrStdioServer *server, const cJSON *params);
 int handle_did_close(SZrStdioServer *server, const cJSON *params);
 int handle_did_save(SZrStdioServer *server, const cJSON *params);
 void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params);
