@@ -134,8 +134,8 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             const capabilities = await initialize(client, {
                 general: { positionEncodings: [encoding] },
             }, rootUri);
-            assert((capabilities.positionEncoding || 'utf-16') === encoding,
-                   `JSON zero controls must really negotiate ${encoding}`);
+            const negotiated = capabilities.positionEncoding === undefined ? 'utf-16' : capabilities.positionEncoding;
+            assert(negotiated === encoding, `JSON zero controls must really negotiate ${encoding}`);
 
             async function expectClass(name, present = true) {
                 const symbols = await queryWorkspaceSymbols(client, name, id(name));
@@ -154,8 +154,9 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
                 assert(response && !response.error && response.result && Array.isArray(response.result.items),
                        `${label} must return workspace diagnostic state, actual=${JSON.stringify(response)}`);
                 const reports = response.result.items.filter((item) => item && item.uri === uri);
-                assert(reports.length === 1 && typeof reports[0].resultId === 'string',
-                       `${label} must identify the open document snapshot, actual=${JSON.stringify(response)}`);
+                assert(reports.length === 1 && reports[0].kind === 'full' && Array.isArray(reports[0].items) &&
+                       typeof reports[0].resultId === 'string' && reports[0].resultId.length !== 0,
+                       `${label} must identify the full open-document snapshot, actual=${JSON.stringify(response)}`);
                 return { version: reports[0].version, resultId: reports[0].resultId };
             }
             client.notify('textDocument/didOpen', {
@@ -263,6 +264,8 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             const unicodeSymbols = await queryDocumentSymbols(client, uri, id('encoded-offset-after-unicode'));
             assert(unicodeSymbols.some((symbol) => symbol && symbol.name === `${literalName}AfterUnicode`),
                    `the negotiated offset after U+10000 must be applied exactly, actual=${JSON.stringify(unicodeSymbols)}`);
+            const beforeBadUri = await snapshot('before-invalid-uri');
+            assert(beforeBadUri.version === 4, 'the valid Unicode edit must publish version 4');
             const badUri = `${uri}${zero}not-the-original-uri`;
             const badUriResponse = await client.request('textDocument/documentSymbol', {
                 textDocument: { uri: badUri },
@@ -274,6 +277,9 @@ async function testDecodedZeroDocumentInputs(serverPath, encoding) {
             const afterBadClose = await queryDocumentSymbols(client, uri, id('prefix-uri-still-open'));
             assert(afterBadClose.some((symbol) => symbol && symbol.name === `${literalName}AfterUnicode`),
                    `an invalid URI must not close or desynchronize the original overlay, actual=${JSON.stringify(afterBadClose)}`);
+            const afterBadUri = await snapshot('after-invalid-uri');
+            assert(JSON.stringify(afterBadUri) === JSON.stringify(beforeBadUri),
+                   `invalid URI traffic must preserve the real open snapshot, before=${JSON.stringify(beforeBadUri)} after=${JSON.stringify(afterBadUri)}`);
             const shutdown = await client.request('shutdown', null, id('shutdown'), RESPONSE_TIMEOUT_MS);
             assert(shutdown && !shutdown.error && shutdown.result === null, 'the conformance session must shut down normally');
             client.notify('exit', {});
