@@ -18,6 +18,10 @@
 #include "zr_vm_parser/semantic_query.h"
 
 #include "compiler/compiler_internal.h"
+#if defined(ZR_CANONICAL_CONSUMERS_HAVE_SYSTEM)
+#include "zr_vm_lib_system/module.h"
+#include "zr_vm_library/native_registry.h"
+#endif
 
 #define CONSUMER_TYPE_ID ((TZrUInt32)41u)
 #define CONSUMER_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 41u)
@@ -641,6 +645,158 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     consumer_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
     ZrParser_Ast_Free(g_state, ast);
+}
+
+static void consumer_assert_member_call_mappings(
+        SZrCompilerState *cs, SZrString *sourceName, const char *source,
+        const char *invocation, TZrSize count, const TZrSize *parameterIndexes,
+        const EZrValueType *argumentTypes, const EZrValueType *parameterTypes,
+        TZrBool named) {
+    const char *call = strstr(source, invocation);
+    const char *arguments;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    const SZrAstNode *occurrence;
+    const SZrSemanticReferenceFact *direct;
+    TZrSize index;
+    TEST_ASSERT_NOT_NULL(call);
+    arguments = strchr(call, '(');
+    TEST_ASSERT_NOT_NULL(arguments);
+    position = consumer_range((TZrSize)(arguments - source + 1),
+                              (TZrSize)(arguments - source + 1));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE_MESSAGE(ZrParser_SemanticQuery_CallAt(cs->semanticContext, position, ZR_NULL, &query), invocation);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_NULL(query.reference);
+    TEST_ASSERT_NOT_NULL(query.argumentMappings);
+    TEST_ASSERT_TRUE(query.argumentMappings->isValid);
+    TEST_ASSERT_EQUAL_UINT(count, query.argumentMappings->length);
+    /* The native invocation identity must own the same complete map, not just
+     * a second callee-label fact that leaves the first queried fact empty. */
+    occurrence = ZR_NULL;
+    for (index = 0; index < cs->semanticContext->referenceFacts.length; ++index) {
+        const SZrSemanticReferenceFact *fact = ZrCore_Array_Get(&cs->semanticContext->referenceFacts, index);
+        if (fact != ZR_NULL && fact->kind == ZR_SEMANTIC_REFERENCE_CALL && fact->node != ZR_NULL &&
+            fact->node->type == ZR_AST_FUNCTION_CALL &&
+            fact->node->location.start.offset == (TZrSize)(arguments - source)) {
+            occurrence = fact->node;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(occurrence);
+    direct = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, occurrence, ZR_SEMANTIC_REFERENCE_CALL);
+    TEST_ASSERT_NOT_NULL(direct);
+    TEST_ASSERT_TRUE(direct->argumentMappings.isValid);
+    TEST_ASSERT_EQUAL_UINT(count, direct->argumentMappings.length);
+    for (index = 0; index < count; ++index) {
+        const SZrSemanticCallArgumentFact *mapping = ZrCore_Array_Get((SZrArray *)query.argumentMappings, index);
+        const SZrSemanticCallArgumentFact *directMapping = ZrCore_Array_Get((SZrArray *)&direct->argumentMappings, index);
+        const SZrCanonicalTypeNode *from, *to;
+        TEST_ASSERT_NOT_NULL(mapping);
+        TEST_ASSERT_NOT_NULL(directMapping);
+        TEST_ASSERT_EQUAL_UINT(index, mapping->argumentIndex);
+        TEST_ASSERT_EQUAL_UINT(parameterIndexes[index], mapping->parameterIndex);
+        TEST_ASSERT_EQUAL_INT(named, mapping->isNamed);
+        TEST_ASSERT_EQUAL_INT(ZR_PARAMETER_PASSING_MODE_VALUE, mapping->passingMode);
+        TEST_ASSERT_EQUAL_UINT32(mapping->argumentTypeId, directMapping->argumentTypeId);
+        TEST_ASSERT_EQUAL_UINT32(mapping->parameterTypeId, directMapping->parameterTypeId);
+        from = ZrParser_CanonicalType_Find(cs->semanticContext, mapping->argumentTypeId);
+        to = ZrParser_CanonicalType_Find(cs->semanticContext, mapping->parameterTypeId);
+        TEST_ASSERT_NOT_NULL(from);
+        TEST_ASSERT_NOT_NULL(to);
+        TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, from->kind);
+        TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, to->kind);
+        TEST_ASSERT_EQUAL_INT(argumentTypes[index], from->data.primitive.valueType);
+        TEST_ASSERT_EQUAL_INT(parameterTypes[index], to->data.primitive.valueType);
+        TEST_ASSERT_EQUAL_INT(mapping->argumentTypeId == mapping->parameterTypeId
+                ? ZR_SEMANTIC_CALL_CONVERSION_EXACT : ZR_SEMANTIC_CALL_CONVERSION_IMPLICIT, mapping->conversion);
+        TEST_ASSERT_TRUE(mapping->argumentRange.start.offset >= (TZrSize)(arguments - source + 1));
+        TEST_ASSERT_TRUE(mapping->argumentRange.end.offset <= query.callSiteRange.end.offset);
+    }
+}
+
+static void test_member_calls_publish_actual_argument_mappings(void) {
+    const char *source =
+            "class Calculator {\n"
+            "  pub static fn scale(value: float, offset: int): float { return value + offset; }\n"
+            "  pub fn text(value: string): string { return value; }\n"
+            "  pub fn echo<T>(value: T): T { return value; }\n"
+            "}\n"
+            "fn scaled(): float { return Calculator.scale(4, 0); }\n"
+            "fn textResult(calculator: Calculator): string { return calculator.text(\"ok\"); }\n"
+            "fn echoed(calculator: Calculator): int { return calculator.echo(7); }\n";
+    const TZrSize first[] = {0}, positional[] = {0, 1};
+    const EZrValueType integer[] = {ZR_VALUE_TYPE_INT64, ZR_VALUE_TYPE_INT64};
+    const EZrValueType floating[] = {ZR_VALUE_TYPE_DOUBLE, ZR_VALUE_TYPE_INT64};
+    const EZrValueType string[] = {ZR_VALUE_TYPE_STRING};
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "canonical_member_mappings.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage != ZR_NULL ? cs.errorMessage : "member call compile failed");
+    consumer_assert_member_call_mappings(&cs, sourceName, source, "Calculator.scale(4, 0)", 2, positional, integer, floating, ZR_FALSE);
+    consumer_assert_member_call_mappings(&cs, sourceName, source, "calculator.text(\"ok\")", 1, first, string, string, ZR_FALSE);
+    consumer_assert_member_call_mappings(&cs, sourceName, source, "calculator.echo(7)", 1, first, integer, integer, ZR_FALSE);
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_member_call_mappings_preserve_argument_type_errors(void) {
+    const char *source =
+            "class Calculator { pub static fn scale(value: float): float { return value; } }\n"
+            "Calculator.scale(\"not a number\");\n";
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "canonical_member_mapping_error.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_native_member_call_publishes_actual_argument_mapping(void) {
+#if defined(ZR_CANONICAL_CONSUMERS_HAVE_SYSTEM)
+    const char *source = "let env = import(\"zr.system.env\"); fn useEnv(): string { return env.getVariable(\"PATH\"); }\n";
+    const TZrSize first[] = {0};
+    const EZrValueType string[] = {ZR_VALUE_TYPE_STRING};
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "canonical_native_member_mappings.zr");
+    SZrAstNode *ast;
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(g_state->global));
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage != ZR_NULL ? cs.errorMessage : "native member compile failed");
+    consumer_assert_member_call_mappings(&cs, sourceName, source, "env.getVariable(\"PATH\")", 1, first, string, string, ZR_FALSE);
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+    ZrLibrary_NativeRegistry_Free(g_state->global);
+#else
+    TEST_IGNORE_MESSAGE("System native descriptor target is disabled");
+#endif
 }
 
 static void test_source_constructors_publish_canonical_call_contracts(void) {
@@ -1716,6 +1872,9 @@ int main(void) {
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
+    RUN_TEST(test_member_calls_publish_actual_argument_mappings);
+    RUN_TEST(test_member_call_mappings_preserve_argument_type_errors);
+    RUN_TEST(test_native_member_call_publishes_actual_argument_mapping);
     RUN_TEST(test_source_constructors_publish_canonical_call_contracts);
     RUN_TEST(test_source_super_constructor_publishes_canonical_call_contract);
     RUN_TEST(test_callable_value_call_publishes_canonical_contract);
