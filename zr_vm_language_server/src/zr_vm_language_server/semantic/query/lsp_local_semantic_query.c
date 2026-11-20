@@ -94,7 +94,8 @@ static TZrBool local_query_range_contains_position(SZrFileRange range, SZrFileRa
         endOffset = startOffset;
     }
 
-    return queryOffset >= startOffset && queryOffset <= endOffset;
+    return queryOffset >= startOffset &&
+           (queryOffset < endOffset || (startOffset == endOffset && queryOffset == endOffset));
 }
 
 /* 同一光标命中多个事实时以较窄范围优先，供数值/所有权事实回退选择。 */
@@ -241,7 +242,8 @@ static const SZrSemanticExpressionFact *local_query_find_payload_expression_fact
             local_query_range_contains_position(fact->callTargetRange, queryRange)) {
             containsPayload = ZR_TRUE;
         }
-        if (fact->hasMemberInfo &&
+        /* A computed property's range belongs to the key expression, not the member name. */
+        if (fact->hasMemberInfo && !fact->memberIsComputed &&
             local_query_range_contains_position(fact->memberRange, queryRange)) {
             containsPayload = ZR_TRUE;
         }

@@ -1967,6 +1967,10 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
     query->resolvedMember.declarationUri = externalDeclaration.declarationUri;
     query->resolvedMember.declarationRange = externalDeclaration.declarationRange;
     query->resolvedMember.hasDeclaration = externalDeclaration.hasDeclaration;
+    /* This resolver matched a declaration in the requested document itself. */
+    if (ZrLanguageServer_Lsp_StringsEqual(externalDeclaration.declarationRange.source, uri)) {
+        query->queryRange = externalDeclaration.declarationRange;
+    }
     preciseMemberDeclarationUri = externalDeclaration.declarationUri;
     preciseMemberDeclarationRange = externalDeclaration.declarationRange;
     hasPreciseMemberDeclaration = externalDeclaration.memberName != ZR_NULL && externalDeclaration.hasDeclaration;
@@ -2090,6 +2094,7 @@ static TZrBool semantic_query_resolve_external_metadata_type_member_declaration_
         return ZR_FALSE;
     }
 
+    query->queryRange = query->resolvedMember.declarationRange;
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER;
     query->moduleName = query->resolvedMember.module.moduleName;
     query->memberName = query->resolvedMember.memberName;
@@ -2621,23 +2626,54 @@ static void semantic_query_append_stable_slot_hover(
     }
 }
 
+/* Only token spans from the queried document can replace the request position. */
+static TZrBool semantic_query_hover_range_contains_cursor(
+        const SZrLspSemanticQuery *query, SZrFileRange range) {
+    TZrSize offset = query->queryRange.start.offset;
+    return ZrLanguageServer_Lsp_StringsEqual(range.source, query->uri) &&
+           range.start.offset <= offset && offset < range.end.offset;
+}
+
+static SZrFileRange semantic_query_hover_reference_range(const SZrLspSemanticQuery *query) {
+    if (query->hasCanonicalSymbol &&
+        semantic_query_hover_range_contains_cursor(query, query->canonicalReferenceRange)) {
+        return query->canonicalReferenceRange;
+    }
+
+    /* Native receiver metadata can resolve even when the use has no canonical reference,
+     * e.g. a field in a loop condition. Take only the matched AST token's range, not its type. */
+    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER &&
+        query->analyzer != ZR_NULL && query->queryRange.start.offset != 0U) {
+        const SZrAstNode *token = ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
+                query->analyzer->ast, query->queryRange);
+        if (token != ZR_NULL && token->type == ZR_AST_IDENTIFIER_LITERAL &&
+            ZrLanguageServer_Lsp_StringsEqual(token->data.identifier.name, query->memberName) &&
+            semantic_query_hover_range_contains_cursor(query, token->location)) {
+            return token->location;
+        }
+    }
+    return query->queryRange;
+}
+
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrState *state,
                                                                             SZrLspContext *context,
                                                                             SZrLspSemanticQuery *query,
                                                                             SZrLspHover **result) {
     SZrLspMetadataProvider provider;
+    SZrFileRange hoverRange;
 
     if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL ||
         !semantic_query_document_version_is_current(state, context, query)) {
         return ZR_FALSE;
     }
+    hoverRange = semantic_query_hover_reference_range(query);
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER) {
         ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
         return ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(&provider,
                                                                              query->analyzer,
                                                                              &query->resolvedMember,
-                                                                             query->queryRange,
+                                                                             hoverRange,
                                                                              result);
     }
 
@@ -2647,7 +2683,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
             return ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(&provider,
                                                                                  query->analyzer,
                                                                                  &query->resolvedMember,
-                                                                                 query->queryRange,
+                                                                                 hoverRange,
                                                                                  result);
         }
         return ZrLanguageServer_LspMetadataProvider_CreateImportedModuleHover(&provider,
@@ -2661,7 +2697,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
         return ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(&provider,
                                                                              query->analyzer,
                                                                              &query->resolvedMember,
-                                                                             query->queryRange,
+                                                                             hoverRange,
                                                                              result);
     }
 

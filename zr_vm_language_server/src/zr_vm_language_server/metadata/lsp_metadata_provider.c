@@ -2181,7 +2181,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                 return metadata_provider_create_hover(
                         provider,
                         content,
-                        resolvedMember->hasDeclaration ? resolvedMember->declarationRange : range,
+                        range,
                         result);
             case ZR_LSP_METADATA_MEMBER_METHOD: {
                 SZrParserSemanticCallQuery callQuery;
@@ -2285,7 +2285,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
 
     return metadata_provider_create_hover(provider,
                                           content,
-                                          resolvedMember->hasDeclaration ? resolvedMember->declarationRange : range,
+                                          range,
                                           result);
 }
 
