@@ -530,6 +530,227 @@ static void test_aot_llvm_meta_call_consumes_binding(void) {
             "aot_llvm_meta_binding_loader", ZR_AOT_BACKEND_KIND_LLVM, 0u, 0u, 0u);
 }
 
+/* 在独立 state 中用解释器执行同一源码，记录原始返回值作为 AOT 对照。 */
+static void run_interpreter_reference(const char *source, SZrTypeValue *result) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, result));
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+/* 按值标签比较原始返回值；只比较与该标签相符的 union 视图。 */
+static void assert_same_primitive_result(const SZrTypeValue *expected, const SZrTypeValue *actual) {
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)expected->type, (TZrUInt32)actual->type);
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(expected->type)) {
+        TEST_ASSERT_EQUAL_INT64(expected->value.nativeObject.nativeInt64, actual->value.nativeObject.nativeInt64);
+    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(expected->type)) {
+        TEST_ASSERT_EQUAL_UINT64(expected->value.nativeObject.nativeUInt64, actual->value.nativeObject.nativeUInt64);
+    } else if (ZR_VALUE_IS_TYPE_FLOAT(expected->type)) {
+        TEST_ASSERT_EQUAL_DOUBLE(expected->value.nativeObject.nativeDouble, actual->value.nativeObject.nativeDouble);
+    } else if (ZR_VALUE_IS_TYPE_BOOL(expected->type)) {
+        TEST_ASSERT_EQUAL(expected->value.nativeObject.nativeBool != 0u, actual->value.nativeObject.nativeBool != 0u);
+    } else {
+        TEST_FAIL_MESSAGE("conversion case must return a primitive value");
+    }
+}
+
+/* E-U1: 动态转换在内建原生 meta 上执行；AOT 后端结果必须与解释器一致。 */
+static void assert_aot_conversion_matches_interpreter(const char *source, const char *artifactSuite,
+        EZrAotBackendKind backend) {
+#if !defined(ZR_PLATFORM_UNIX)
+    (void)source;
+    (void)artifactSuite;
+    (void)backend;
+    TEST_IGNORE_MESSAGE("AOT conversion meta test currently validates the Unix shared-library loader path");
+#else
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-conversion-meta\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state;
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue expected;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char command[4096];
+
+    ZrCore_Value_ResetAsNull(&expected);
+    run_interpreter_reference(source, &expected);
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project", "aot_conversion_meta",
+                                                       ".zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project/src", "main", ".zr",
+                                                       sourcePath, sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project/bin", "main", ".zro",
+                                                       zroPath, sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite,
+                                                       backend == ZR_AOT_BACKEND_KIND_C ? "runtime_project/bin/aot_c/src" : "runtime_project/bin/aot_llvm/src",
+                                                       "main",
+                                                       backend == ZR_AOT_BACKEND_KIND_C ? ".c" : ".ll",
+                                                       generatedPath,
+                                                       sizeof(generatedPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite,
+                                                       backend == ZR_AOT_BACKEND_KIND_C ? "runtime_project/bin/aot_c/lib" : "runtime_project/bin/aot_llvm/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(backend == ZR_AOT_BACKEND_KIND_C
+            ? ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedPath, &aotOptions)
+            : ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, generatedPath, &aotOptions));
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" %s -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+             "-o \"%s\"",
+             backend == ZR_AOT_BACKEND_KIND_C ? ZR_VM_TESTS_C_COMPILER : "clang",
+             backend == ZR_AOT_BACKEND_KIND_C ? "-std=c11" : ZR_VM_TESTS_LLVM_POINTER_FLAGS,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          backend == ZR_AOT_BACKEND_KIND_C ? ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C : ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    {
+        TZrBool executed = ZrLibrary_AotRuntime_ExecuteEntry(state, backend, &result);
+        if (!executed) fprintf(stderr, "conversion meta AOT failure (%s): %s\n", artifactSuite,
+                ZrLibrary_AotRuntime_GetLastError(state->global));
+        TEST_ASSERT_TRUE_MESSAGE(executed, ZrLibrary_AotRuntime_GetLastError(state->global));
+    }
+    TEST_ASSERT_EQUAL_INT(backend == ZR_AOT_BACKEND_KIND_C ? ZR_LIBRARY_EXECUTED_VIA_AOT_C : ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+    assert_same_primitive_result(&expected, &result);
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+/* T-E1: toArray 产生的无符号元素经泛型 TO_INT 走内建原生 meta。 */
+#define ZR_E_U1_TO_ARRAY_TO_INT_SOURCE \
+    "var s = \"A\"; var bytes = s.toArray(); if (<int>bytes[0] != 65) { throw 3; } return 42;"
+/* T-E2: 无类型形参使 <int>x 保持泛型 TO_INT，覆盖整数与浮点接收者。 */
+#define ZR_E_U1_DYNAMIC_TO_INT_SOURCE "fn f(x) { return <int>x; } return f(40) + f(2.9);"
+/* T-E3: 同族的泛型 TO_BOOL / TO_UINT / TO_FLOAT 在数值接收者上的结果。 */
+#define ZR_E_U1_DYNAMIC_TO_BOOL_SOURCE "fn b(x) { return <bool>x; } return b(7);"
+#define ZR_E_U1_DYNAMIC_TO_UINT_SOURCE "fn u(x) { return <uint>x; } return u(42);"
+#define ZR_E_U1_DYNAMIC_TO_FLOAT_SOURCE "fn g(x) { return <float>x; } return g(42);"
+
+/* T-E1 (C): 生成 C 内联转换，作为同源对照。 */
+static void test_aot_c_to_array_element_to_int_matches_interpreter(void) {
+    SZrTypeValue expected;
+    run_interpreter_reference(ZR_E_U1_TO_ARRAY_TO_INT_SOURCE, &expected);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(expected.type));
+    TEST_ASSERT_EQUAL_INT64(42, expected.value.nativeObject.nativeInt64);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_TO_ARRAY_TO_INT_SOURCE,
+            "aot_c_e_u1_to_array_to_int", ZR_AOT_BACKEND_KIND_C);
+}
+
+/* T-E1 (LLVM): ToInt 先查到原生 meta，记录查找不得把原生闭包当 VM 函数读取。 */
+static void test_aot_llvm_to_array_element_to_int_skips_native_meta_lookup(void) {
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_TO_ARRAY_TO_INT_SOURCE,
+            "aot_llvm_e_u1_to_array_to_int", ZR_AOT_BACKEND_KIND_LLVM);
+}
+
+/* T-E2 (C): 动态 <int>x 同源对照。 */
+static void test_aot_c_dynamic_to_int_matches_interpreter(void) {
+    SZrTypeValue expected;
+    run_interpreter_reference(ZR_E_U1_DYNAMIC_TO_INT_SOURCE, &expected);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(expected.type));
+    TEST_ASSERT_EQUAL_INT64(42, expected.value.nativeObject.nativeInt64);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_INT_SOURCE,
+            "aot_c_e_u1_dynamic_to_int", ZR_AOT_BACKEND_KIND_C);
+}
+
+/* T-E2 (LLVM): 动态 <int>x 在整数与浮点上经原生 meta 回退调用。 */
+static void test_aot_llvm_dynamic_to_int_skips_native_meta_lookup(void) {
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_INT_SOURCE,
+            "aot_llvm_e_u1_dynamic_to_int", ZR_AOT_BACKEND_KIND_LLVM);
+}
+
+/* T-E3 (C): 同族转换同源对照。 */
+static void test_aot_c_dynamic_bool_uint_float_match_interpreter(void) {
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_BOOL_SOURCE,
+            "aot_c_e_u1_dynamic_to_bool", ZR_AOT_BACKEND_KIND_C);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_UINT_SOURCE,
+            "aot_c_e_u1_dynamic_to_uint", ZR_AOT_BACKEND_KIND_C);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_FLOAT_SOURCE,
+            "aot_c_e_u1_dynamic_to_float", ZR_AOT_BACKEND_KIND_C);
+}
+
+/* T-E3 (LLVM): ToBool / ToUInt / ToFloat 同样先查 meta，结果须与解释器一致。 */
+static void test_aot_llvm_dynamic_bool_uint_float_skip_native_meta_lookup(void) {
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_BOOL_SOURCE,
+            "aot_llvm_e_u1_dynamic_to_bool", ZR_AOT_BACKEND_KIND_LLVM);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_UINT_SOURCE,
+            "aot_llvm_e_u1_dynamic_to_uint", ZR_AOT_BACKEND_KIND_LLVM);
+    assert_aot_conversion_matches_interpreter(ZR_E_U1_DYNAMIC_TO_FLOAT_SOURCE,
+            "aot_llvm_e_u1_dynamic_to_float", ZR_AOT_BACKEND_KIND_LLVM);
+}
+
 #include "call_binding_aot_module_cases.h"
 
 int main(void) {
@@ -546,5 +767,11 @@ int main(void) {
     RUN_TEST(test_aot_imported_static_method_uses_provider_thunk);
     RUN_TEST(test_aot_imported_function_preserves_module_capture);
     RUN_TEST(test_aot_llvm_imports_provider_without_internal_bindings);
+    RUN_TEST(test_aot_c_to_array_element_to_int_matches_interpreter);
+    RUN_TEST(test_aot_c_dynamic_to_int_matches_interpreter);
+    RUN_TEST(test_aot_c_dynamic_bool_uint_float_match_interpreter);
+    RUN_TEST(test_aot_llvm_to_array_element_to_int_skips_native_meta_lookup);
+    RUN_TEST(test_aot_llvm_dynamic_to_int_skips_native_meta_lookup);
+    RUN_TEST(test_aot_llvm_dynamic_bool_uint_float_skip_native_meta_lookup);
     return UNITY_END();
 }

@@ -1700,6 +1700,12 @@ static TZrUInt32 aot_runtime_find_function_index_in_record(const SZrLibraryAotLo
         return UINT32_MAX;
     }
 
+    /* Native metas and closures are stored in SZrFunction* fields; they are never
+     * members of a generated function table and must not be read as VM functions. */
+    if (function->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION || function->super.isNative) {
+        return UINT32_MAX;
+    }
+
     for (TZrUInt32 index = 0; index < record->functionCount; index++) {
         const SZrFunction *candidate = record->functionTable[index];
         if (candidate == function || aot_runtime_functions_equivalent(candidate, function)) {
