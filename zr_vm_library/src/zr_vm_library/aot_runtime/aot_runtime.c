@@ -1701,14 +1701,15 @@ static TZrUInt32 aot_runtime_find_function_index_in_record(const SZrLibraryAotLo
     }
 
     /* Native metas and closures are stored in SZrFunction* fields; they are never
-     * members of a generated function table and must not be read as VM functions. */
-    if (function->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION || function->super.isNative) {
-        return UINT32_MAX;
-    }
+     * members of a generated function table and must not be read as VM functions.
+     * Pointer identity never dereferences `function`, so a table member always
+     * matches itself; only the field-reading equivalence match needs the guard. */
+    const TZrBool isVmFunction =
+            function->super.type == ZR_RAW_OBJECT_TYPE_FUNCTION && !function->super.isNative;
 
     for (TZrUInt32 index = 0; index < record->functionCount; index++) {
         const SZrFunction *candidate = record->functionTable[index];
-        if (candidate == function || aot_runtime_functions_equivalent(candidate, function)) {
+        if (candidate == function || (isVmFunction && aot_runtime_functions_equivalent(candidate, function))) {
             return index;
         }
     }
