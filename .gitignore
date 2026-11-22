@@ -138,3 +138,6 @@ compile_commands.json
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# macOS Finder metadata
+.DS_Store
