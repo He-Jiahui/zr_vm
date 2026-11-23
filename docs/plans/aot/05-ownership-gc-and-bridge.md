@@ -44,13 +44,21 @@
 - `intoGc(owner)` 在 SemIR 中保留 `Unique<Resource>` source Place，并以
   `ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX` 表示消费；active loan 和 Shared 输入在 frontend
   被拒绝。
-- ExecBC 继续使用稳定 `OWN_DETACH` 槽，但 VM helper 优先执行
-  `ZrCore_Ownership_IntoGcBoxValue`。C/LLVM AOT 共用的 OwnDetach runtime helper按同一顺序先
-  尝试 IntoGcBox，再进入 legacy Detach；合同测试精确验证 helper 定义、调用与顺序。
+- 当前 source 的 `intoGc(owner)` 在 ExecBC 中发出专用 `OWN_INTO_GC_BOX` 槽：VM 只调用
+  `ZrCore_Ownership_IntoGcBoxValue`，C/LLVM AOT 调用 `ZrLibrary_AotRuntime_OwnIntoGcBox`。
+- `OWN_DETACH` 槽与 `ZrLibrary_AotRuntime_OwnDetach` 只作为旧 artifact reader 保留，当前 source
+  不再发出；VM 与 AOT（`aot_runtime_into_gc_box_or_detach`）都先尝试 IntoGcBox，再进入
+  legacy Detach。`tests/parser/test_aot_c_ownership_contracts.c` 精确验证两个 helper 的定义、
+  调用与顺序。
 - 单 mutator runtime 通过 domain root slot 追踪 host `SZrGcRootHandle` 与 ownership roots，
   minor/major/compact rewrite 更新 slot target。AOT 不得把它降级为 hidden ignore set。
-- 当前不宣称完整 source `Gc<T>` constructor、AOT stack-map schema、多 mutator safepoint
-  handshake 或跨 domain transport；这些仍由后续里程碑提供。
+  M4 之后 R2-M2 为单 owner 路径加入了 domain mutex 省略与 per-state LIFO temporary roots，
+  见 `docs/core-runtime/gc-domain-single-mutator-bridge.md` 的 “Single-owner fast path”。
+- M4 基线不宣称完整 source `Gc<T>` constructor、AOT stack-map schema、多 mutator safepoint
+  handshake 或跨 domain transport。其中多 mutator safepoint handshake 与跨 domain transport
+  由后续 Syntax 04 里程碑记录交付，见
+  `docs/plans/syntax/04-resource-ownership-drop-gc-bridge/m5-domain-local-stw-owner-handoff.md`
+  与 `m6-cross-domain-transport.md`。
 
 ## 验收
 
