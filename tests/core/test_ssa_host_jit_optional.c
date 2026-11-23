@@ -107,6 +107,72 @@ static void test_descriptor_unavailable(const SZrJitHostBackendInfo *info) {
     assert(backendDiagnostic.status == status);
 }
 
+/* 调用 descriptor.vtable.queryTarget 并返回诊断；target 为调用方修改后的 descriptor 目标副本。 */
+static SZrExecutionBackendDiagnostic test_query_target_mismatch(
+        const SZrExecutionBackendDescriptor *descriptor,
+        const SZrExecutionBackendTarget *target) {
+    SZrExecutionBackendDiagnostic backendDiagnostic;
+    EZrExecutionBackendStatus status;
+
+    memset(&backendDiagnostic, 0, sizeof(backendDiagnostic));
+    status = descriptor->vtable.queryTarget(
+            target,
+            ZR_EXECUTION_BACKEND_OPERATION_TYPED_SCALAR,
+            descriptor->userData,
+            &backendDiagnostic);
+    assert(status == ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH);
+    assert(backendDiagnostic.status == status);
+    return backendDiagnostic;
+}
+
+/* queryTarget 契约错配须按 ABI、triple、layout 顺序报告实际错配字段的完整 64 位注册值与请求值。
+ * 覆盖仅 layoutHash 高 32 位不同、ABI 错配、triple 错配以及 ABI+layout 同时错配四种情形。 */
+static void test_descriptor_target_mismatch_diagnostic(void) {
+    const TZrUInt64 highBit = (TZrUInt64)1u << 32;
+    SZrExecutionBackendDescriptor descriptor;
+    SZrJitHostDiagnostic diagnostic;
+    SZrExecutionBackendTarget target;
+    SZrExecutionBackendDiagnostic backendDiagnostic;
+
+    memset(&descriptor, 0, sizeof(descriptor));
+    ZrJit_Host_DiagnosticInit(&diagnostic);
+    assert(ZrJit_Host_GetDescriptor(&descriptor, &diagnostic) == ZR_TRUE);
+    assert(descriptor.vtable.queryTarget != ZR_NULL);
+    assert(descriptor.target.abiVersion == ZR_EXECUTION_CONTRACT_ABI_VERSION);
+    assert(descriptor.target.targetTripleHash == 1001u);
+    assert(descriptor.target.layoutHash == 1002u);
+
+    /* Only the high 32 bits of layoutHash differ. */
+    target = descriptor.target;
+    target.layoutHash = descriptor.target.layoutHash + highBit;
+    backendDiagnostic = test_query_target_mismatch(&descriptor, &target);
+    assert(backendDiagnostic.expected != backendDiagnostic.actual);
+    assert(backendDiagnostic.expected == 1002u);
+    assert(backendDiagnostic.actual == 1002u + highBit);
+
+    /* ABI mismatch reports ABI versions, not layout hashes. */
+    target = descriptor.target;
+    target.abiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION + 1u;
+    backendDiagnostic = test_query_target_mismatch(&descriptor, &target);
+    assert(backendDiagnostic.expected == ZR_EXECUTION_CONTRACT_ABI_VERSION);
+    assert(backendDiagnostic.actual == ZR_EXECUTION_CONTRACT_ABI_VERSION + 1u);
+
+    /* Triple mismatch reports full 64-bit triple hashes. */
+    target = descriptor.target;
+    target.targetTripleHash = 1001u + highBit + 7u;
+    backendDiagnostic = test_query_target_mismatch(&descriptor, &target);
+    assert(backendDiagnostic.expected == 1001u);
+    assert(backendDiagnostic.actual == 1001u + highBit + 7u);
+
+    /* ABI is checked first when several fields differ. */
+    target = descriptor.target;
+    target.abiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION + 2u;
+    target.layoutHash = 5005u;
+    backendDiagnostic = test_query_target_mismatch(&descriptor, &target);
+    assert(backendDiagnostic.expected == ZR_EXECUTION_CONTRACT_ABI_VERSION);
+    assert(backendDiagnostic.actual == ZR_EXECUTION_CONTRACT_ABI_VERSION + 2u);
+}
+
 /* 由启用 ZR_VM_ENABLE_HOST_JIT 的 CTest 入口核对无 provider 注册、fallback 和记录 lease 生命周期。
  * 只有一个 debugEntryCount=0 负例；编译返回 fallback 不执行 ExecBC，入口查询返回零。 */
 int main(void) {
@@ -152,6 +218,7 @@ int main(void) {
     assert(info.fallbackAvailable == ZR_TRUE);
     assert(info.supportedOperations == ZR_HOST_JIT_OPERATION_KNOWN_MASK);
     test_descriptor_unavailable(&info);
+    test_descriptor_target_mismatch_diagnostic();
 
     /* 只将 debugEntryCount 置零验证缺失条目拒绝，恢复全部声明后继续；没有 hash 错配负例。 */
     ZrJit_Host_DiagnosticInit(&diagnostic);
