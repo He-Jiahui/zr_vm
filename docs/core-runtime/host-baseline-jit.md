@@ -42,12 +42,14 @@ core 提供 C ABI 的目标、配置、导入与发布声明校验，以及调�
 
 | 声明 | 当前校验 | 成功不代表 |
 | --- | --- | --- |
-| Target | schema1、HOST、编译 x86-64/AArch64 匹配、pointerSize==sizeof(void*)、LITTLE 声明、execution ABI17、非零 triple/layout hash | 运行时 CPU/端序探测、实际 target/layout hash 重算、provider 可用 |
+| Target | schema1、HOST、编译 x86-64/AArch64 匹配、pointerSize==sizeof(void*)、LITTLE 声明、execution ABI18（`ZR_EXECUTION_CONTRACT_ABI_VERSION`）、非零 triple/layout hash | 运行时 CPU/端序探测、实际 target/layout hash 重算、provider 可用 |
 | Options | schema/已知选项位始终校验；仅 ENABLE 后验证 target 与非零预算 | 禁用配置的 target/预算有效，或预算已分配为代码页 |
 | Imports | 完整清单 schema、非零摘要、条目非零 ID/签名、RUNTIME/NATIVE、reserved0、ID唯一；查询还需同签名 | 实际符号绑定、地址解析或 native 权限授予 |
 | Publication | MACHINE_CODE/WX、四图注册位、非零图与身份摘要、layout同target、已知操作/capability/effect位 | 真实页权限、状态图内容、平台图登记或代码行为已被验证 |
 
 具体操作见 target 的 ABI 比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:106`、options 禁用早回 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:145`、manifest 唯一身份比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:186`、publication 注册位比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:282`。schema 与执行 ABI 分别验证；指针宽度按 sizeof(void*)，不能把 fixture 的固定8写成通用契约。Publication 的 imports 可空，非空时只在本次验证借用，不复制到记录。
+
+执行 ABI 18 对应 optional receiver callsite kinds 12–14（`zr_vm_core/include/zr_vm_core/execution_contract.h:15`）；ABI17 target 在 core 校验处被拒绝。本 leaf 只比较版本号，不消费这些 callsite kind，也不提供机器码 provider。未来 provider 须实现 kinds 12–14，或带完整 staged window 退回 VM，该义务见 [Runtime optional receiver ABI](runtime-optional-receiver-abi.md)。此处仅交叉引用，不表示该义务已列入正式的 provider 检查清单。
 
 ## 记录数组与 lease
 
