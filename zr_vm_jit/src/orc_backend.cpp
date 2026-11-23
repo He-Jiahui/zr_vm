@@ -572,14 +572,15 @@ void fill_descriptor(const HostImpl &impl,
  * ## Parameters
  * @param[out] diagnostic 可空的 core service 输出。
  * @param[in] status callback 的 core backend 结果。
- * @param[in] expected 32 位期望/类别字段。
- * @param[in] actual 32 位实际/类别字段。
+ * @param[in] expected 64 位期望/类别字段；可承载完整 hash。
+ * @param[in] actual 64 位实际/类别字段；可承载完整 hash。
  *
  * ## Returns
  * 无返回值；空诊断时不写入。
  *
  * ## Constraints and lifecycle
- * 先清零整份结构；此 helper 参数限制为 32 位，因此不得用它承载完整 64 位 hash。
+ * 先清零整份结构；参数宽度与 SZrExecutionBackendDiagnostic.expected/actual 一致（64 位），
+ * 因此 target hash 不会被截断。
  *
  * ## References
  * @see query_target
@@ -588,8 +589,8 @@ void fill_descriptor(const HostImpl &impl,
  */
 void fill_backend_diagnostic(SZrExecutionBackendDiagnostic *diagnostic,
                              EZrExecutionBackendStatus status,
-                             TZrUInt32 expected = 0u,
-                             TZrUInt32 actual = 0u) {
+                             TZrUInt64 expected = 0u,
+                             TZrUInt64 actual = 0u) {
     if (diagnostic != ZR_NULL) {
         std::memset(diagnostic, 0, sizeof(*diagnostic));
         diagnostic->status = status;
@@ -609,16 +610,15 @@ void fill_backend_diagnostic(SZrExecutionBackendDiagnostic *diagnostic,
  * @param[out] diagnostic 可空的 core backend 诊断。
  *
  * ## Returns
- * @return 已注销或目标无效时报告不可用/不支持；ABI、triple 或 layout 不匹配时报契约错误；
+ * @return 已注销或目标无效时报告不可用/不支持；ABI、triple 或 layout 不匹配时报契约错误，
+ * 诊断 expected/actual 按 ABI、triple、layout 顺序给出首个错配字段的注册值与请求值（完整 64 位）；
  * 当前机器码能力为 false，因此所有匹配目标仍返回 BACKEND_UNAVAILABLE。
  *
  * ## Constraints and lifecycle
  * 通过复制 descriptor 中的静态回调进入；持 global_mutex 后重新查 singleton，
  * 不保存 target/userData。service 可据不可用结果决定 fallback。
- * BUG: layoutHash 比较使用完整 64 位值，但错误诊断经 32 位 fill_backend_diagnostic
- * 参数截断。可达路径是 GetDescriptor 后直接调用 vtable.queryTarget，并传入仅高 32
- * 位不同的 layoutHash：返回 CONTRACT_MISMATCH，却无法在 expected/actual 诊断中区分。
- * 修正入口应为 fill_backend_diagnostic 的哈希宽度契约及本 callback。
+ * 已修复（JIT-U1）：此前错配诊断总是经 32 位参数报告截断的 layoutHash，导致仅高 32 位
+ * 不同的 layoutHash 出现 expected == actual，且 ABI/triple 错配也报告 layout 值。
  *
  * ## References
  * @see fill_descriptor
@@ -654,14 +654,25 @@ EZrExecutionBackendStatus query_target(
                                 requiredOperations);
         return ZR_EXECUTION_BACKEND_STATUS_UNSUPPORTED_OPERATION;
     }
-    if (target->abiVersion != impl->options.target.abiVersion ||
-        target->targetTripleHash != impl->options.target.targetTripleHash ||
-        target->layoutHash != impl->options.target.layoutHash) {
-        /* BUG 证据见 callback 文档：该 helper 的两个值参数只有 32 位。 */
+    if (target->abiVersion != impl->options.target.abiVersion) {
         fill_backend_diagnostic(diagnostic,
                                 ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH,
-                                (TZrUInt32)impl->options.target.layoutHash,
-                                (TZrUInt32)target->layoutHash);
+                                impl->options.target.abiVersion,
+                                target->abiVersion);
+        return ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH;
+    }
+    if (target->targetTripleHash != impl->options.target.targetTripleHash) {
+        fill_backend_diagnostic(diagnostic,
+                                ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH,
+                                impl->options.target.targetTripleHash,
+                                target->targetTripleHash);
+        return ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH;
+    }
+    if (target->layoutHash != impl->options.target.layoutHash) {
+        fill_backend_diagnostic(diagnostic,
+                                ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH,
+                                impl->options.target.layoutHash,
+                                target->layoutHash);
         return ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH;
     }
     if (!impl->machineCodeAvailable) {
