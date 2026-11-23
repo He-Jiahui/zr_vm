@@ -15,6 +15,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
@@ -530,6 +531,199 @@ static void test_aot_llvm_meta_call_consumes_binding(void) {
             "aot_llvm_meta_binding_loader", ZR_AOT_BACKEND_KIND_LLVM, 0u, 0u, 0u);
 }
 
+/*
+ * 共享绑定行断言的变体：先登记 zr.container（其 Register 按依赖顺序先登记 zr.iteration），
+ * 再编译、生成、链接并执行；随后统计 MODULE 行里由原生注册表安装的 TARGET_NATIVE 见证。
+ */
+static void assert_native_provider_binding_rows_backend(const char *source, const char *artifactSuite,
+        EZrAotBackendKind backend, TZrUInt32 expectedNativeRows) {
+#if !defined(ZR_PLATFORM_UNIX)
+    (void)source;
+    (void)artifactSuite;
+    (void)backend;
+    (void)expectedNativeRows;
+    TEST_IGNORE_MESSAGE("AOT native-provider binding loader test currently validates the Unix shared-library loader path");
+#else
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-native-provider-binding-loader\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    const TZrBool isC = backend == ZR_AOT_BACKEND_KIND_C;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    SZrString *moduleName;
+    SZrObjectModule *module;
+    SZrMetadataRuntime *metadataRuntime;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char command[4096];
+    TZrUInt32 nativeRows = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project",
+            "aot_native_provider_binding_loader", ".zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project/src",
+            "main", ".zr", sourcePath, sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite, "runtime_project/bin",
+            "main", ".zro", zroPath, sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite,
+            isC ? "runtime_project/bin/aot_c/src" : "runtime_project/bin/aot_llvm/src",
+            "main", isC ? ".c" : ".ll", generatedPath, sizeof(generatedPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(artifactSuite,
+            isC ? "runtime_project/bin/aot_c/lib" : "runtime_project/bin/aot_llvm/lib",
+            "zrvm_aot_main", ".so", sharedLibraryPath, sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(isC
+            ? ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedPath, &aotOptions)
+            : ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, generatedPath, &aotOptions));
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" %s -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+             "-o \"%s\"",
+             isC ? ZR_VM_TESTS_C_COMPILER : "clang",
+             isC ? "-std=c11" : ZR_VM_TESTS_LLVM_POINTER_FLAGS,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+            isC ? ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C : ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+            ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    {
+        TZrBool executed = ZrLibrary_AotRuntime_ExecuteEntry(state, backend, &result);
+        if (!executed) fprintf(stderr, "native-provider AOT failure (%s): %s\n", artifactSuite,
+                ZrLibrary_AotRuntime_GetLastError(state->global));
+        TEST_ASSERT_TRUE_MESSAGE(executed, ZrLibrary_AotRuntime_GetLastError(state->global));
+    }
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(isC ? ZR_LIBRARY_EXECUTED_VIA_AOT_C : ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    moduleName = ZrCore_String_CreateFromNative(state, "main");
+    TEST_ASSERT_NOT_NULL(moduleName);
+    module = ZrLibrary_AotRuntime_ModuleLoader(state, moduleName, project->aotRuntime);
+    TEST_ASSERT_NOT_NULL(module);
+    metadataRuntime = ZrCore_Module_GetMetadataRuntime(module);
+    TEST_ASSERT_NOT_NULL(metadataRuntime);
+    for (TZrUInt32 rowIndex = 0u;
+         rowIndex < metadataRuntime->codeRegistration->callBindingRowCount;
+         ++rowIndex) {
+        SZrMetadataRuntimeCallBindingView view;
+        SZrFunction *caller;
+        SZrFunctionCallSiteCacheEntry *entry;
+        TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadCallBindingView(metadataRuntime, rowIndex, &view));
+        caller = ZrCore_Function_ResolveGraphFunctionByFlatIndex(
+                state, metadataRuntime->metadataFunction, view.functionIndex);
+        TEST_ASSERT_NOT_NULL(caller);
+        TEST_ASSERT_LESS_THAN_UINT32(caller->callSiteCacheLength, view.cacheIndex);
+        entry = &caller->callSiteCaches[view.cacheIndex];
+        TEST_ASSERT_EQUAL_UINT64(caller->callBindingGeneration, entry->binding.generation);
+        if (view.location.kind != ZR_CALL_BINDING_RELOCATION_MODULE ||
+            view.contract.bindingKind != ZR_CALL_BINDING_DIRECT) {
+            continue;
+        }
+        /* DIRECT + MODULE 行：链接器经原生注册表安装见证，加载器不预装 AOT thunk。 */
+        TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, view.targetFunctionIndex);
+        TEST_ASSERT_NULL(view.functionPointer);
+        TEST_ASSERT_EQUAL_UINT32(ZR_CALL_BINDING_TARGET_NATIVE, entry->binding.target.targetKind);
+        TEST_ASSERT_NOT_NULL(entry->binding.target.native.function);
+        TEST_ASSERT_NOT_NULL(entry->binding.target.callableObject);
+        TEST_ASSERT_GREATER_THAN_UINT64(0u, entry->runtimeHitCount);
+        ++nativeRows;
+    }
+    TEST_ASSERT_EQUAL_UINT32(expectedNativeRows, nativeRows);
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+/* r5_01 形状：类型化 Array<Actor>.add 保留原生 provider 契约，产生 DIRECT + MODULE + TARGET_NATIVE 行。 */
+static const char *const kNativeProviderArrayAddSource =
+        "let {Array} = import(\"zr.container\");\n"
+        "class Actor { pub var n: int = 0; pub fn bump(): void { this.n = this.n + 1; } }\n"
+        "var actors = new Array<Actor>(); actors.add(new Actor());\n"
+        "actors[0].bump();\n"
+        "if (actors[0].n != 1) { throw actors[0].n; }\n"
+        "return 42;\n";
+
+/* T-D1：AOT C 加载器接受原生 provider 的 MODULE 行并经其见证执行。 */
+static void test_aot_c_native_provider_module_row_executes(void) {
+    assert_native_provider_binding_rows_backend(kNativeProviderArrayAddSource,
+            "aot_c_native_provider_binding_loader", ZR_AOT_BACKEND_KIND_C, 1u);
+}
+
+/* T-D2：LLVM 后端共享同一加载器校验，同源同样执行。 */
+static void test_aot_llvm_native_provider_module_row_executes(void) {
+    assert_native_provider_binding_rows_backend(kNativeProviderArrayAddSource,
+            "aot_llvm_native_provider_binding_loader", ZR_AOT_BACKEND_KIND_LLVM, 1u);
+}
+
+/* T-D3 对照：Array<int>.add 被快化为 SUPER_ARRAY_ADD_INT，不留原生 MODULE 行。 */
+static void test_aot_c_typed_int_array_add_control_has_no_native_row(void) {
+    assert_native_provider_binding_rows_backend(
+            "let {Array} = import(\"zr.container\");\n"
+            "var a = new Array<int>(); a.add(41); return 42;\n",
+            "aot_c_native_typed_array_control_loader", ZR_AOT_BACKEND_KIND_C, 0u);
+}
+
 /* 在独立 state 中用解释器执行同一源码，记录原始返回值作为 AOT 对照。 */
 static void run_interpreter_reference(const char *source, SZrTypeValue *result) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -767,6 +961,9 @@ int main(void) {
     RUN_TEST(test_aot_imported_static_method_uses_provider_thunk);
     RUN_TEST(test_aot_imported_function_preserves_module_capture);
     RUN_TEST(test_aot_llvm_imports_provider_without_internal_bindings);
+    RUN_TEST(test_aot_c_native_provider_module_row_executes);
+    RUN_TEST(test_aot_llvm_native_provider_module_row_executes);
+    RUN_TEST(test_aot_c_typed_int_array_add_control_has_no_native_row);
     RUN_TEST(test_aot_c_to_array_element_to_int_matches_interpreter);
     RUN_TEST(test_aot_c_dynamic_to_int_matches_interpreter);
     RUN_TEST(test_aot_c_dynamic_bool_uint_float_match_interpreter);

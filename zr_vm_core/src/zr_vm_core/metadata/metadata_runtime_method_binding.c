@@ -334,9 +334,18 @@ static TZrBool metadata_runtime_validate_call_binding_rows(SZrState *state, SZrM
             continue;
         }
         if (view.location.kind == ZR_CALL_BINDING_RELOCATION_MODULE) {
-            if ((view.contract.bindingKind != ZR_CALL_BINDING_VIRTUAL &&
-                 view.contract.bindingKind != ZR_CALL_BINDING_INTERFACE) ||
-                entry->binding.target.targetKind != ZR_CALL_BINDING_TARGET_NONE ||
+            const SZrCallBindingTarget *linked = &entry->binding.target;
+            /* 虚/接口槽保持 TARGET_NONE，等接收者确定实现。 */
+            TZrBool deferred =
+                    (view.contract.bindingKind == ZR_CALL_BINDING_VIRTUAL ||
+                     view.contract.bindingKind == ZR_CALL_BINDING_INTERFACE) &&
+                    linked->targetKind == ZR_CALL_BINDING_TARGET_NONE;
+            /* link_function 经原生注册表解析 DIRECT + MODULE，留下带闭包的 TARGET_NATIVE 见证。 */
+            TZrBool nativeProvider =
+                    view.contract.bindingKind == ZR_CALL_BINDING_DIRECT &&
+                    linked->targetKind == ZR_CALL_BINDING_TARGET_NATIVE &&
+                    linked->native.function != ZR_NULL && linked->callableObject != ZR_NULL;
+            if ((!deferred && !nativeProvider) ||
                 entry->binding.generation != function->callBindingGeneration) {
                 return metadata_runtime_call_binding_fail(state, ZR_CALL_BINDING_TARGET_KIND_MISMATCH,
                         &view, rowIndex, ZR_CALL_BINDING_TARGET_NONE, entry->binding.target.targetKind);
