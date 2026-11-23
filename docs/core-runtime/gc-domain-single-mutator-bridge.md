@@ -5,9 +5,13 @@ related_code:
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain.c
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_internal.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_sweep.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_roots.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_temporary_roots.h
+  - zr_vm_core/src/zr_vm_core/exception/exception_try_run.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/ownership_resource.c
   - zr_vm_core/src/zr_vm_core/value.c
@@ -95,6 +99,57 @@ source owner is moved and cannot be used again.
 `Gc<T>` accepts an ordinary GC class target, while `GcBox<T>` accepts a resource target. M4
 publishes and tests the source type contract and the public C `SZrGcRootHandle` carrier. It does
 not yet claim a general source-language constructor that turns arbitrary `T` into `Gc<T>`.
+
+## Single-owner fast path
+
+The interpreter r2 work (R2-M2, after M4) added a fast path for a domain that is used by one
+native thread. This section only records how the code at tip behaves. It does not change domain
+identity, root handles, ownership roots, or the cross-domain write gate.
+
+Owner-thread mutex elision:
+
+- `ZrCore_GcDomain_CoordinationInit` (`gc/gc_domain_mutator.c`) records the constructing thread as
+  the domain's `elisionOwner` and sets `elisionMode` to enabled. The modes are 1 enabled,
+  2 draining, and 0 native mutexes (`gc/gc_domain_internal.h`).
+- While the mode is enabled, `ZrCore_GcDomain_Lock` and `ZrCore_GcDomain_MutationLock` on the owner
+  thread do not take the native mutex. They only increment the atomic `elidedCoordinationDepth` or
+  `elidedMutationDepth` counter, and the matching unlock decrements it.
+- Draining starts when a lock call comes from a thread other than the owner, or when
+  `ZrCore_GcDomain_RegisterMutator` registers a second mutator. A foreign root API has no
+  registered mutator, but it still goes through these locks, so it also starts draining. The
+  mode switches from enabled to draining. A non-owner lock caller then yields until both elided
+  depths are zero, and the mode becomes native mutexes. Owner scopes that are already nested may
+  still finish during the drain. No code path switches a domain back to enabled, so the change is
+  permanent.
+- `ZrCore_GcDomain_TryExclusiveMutation` gives `ZrCore_GarbageCollector_Barrier` (`gc/gc_mark.c`)
+  an elided exclusive mutation scope. The barrier returns early inside that scope only when there
+  is no ignored-root work, no old-or-pinned to young edge to remember, and no marking or sweeping
+  work for the edge. Otherwise it does the full barrier work: inside the exclusive scope when it
+  got one, or under `ZrCore_GcDomain_SharedMutationBegin` when it did not.
+
+Per-state LIFO temporary roots:
+
+- `SZrState.temporaryRoots`, `temporaryRootLength`, and `temporaryRootCapacity`
+  (`zr_vm_core/include/zr_vm_core/state.h`) form a LIFO root stack for each state.
+- `ZrCore_Gc_TemporaryRootPush` and `ZrCore_Gc_TemporaryRootsRestore(state, depth)`
+  (`gc/gc_temporary_roots.h`, `gc/gc_roots.c`) run under the domain mutation lock. On the owner
+  thread that lock is elided.
+- A push grows the stack with the raw allocator, which does not collect. If the growth or the
+  reference count fails, the push returns false and leaves the existing entries unchanged.
+- Each entry increments the object's `temporaryRootRefCount`.
+  `garbage_collector_object_supports_evacuation` (`gc/gc_cycle.c`) refuses to move an object
+  while that count is non-zero, so native pointers to it stay valid.
+- Collection marks the entries in `garbage_collector_mark_aot_root_frames` (`gc/gc_mark.c`) and
+  rewrites them in `garbage_collector_rewrite_aot_root_frames` (`gc/gc_cycle.c`).
+- `ZrCore_Exception_TryRun` (`exception/exception_try_run.c`) saves the depth on entry and
+  restores it when it unwinds.
+- Current users include object member/index writes (`object/object_write.c`) and short-string
+  interning (`string/string.c`). Generic `ZrCore_Gc_RootLeaseAcquire` leases still exist for other
+  callers.
+
+The branch-authored measurements for this change are in
+`docs/benchmarks/interpreter-review-20261018-r2-results.md` ("R2-M2"). They have not been
+re-measured at tip.
 
 ## Verification boundary
 
