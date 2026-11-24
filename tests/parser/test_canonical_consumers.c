@@ -799,6 +799,150 @@ static void test_native_member_call_publishes_actual_argument_mapping(void) {
 #endif
 }
 
+/* D4 (t727u): a resolved member call publishes a bound-member CALL fact and an
+ * invocation CALL fact with the same symbol, kind and range. Symbol enumeration
+ * (ReferencesOf) must report each call site once, while node lookup and CallAt
+ * keep finding the invocation view and its argument mappings. */
+static void test_member_call_invocation_alias_is_enumerated_once(void) {
+    const char *source =
+            "class Calculator {\n"
+            "  pub fn text(value: string): string { return value; }\n"
+            "}\n"
+            "fn first(calculator: Calculator): string { return calculator.text(\"a\"); }\n"
+            "fn second(calculator: Calculator): string { return calculator.text(\"b\"); }\n";
+    const char *calls[] = {"calculator.text(\"a\")", "calculator.text(\"b\")"};
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "canonical_member_alias.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    SZrArray references;
+    TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrSize callCount = 0U;
+    TZrSize index;
+    TZrSize site;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    memset(&references, 0, sizeof(references));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage != ZR_NULL ? cs.errorMessage : "member alias compile failed");
+
+    for (site = 0U; site < 2U; ++site) {
+        const char *call = strstr(source, calls[site]);
+        const char *arguments;
+        SZrFileRange position;
+        SZrParserSemanticCallQuery query;
+        const SZrAstNode *occurrence = ZR_NULL;
+        const SZrSemanticReferenceFact *direct;
+
+        TEST_ASSERT_NOT_NULL(call);
+        arguments = strchr(call, '(');
+        TEST_ASSERT_NOT_NULL(arguments);
+        position = consumer_range((TZrSize)(arguments - source + 1), (TZrSize)(arguments - source + 1));
+        position.source = sourceName;
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(cs.semanticContext, position, ZR_NULL, &query));
+        TEST_ASSERT_NOT_NULL(query.reference);
+        TEST_ASSERT_NOT_NULL(query.argumentMappings);
+        TEST_ASSERT_EQUAL_UINT(1U, query.argumentMappings->length);
+        TEST_ASSERT_TRUE(query.reference->symbolId != ZR_SEMANTIC_ID_INVALID);
+        if (site == 0U) {
+            symbolId = query.reference->symbolId;
+        } else {
+            TEST_ASSERT_EQUAL_UINT32(symbolId, query.reference->symbolId);
+        }
+        /* The invocation view remains reachable by node. */
+        for (index = 0U; index < cs.semanticContext->referenceFacts.length; ++index) {
+            const SZrSemanticReferenceFact *fact = ZrCore_Array_Get(&cs.semanticContext->referenceFacts, index);
+            if (fact != ZR_NULL && fact->kind == ZR_SEMANTIC_REFERENCE_CALL && fact->node != ZR_NULL &&
+                fact->node->type == ZR_AST_FUNCTION_CALL &&
+                fact->node->location.start.offset == (TZrSize)(arguments - source)) {
+                occurrence = fact->node;
+                break;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(occurrence);
+        direct = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                cs.semanticContext, occurrence, ZR_SEMANTIC_REFERENCE_CALL);
+        TEST_ASSERT_NOT_NULL(direct);
+        TEST_ASSERT_TRUE(direct->argumentMappings.isValid);
+        TEST_ASSERT_EQUAL_UINT(1U, direct->argumentMappings.length);
+        TEST_ASSERT_EQUAL_UINT32(symbolId, direct->symbolId);
+    }
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ReferencesOf(cs.semanticContext, symbolId, ZR_NULL, &references));
+    for (index = 0U; index < references.length; ++index) {
+        const SZrSemanticReferenceFact *const *slot = ZrCore_Array_Get(&references, index);
+        TZrSize previous;
+        TEST_ASSERT_NOT_NULL(slot);
+        TEST_ASSERT_NOT_NULL(*slot);
+        if ((*slot)->kind != ZR_SEMANTIC_REFERENCE_CALL) {
+            continue;
+        }
+        ++callCount;
+        TEST_ASSERT_TRUE((*slot)->node == ZR_NULL || (*slot)->node->type != ZR_AST_FUNCTION_CALL);
+        for (previous = 0U; previous < index; ++previous) {
+            const SZrSemanticReferenceFact *const *earlier = ZrCore_Array_Get(&references, previous);
+            TEST_ASSERT_FALSE_MESSAGE((*earlier)->kind == (*slot)->kind &&
+                                      (*earlier)->range.start.offset == (*slot)->range.start.offset &&
+                                      (*earlier)->range.end.offset == (*slot)->range.end.offset,
+                                      "ReferencesOf returned the same call site twice");
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(2U, callCount, "one CALL reference per member call site");
+
+    ZrCore_Array_Free(g_state, &references);
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+/* D4 (t727u): cross-document matching projects each native member call site once. */
+static void test_native_member_call_external_reference_is_projected_once(void) {
+#if defined(ZR_CANONICAL_CONSUMERS_HAVE_SYSTEM)
+    const char *source = "let env = import(\"zr.system.env\"); fn useEnv(): string { return env.getVariable(\"PATH\"); }\n";
+    const char *member = strstr(source, "getVariable");
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "canonical_native_member_external.zr");
+    SZrAstNode *ast;
+    SZrArray references;
+    TZrSize hits = 0U;
+    TZrSize index;
+    TEST_ASSERT_NOT_NULL(member);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(g_state->global));
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    memset(&references, 0, sizeof(references));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage != ZR_NULL ? cs.errorMessage : "native member compile failed");
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ExternalReferences(cs.semanticContext, ZR_NULL, &references));
+    for (index = 0U; index < references.length; ++index) {
+        const SZrParserSemanticExternalReferenceQuery *reference = ZrCore_Array_Get(&references, index);
+        TEST_ASSERT_NOT_NULL(reference);
+        if (reference->role == ZR_SEMANTIC_REFERENCE_CALL &&
+            reference->referenceRange.start.offset == (TZrSize)(member - source)) {
+            ++hits;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(1U, hits, "one external CALL reference per native member call site");
+    ZrCore_Array_Free(g_state, &references);
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+    ZrLibrary_NativeRegistry_Free(g_state->global);
+#else
+    TEST_IGNORE_MESSAGE("System native descriptor target is disabled");
+#endif
+}
+
 static void test_source_constructors_publish_canonical_call_contracts(void) {
     const TZrChar *source =
             "class Hero {\n"
@@ -1875,6 +2019,8 @@ int main(void) {
     RUN_TEST(test_member_calls_publish_actual_argument_mappings);
     RUN_TEST(test_member_call_mappings_preserve_argument_type_errors);
     RUN_TEST(test_native_member_call_publishes_actual_argument_mapping);
+    RUN_TEST(test_member_call_invocation_alias_is_enumerated_once);
+    RUN_TEST(test_native_member_call_external_reference_is_projected_once);
     RUN_TEST(test_source_constructors_publish_canonical_call_contracts);
     RUN_TEST(test_source_super_constructor_publishes_canonical_call_contract);
     RUN_TEST(test_callable_value_call_publishes_canonical_contract);
