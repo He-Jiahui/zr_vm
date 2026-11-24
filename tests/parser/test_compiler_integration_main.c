@@ -36,6 +36,7 @@ extern void test_template_string_compilation_emits_string_pipeline(void);
 extern void test_using_statement_compiles_through_frontend(void);
 extern void test_using_owner_generic_emits_release_cleanup(void);
 extern void test_using_owner_generic_release_runs_before_return(void);
+extern void test_native_function_parameter_accepts_script_callback(void);
 extern void test_using_owner_generic_release_runs_before_break(void);
 extern void test_using_borrow_generic_emits_end_borrow_cleanup(void);
 extern void test_using_borrow_generic_end_borrow_runs_before_return(void);
@@ -213,6 +214,7 @@ int main(void) {
     RUN_TEST(test_using_statement_compiles_through_frontend);
     RUN_TEST(test_using_owner_generic_emits_release_cleanup);
     RUN_TEST(test_using_owner_generic_release_runs_before_return);
+    RUN_TEST(test_native_function_parameter_accepts_script_callback);
     RUN_TEST(test_using_owner_generic_release_runs_before_break);
     RUN_TEST(test_using_borrow_generic_emits_end_borrow_cleanup);
     RUN_TEST(test_using_borrow_generic_end_borrow_runs_before_return);

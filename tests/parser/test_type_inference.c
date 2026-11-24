@@ -8438,6 +8438,64 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
     TEST_DIVIDER();
 }
 
+/* native 描述符类型名 "function" 是擦除后的可调用顶类型；带签名的闭包和函数值都应能隐式传入，
+ * 反向收窄与非可调用值仍被拒绝。CT-1：此前 math.invokeCallback 拒收任何脚本函数。 */
+static void test_type_system_native_function_tag_accepts_typed_callables(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type System - Native Function Tag Accepts Typed Callables";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrInferredType erasedCallable;
+        SZrInferredType typedClosure;
+        SZrInferredType nativeFunction;
+        SZrInferredType nullableTypedClosure;
+        SZrInferredType plainString;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+
+        TEST_ASSERT_TRUE(inferred_type_from_type_name(
+                cs, create_test_string(state, "function"), &erasedCallable));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, erasedCallable.baseType);
+        TEST_ASSERT_NULL(erasedCallable.typeName);
+        ZrParser_InferredType_InitFull(state,
+                                       &typedClosure,
+                                       ZR_VALUE_TYPE_CLOSURE,
+                                       ZR_FALSE,
+                                       create_test_string(state, "fn(float) -> float"));
+        ZrParser_InferredType_Init(state, &nativeFunction, ZR_VALUE_TYPE_FUNCTION);
+        ZrParser_InferredType_InitFull(state,
+                                       &nullableTypedClosure,
+                                       ZR_VALUE_TYPE_CLOSURE,
+                                       ZR_TRUE,
+                                       create_test_string(state, "fn(float) -> float"));
+        ZrParser_InferredType_Init(state, &plainString, ZR_VALUE_TYPE_STRING);
+
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&typedClosure, &erasedCallable));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&nativeFunction, &erasedCallable));
+        TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&erasedCallable, &typedClosure));
+        TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&nullableTypedClosure, &erasedCallable));
+        TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&plainString, &erasedCallable));
+
+        ZrParser_InferredType_Free(state, &plainString);
+        ZrParser_InferredType_Free(state, &nullableTypedClosure);
+        ZrParser_InferredType_Free(state, &nativeFunction);
+        ZrParser_InferredType_Free(state, &typedClosure);
+        ZrParser_InferredType_Free(state, &erasedCallable);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_environment_lookup_functions_deduplicates_exact_signature_from_parent_scope(void) {
     SZrTestTimer timer = {0};
     const char *testSummary =
@@ -8804,6 +8862,7 @@ int main(void) {
     RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types);
     RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_extern_wrapper_types);
     RUN_TEST(test_type_system_primitive_named_and_direct_types_compare_equally);
+    RUN_TEST(test_type_system_native_function_tag_accepts_typed_callables);
     RUN_TEST(test_type_environment_lookup_functions_deduplicates_exact_signature_from_parent_scope);
     RUN_TEST(test_type_inference_foreach_binds_iterated_element_type);
     RUN_TEST(test_type_inference_native_enum_construction_returns_enum_type);

@@ -6398,3 +6398,75 @@ void test_binary_writer_handles_exported_function_alias_with_unknown_parameter_t
     destroy_test_state(state);
     ZR_TEST_DIVIDER();
 }
+
+/* CT-1：native 参数类型 "function"（math.invokeCallback 的 callback）必须接受带签名的脚本函数；
+ * 非可调用实参仍在编译期被拒绝。 */
+void test_native_function_parameter_accepts_script_callback(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Function Parameter Accepts Script Callback";
+    SZrState *state;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Native callback parameter typing",
+                 "Testing that a typed script fn passes to a native 'function' parameter and a string does not");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "let math = import(\"zr.math\");\n"
+            "fn scale(x: float) { return x * 2.0; }\n"
+            "var scaled = math.invokeCallback(scale, 3.0);\n"
+            "if (scaled == 6.0) { return 1; }\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "native_function_parameter_callback.zr",
+                                                     strlen("native_function_parameter_callback.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TZrInt64 result = 0;
+
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Typed script callback was rejected by native 'function' parameter");
+            destroy_test_state(state);
+            return;
+        }
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result) || result != 1) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "invokeCallback did not return the script callback result");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        ZrCore_Function_Free(state, func);
+    }
+
+    {
+        const char *source =
+            "let math = import(\"zr.math\");\n"
+            "return math.invokeCallback(\"not callable\", 3.0);\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "native_function_parameter_rejects_string.zr",
+                                                     strlen("native_function_parameter_rejects_string.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+        if (func != ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "String argument was accepted by native 'function' parameter");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
