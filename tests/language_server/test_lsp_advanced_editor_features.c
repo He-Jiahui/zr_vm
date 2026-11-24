@@ -3756,6 +3756,7 @@ static void test_lsp_selection_header_line_keeps_block_layer(SZrState *state, in
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
+#include "test_lsp_template_formatting_cases.h"
 
 /* CMake 独立目标在同一 VM state 上运行格式化、折叠、链接、CodeAction、
  * CodeLens 与层级查询；内联头文件补充当前语法及安全修复的案例。 */
@@ -3798,6 +3799,13 @@ int main(void) {
     test_lsp_formatting_ignores_non_code_braces(state, &failures);
     test_lsp_folding_ignores_non_code_braces(state, &failures);
     test_lsp_template_interpolation_preserves_following_indent(state, &failures);
+    test_lsp_formatting_preserves_multiline_template_bytes(state, &failures);
+    test_lsp_formatting_preserves_block_comment_interior(state, &failures);
+    test_lsp_formatting_template_leading_brace_is_text(state, &failures);
+    test_lsp_formatting_template_interpolation_keeps_literal_lines(state, &failures);
+    test_lsp_range_formatting_inside_template_is_noop(state, &failures);
+    test_lsp_formatting_template_bytes_with_tabs(state, &failures);
+    test_lsp_formatting_template_bytes_with_crlf(state, &failures);
     test_lsp_selection_ranges_keep_ancestor_containment(state, &failures);
     test_lsp_folding_ignores_non_code_regions_and_keeps_depth(state, &failures);
     test_lsp_document_links_resolve_import_literals(state, &failures);
