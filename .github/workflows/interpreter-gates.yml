@@ -54,7 +54,8 @@ jobs:
   performance-evidence:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
+    # Only the same-run depth ratio gates (threshold 2.0 in run_interpreter_probes.py).
+    # Smoke timings and budget overhead stay evidence-only until pinned-host numbers exist.
     steps:
       - uses: actions/checkout@v5
         with:
@@ -67,6 +68,7 @@ jobs:
       - name: Build probe runners
         run: cmake --build build-interpreter-perf --target zr_vm_cli zr_vm_budgeted_loop --parallel 2
       - name: Run interpreter smoke probes
+        continue-on-error: true
         run: >-
           python3 tests/benchmarks/run_interpreter_probes.py
           --cli build-interpreter-perf/bin/zr_vm_cli
@@ -78,6 +80,7 @@ jobs:
           --work-dir build-interpreter-perf/deep-results
           --cases deep_alloc0,deep_alloc --repeat 3 --check-deep-ratio
       - name: Record budget overhead
+        continue-on-error: true
         run: |
           build-interpreter-perf/bin/zr_vm_budgeted_loop > build-interpreter-perf/budget-intloop.json
           build-interpreter-perf/bin/zr_vm_budgeted_loop --source tests/benchmarks/probes/interpreter/calls.zr --expected 3000000 > build-interpreter-perf/budget-calls.json
