@@ -25,6 +25,8 @@ tests:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_calls.c
   - tests/parser/test_semantic_query_relations.c
+  - tests/parser/test_canonical_consumers.c
+  - tests/language_server/test_lsp_member_call_reference_uniqueness.c
 doc_type: module-detail
 ---
 
@@ -88,6 +90,7 @@ Facts 初始化 expression、reference、numeric、reachability、logical、owne
 - Expression、Logical 的位置查询在同宽时采用后项；Ownership 的 violation 仅在同宽时优先；Reachability 先按原因评分。这些偏好服务不同 consumer，不能互换（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:869`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1070`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1126`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1170`）。
 - NumericByNode 返回一条已有事实，按 exactness、分段信息、signed 范围及宽度、unsigned 范围存在性选取；这些信息相同时才偏好 mayOverflow=true，完全平局保留前项。它不合并所有候选的范围或风险，返回 mayOverflow=false 不能证明其它候选也安全（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1007`）。
 - 调用参数映射的 conversion 分类不独立证明兼容性检查发生。共享实参映射发布者由 validateCompatibility 控制该检查，普通调用事实生产者传入 false；consumer 不能把 EXACT / IMPLICIT 标签当作普遍验证证书（`zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_argument_semantic_facts.c:163`、`zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c:373`）。
+- 成员调用生产者（`type_inference_record_member_call_reference_fact`，`zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c`）对每个已解析成员调用发布两条 `ZR_SEMANTIC_REFERENCE_CALL`：第一条 node 为绑定成员的 member expression，供导航与 `CallAt`；第二条 node 为实际 FUNCTION_CALL occurrence（其位置从 `(` 起），供按 node 查询实参映射。两条各持一份相同内容的 argument mappings 拷贝。第二条带 `isInvocationAlias` 标记。`ZrParser_SemanticQuery_ReferencesOf` 与 `ZrParser_SemanticQuery_ExternalReferences` 跳过带此标记的记录，因此按符号枚举引用的 consumer（references、rename、documentHighlight、call hierarchy、reference code lens、跨文档外部引用）每个调用点只见到一条；按位置查询平局时保留前项，即绑定成员那条；只按 node 查询时使用带标记的那条。只有下一链节点是 FUNCTION_CALL 时才发布成员调用 `CALL`；其它形态不发布，依赖同一 callee range 上 `CallAt` 的 consumer（如 signature help）在这些位置返回 unavailable（唯一调用点位于 `nextIsFunctionCall` 分支内，该提前返回只是防御）。验证见 `tests/parser/test_canonical_consumers.c` 的 `test_member_call_invocation_alias_is_enumerated_once` 与 `tests/language_server/test_lsp_member_call_reference_uniqueness.c`。
 - Reference 的 resolved 声明/写入可为自身建立 definition seed；后续投影使用已发布顺序中的既有定义，并非 CFG 求解。只有已有 known/ID/分类等字段提供的证据才能使用，不能从记录存在性推断完整数据流证明。
 
 ## 静态可达的问题
