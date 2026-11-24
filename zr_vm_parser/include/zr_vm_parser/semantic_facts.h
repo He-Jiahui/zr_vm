@@ -257,6 +257,9 @@ typedef struct SZrSemanticReferenceFact {
     EZrSemanticDefiniteAssignmentState definiteAssignmentState;
     TZrBool hasDefiniteAssignmentState;
     TZrBool isResolved;
+    /** @brief 成员调用的第二条 CALL 视图（node 为 FUNCTION_CALL occurrence，symbol/kind/range 与绑定成员那条相同）。
+     * @note 只供按 node 查询实参映射；按符号枚举的 ReferencesOf/ExternalReferences 跳过此记录，使每个调用点只出现一次。 */
+    TZrBool isInvocationAlias;
     EZrSemanticReferenceOriginKind originKind;
     EZrSemanticRuntimeRootKind runtimeRootKind;
     TZrUInt64 originToken;

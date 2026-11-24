@@ -837,7 +837,7 @@ TZrBool ZrParser_SemanticQuery_DefinitionsOf(
     return outDefinitions->length > 0;
 }
 
-/* 输出包含同身份的全部 reference kinds，用于引用查找/code lens；数组只拥有借用指针槽位。 */
+/* 输出包含同身份的全部 reference kinds（成员调用 invocation 别名除外），用于引用查找/code lens；数组只拥有借用指针槽位。 */
 TZrBool ZrParser_SemanticQuery_ReferencesOf(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -866,7 +866,9 @@ TZrBool ZrParser_SemanticQuery_ReferencesOf(
     for (i = 0; i < context->referenceFacts.length; i++) {
         const SZrSemanticReferenceFact *fact =
             (const SZrSemanticReferenceFact *)ZrCore_Array_Get((SZrArray *)&context->referenceFacts, i);
+        /* 成员调用的 invocation 别名与绑定成员事实同 symbol/kind/range，统一在此跳过。 */
         if (fact != ZR_NULL &&
+            !fact->isInvocationAlias &&
             fact->symbolId == symbolId &&
             semantic_query_scope_allows_range(scope, &fact->range)) {
             ZrCore_Array_Push(context->state, outReferences, &fact);

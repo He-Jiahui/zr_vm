@@ -793,6 +793,10 @@ void type_inference_record_member_call_reference_fact(
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
         memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
+        /* Only a chain whose next node is a FUNCTION_CALL publishes a member
+         * CALL. The sole caller is inside the nextIsFunctionCall branch, so
+         * this is defensive; other shapes publish no member CALL and CallAt
+         * consumers (signature help) report unavailable there. */
         callOccurrence == ZR_NULL || callOccurrence->type != ZR_AST_FUNCTION_CALL ||
         receiverType == ZR_NULL || memberInfo->name == ZR_NULL ||
         resolvedSignature == ZR_NULL) {
@@ -855,8 +859,13 @@ void type_inference_record_member_call_reference_fact(
             &fact.argumentMappings);
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
     /* Navigation uses the bound member; factual consumers can identify this
-     * exact invocation. Both views carry the same owning-copy argument maps. */
+     * exact invocation. Both views carry the same owning-copy argument maps.
+     * The invocation view has the same symbol, kind and range as the bound
+     * member, so it is marked as an alias: symbol-enumerating queries
+     * (ReferencesOf, ExternalReferences) skip it and report one occurrence
+     * per call site, while node lookup and CallAt still find it. */
     fact.node = callOccurrence;
+    fact.isInvocationAlias = ZR_TRUE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
     if (fact.argumentMappings.isValid) {
         ZrCore_Array_Free(cs->state, &fact.argumentMappings);

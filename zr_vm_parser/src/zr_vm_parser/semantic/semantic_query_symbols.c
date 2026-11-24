@@ -636,7 +636,9 @@ TZrBool ZrParser_SemanticQuery_ExternalReferences(
                         (SZrArray *)&context->referenceFacts, index);
         SZrParserSemanticExternalReferenceQuery projected;
 
+        /* 成员调用 invocation 别名与绑定成员事实同 range，跨文档匹配只投影一次。 */
         if (!semantic_query_external_reference_is_complete(reference) ||
+            reference->isInvocationAlias ||
             !semantic_query_symbols_scope_allows_declaration(scope, reference)) {
             continue;
         }

@@ -309,6 +309,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DefinitionsOf(
  * @pre 输出为 Construct/全零或同元素宽度 const SZrSemanticReferenceFact* 的可复用数组；本接口不校验复用宽度，释放须使用兼容 context global 的 state。
  * @note 有效 context/referenceFacts 后清长度，即使随后拒绝 invalid ID；更早拒绝不保证清空，元素指针仍借用。
  * @return 至少一个匹配 fact 才为 true；false 也可表示合法空结果，本接口不自行排除 DECLARATION 或未解析 role。
+ * @note 跳过成员调用 invocation 标记记录（isInvocationAlias）；同一调用点只返回绑定成员那条，按 node 查询仍可取得别名。
  * TODO: 沿调用方数组复用与其它查询的 prepare helper 核实此宽度校验差异的设计意图。
  * BUG: 合法匹配 fact 下首次 Init 失败仍继续 Push，断言/空写而非 false；见 semantic_query.c:834/852，未注入 OOM。 */
 ZR_PARSER_API TZrBool ZrParser_SemanticQuery_ReferencesOf(
@@ -353,6 +354,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
  * @pre 输出为 Construct/全零或同宽 SZrParserSemanticExternalReferenceQuery 数组，调用方用兼容 allocator 释放。
  * @return context/referenceFacts 与宽度 gate 后清长，至少一项才 true；typeId 与 provider generation 非零不参与完整性门槛。
  * @note owner identity 和 range.source 浅借用；generation=0 的外部身份须由消费者按 provider 契约判断。
+ * @note 与 ReferencesOf 相同，跳过成员调用 invocation 标记记录，每个调用点只投影一次。
  * BUG: 合法非空完整外部引用的首次 Init 分配失败仍进入 Push，可能断言/空写；见 semantic_query_symbols.c，未注入 OOM。 */
 ZR_PARSER_API TZrBool ZrParser_SemanticQuery_ExternalReferences(
         const SZrSemanticContext *context,
