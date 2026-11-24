@@ -97,4 +97,4 @@ ZR_VM_TEST_TIER=smoke ctest --test-dir build/codex-wsl-gcc-debug --output-on-fai
 1. 新增回归优先并入现有 suite，不再把已分离的 AOT 路径带回主仓脚本。
 2. `smoke/core/stress` 只作为过滤维度，不改一级 suite 组织。
 3. 测试生成的 AST / `.zri` / `.zro` 快照只写入构建目录下的 `tests_generated/`，不提交孤立 golden。
-4. AOT 相关源码、测试和历史资产只允许留在 `zr_vm_aot/`，不再参与主仓 `CTest`。
+4. 活跃 AOT 后端位于顶层 `zr_vm_parser/src/zr_vm_parser/backend_aot/`，其测试按普通 suite 注册。`zr_vm_aot/` 只是历史归档：其中 `tests/parser/*.c` 仍由 `tests/cmake/aot-pipeline-targets.cmake` 编译为可执行文件，但不注册到 `CTest`；归档的 `aot_runtime.c` 只作为 `test_aot_c_source_contracts.c` 的源码文本 oracle。不要再向 `zr_vm_aot/` 新增源码或测试（详见 `zr_vm_aot/README.md`）。
