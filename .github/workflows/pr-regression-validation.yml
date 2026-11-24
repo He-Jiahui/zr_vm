@@ -163,6 +163,66 @@ jobs:
             ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}/CMakeFiles/CMakeOutput.log
           if-no-files-found: ignore
 
+  optional-host-jit:
+    name: Linux Debug optional host JIT facade (gcc)
+    # The C++17 host-JIT facade is OFF in every other job; this is the only CI
+    # build that compiles zr_vm_jit/ and runs its contract test.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Record source identity
+        run: |
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Configure Debug with ZR_VM_ENABLE_HOST_JIT
+        env:
+          CC: gcc
+          CXX: g++
+        run: >-
+          cmake -S . -B "${{ runner.temp }}/zr-host-jit"
+          -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DZR_VM_ENABLE_HOST_JIT=ON
+          -DBUILD_TESTS=ON
+          -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+          -DBUILD_RUST_BINDING=OFF
+      - name: Build host JIT contract targets
+        run: >-
+          cmake --build "${{ runner.temp }}/zr-host-jit" --parallel 2
+          --target zr_vm_ssa_host_jit_optional_test zr_vm_ssa_host_baseline_jit_test
+      - name: Validate host JIT CTest registrations
+        env:
+          BUILD_DIR: ${{ runner.temp }}/zr-host-jit
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess, sys
+          build = os.environ['BUILD_DIR']
+          result = subprocess.run(['ctest', '--test-dir', build, '--show-only=json-v1'],
+                                  check=True, text=True, capture_output=True)
+          names = {test['name'] for test in json.loads(result.stdout)['tests']}
+          selected = sorted(n for n in names if re.fullmatch(r'ssa_host_(jit_optional|baseline_jit)', n))
+          if selected != ['ssa_host_baseline_jit', 'ssa_host_jit_optional']:
+              sys.exit(f'expected both host JIT tests to be registered, got {selected}')
+          print('Host JIT CTest registrations present:', *selected)
+          PY
+      - name: Run host JIT contract tests
+        run: >-
+          ctest --test-dir "${{ runner.temp }}/zr-host-jit"
+          --output-on-failure --no-tests=error
+          -R '^ssa_host_(jit_optional|baseline_jit)$'
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supplemental-linux-host-jit-logs
+          path: |
+            ${{ runner.temp }}/zr-host-jit/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/zr-host-jit/CMakeFiles/CMakeError.log
+            ${{ runner.temp }}/zr-host-jit/CMakeFiles/CMakeOutput.log
+          if-no-files-found: ignore
+
   windows-smoke:
     name: Windows MSVC CLI, LSP, parser, and fused-add smoke
     runs-on: windows-latest
