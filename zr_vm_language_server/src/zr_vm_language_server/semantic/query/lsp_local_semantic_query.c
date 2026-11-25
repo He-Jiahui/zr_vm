@@ -142,7 +142,9 @@ static SZrDiagnostic *local_query_find_parser_diagnostic_at(SZrFileVersion *file
 /* 依当前文档内容把 LSP UTF-16 位置投影为 parser 字节位置，再查询语义快照。 */
 static SZrFileRange local_query_position_range(SZrLspContext *context,
                                                SZrString *uri,
-                                               SZrLspPosition position) {
+                                               SZrLspPosition position,
+                                               TZrBool characterCell) {
+    SZrFilePosition endPosition;
     SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     SZrFileVersionContentSnapshot snapshot;
     SZrFilePosition filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
@@ -163,17 +165,28 @@ static SZrFileRange local_query_position_range(SZrLspContext *context,
         }
         ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
     }
-    return ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    endPosition = filePosition;
+    if (characterCell) {
+        /* Hover asks about the character under the pointer: a one-character cell makes the
+         * parser match half-open, so `values|[` resolves to the indexing, not `values`.
+         * A zeroed (fallback) offset stays zero so the cell falls back to line/column. */
+        endPosition.column += 1;
+        if (filePosition.offset > 0U) {
+            endPosition.offset += 1U;
+        }
+    }
+    return ZrParser_FileRange_Create(filePosition, endPosition, uri);
 }
 
 /* 同一栈结果可复用；每次查询先丢弃旧借用指针并绑定新的文档位置。 */
 static void local_query_seed(SZrLspContext *context,
                              SZrString *uri,
                              SZrLspPosition position,
+                             TZrBool characterCell,
                              SZrLspLocalSemanticQueryResult *result) {
     ZrLanguageServer_LspLocalSemanticQuery_Clear(result);
     result->status = ZR_LSP_LOCAL_SEMANTIC_QUERY_UNKNOWN;
-    result->queryRange = local_query_position_range(context, uri, position);
+    result->queryRange = local_query_position_range(context, uri, position, characterCell);
 }
 
 /* 查询执行成功不等于有事实；parser 错误遮挡通过独立状态交给 hover 决策。 */
@@ -628,7 +641,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
         return ZR_FALSE;
     }
 
-    local_query_seed(context, uri, position, result);
+    local_query_seed(context, uri, position, ZR_TRUE, result);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (local_query_set_diagnostic_if_blocked(fileVersion, result)) {
         return ZR_TRUE;
@@ -659,7 +672,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(
         return ZR_FALSE;
     }
 
-    local_query_seed(context, uri, position, result);
+    local_query_seed(context, uri, position, ZR_FALSE, result);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (local_query_set_diagnostic_if_blocked(fileVersion, result)) {
         return ZR_TRUE;

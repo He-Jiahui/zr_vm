@@ -36,7 +36,11 @@ typedef struct SZrLspSemanticQuery {
     TZrSize semanticVersion;
     TZrBool hasSemanticVersion;
     SZrLspPosition position;
+    /** @brief 请求位置；seed 之后不再改写，hover 结果范围按它判断光标是否落入候选范围。 */
     SZrFileRange queryRange;
+    /** @brief 解析器在请求文档内命中的声明范围；仅作为 hover 结果范围候选，不代替 queryRange。 */
+    SZrFileRange hoverDeclarationRange;
+    TZrBool hasHoverDeclarationRange;
     SZrLspProjectIndex *projectIndex;
     SZrSemanticAnalyzer *analyzer;
     SZrSymbol *symbol;
@@ -60,6 +64,14 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspSemanticQuery_Free(SZrState *sta
  *  @pre query 可写；uri 在本次请求中有效；返回成功后仍须在请求结束前调用 Free。
  *  @return 命中可信的本地符号、导入成员或外部元数据目标时为真；失败时 query 可能已含借用字段。 */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    SZrLspPosition position,
+    SZrLspSemanticQuery *query);
+/** @brief hover 专用解析：以光标所在字符格（start 后一字符）为查询位置，parser 按半开范围命中覆盖该字符的事实。
+ *  @note definition/references/rename 等 caret 请求仍用 ResolveAtPosition 的零宽位置（闭区间，`foo|` 命中 foo）。 */
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveHoverAtPosition(
     SZrState *state,
     SZrLspContext *context,
     SZrString *uri,
