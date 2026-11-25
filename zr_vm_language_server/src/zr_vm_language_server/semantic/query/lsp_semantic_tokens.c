@@ -300,32 +300,60 @@ static TZrBool semantic_token_is_meta_method(const TZrChar *text, TZrSize length
     return ZrLanguageServer_Lsp_IsKnownMetaMethodToken(text, length);
 }
 
-/* 语义查询不会为所有保留词建立符号；文本扫描只对这份词表提供关键词 token。 */
-static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize length) {
-    static const TZrChar *const keywordWords[] = {
-        "let",       "var",       "fn",       "ref",       "in",       "out",
-        "scoped",    "readonly",  "resource", "property", "init",     "own",
-        "move",      "share",     "degrade",  "wake",     "intoGc",   "drop",
-        "native",    "extern",    "async",    "await",
-        "comptime",  "yield",     "import",   "typeid",   "typeof",   "loadModule",
-        "loadPlugin", "pub",      "pri",      "pro",      "static",   "new",
-        "class",
-        "struct",    "interface", "enum",     "union",    "module",
-        "if",        "else",      "switch",   "case",     "default",  "while",
-        "for",       "break",     "continue", "return",   "try",      "catch",
-        "finally",   "throw",     "super",    "get",      "set",
-        "where"
-    };
+/* 词表中逐字匹配一个词；两张表共用。 */
+static TZrBool semantic_token_word_in_table(const TZrChar *const *words,
+                                            TZrSize count,
+                                            const TZrChar *text,
+                                            TZrSize length) {
+    for (TZrSize index = 0; index < count; index++) {
+        TZrSize wordLength = strlen(words[index]);
 
-    for (TZrSize index = 0; index < sizeof(keywordWords) / sizeof(keywordWords[0]); index++) {
-        TZrSize keywordLength = strlen(keywordWords[index]);
-
-        if (length == keywordLength && memcmp(text, keywordWords[index], length) == 0) {
+        if (length == wordLength && memcmp(text, words[index], length) == 0) {
             return ZR_TRUE;
         }
     }
-
     return ZR_FALSE;
+}
+
+/* 保留字：取自 parser 词法器 lexer_tokens.c 的 zr_keywords（字面量 true/false/null/
+ * Infinity/NegativeInfinity/NaN 除外）。词法器的 FindKeyword 只在 parser 内部头文件声明，
+ * 语言服务器不链接该内部接口，因此在此维护同一份列表；改动词法器关键字时须同步。
+ * 例外：`using` 沿用原表不着色——test_lsp_project_features 的
+ * test_lsp_semantic_tokens_ignore_removed_prefix_syntax 要求旧式 `using (resource)` 不得
+ * 得到 keyword token；按语法位置区分新旧 using 需另行决定，不在此处猜测。 */
+static TZrBool semantic_token_is_reserved_word(const TZrChar *text, TZrSize length) {
+    static const TZrChar *const reservedWords[] = {
+        "module",    "struct",    "class",    "abstract", "virtual",  "override",
+        "final",     "shadow",    "interface", "enum",    "union",    "fn",
+        "ref",       "typeid",    "typeof",   "share",    "degrade",  "wake",
+        "intoGc",    "drop",      "test",     "intermediate", "var",  "let",
+        "pub",       "pri",       "pro",      "if",       "else",
+        "switch",    "while",     "for",      "break",    "continue", "return",
+        "yield",     "super",     "new",      "set",      "get",      "static",
+        "const",     "in",        "out",      "throw",    "try",      "catch",
+        "finally"
+    };
+
+    return semantic_token_word_in_table(reservedWords,
+                                        sizeof(reservedWords) / sizeof(reservedWords[0]),
+                                        text,
+                                        length);
+}
+
+/* 上下文词：词法器按 ZR_TK_IDENTIFIER 返回，只在特定语法位置是关键字（如 `init Vec2(...)`、
+ * `where T: ...`），也可作函数、方法、参数或导入别名名字。扫描时先查精确语义符号，
+ * 未解析为符号才着色为 keyword。 */
+static TZrBool semantic_token_is_contextual_word(const TZrChar *text, TZrSize length) {
+    static const TZrChar *const contextualWords[] = {
+        "scoped",    "readonly",  "resource", "property", "init",     "own",
+        "move",      "native",    "extern",   "async",    "await",    "comptime",
+        "import",    "loadModule", "loadPlugin", "case",  "default",  "where"
+    };
+
+    return semantic_token_word_in_table(contextualWords,
+                                        sizeof(contextualWords) / sizeof(contextualWords[0]),
+                                        text,
+                                        length);
 }
 
 /* 在快照上补齐关键词、装饰器及标识符；普通标识符按精确语义事实分类，导入别名另有文本补充路径。 */
@@ -494,7 +522,7 @@ static void semantic_token_scan_source(SZrState *state,
             startLine = (TZrUInt32)startPosition.line;
             startCharacter = (TZrUInt32)startPosition.character;
 
-            if (semantic_token_is_keyword_word(content + start, length)) {
+            if (semantic_token_is_reserved_word(content + start, length)) {
                 semantic_token_add_utf16_span(state,
                                               entries,
                                               content,
@@ -520,6 +548,14 @@ static void semantic_token_scan_source(SZrState *state,
                                                                  offset,
                                                                  (TZrUInt32)canonicalType,
                                                                  canonicalModifiers);
+                } else if (semantic_token_is_contextual_word(content + start, length)) {
+                    semantic_token_add_utf16_span(state,
+                                                  entries,
+                                                  content,
+                                                  contentLength,
+                                                  start,
+                                                  offset,
+                                                  ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
                 }
             }
             semantic_token_append_import_alias_binding(state,
@@ -558,9 +594,14 @@ static void semantic_token_scan_source(SZrState *state,
                 continue;
             }
 
-            /* TODO: 这里按拼写匹配整份 AST 导入绑定而不核对当前作用域；
-             * 需用同名局部变量遮蔽导入别名的解析/着色测试确认是否误标 namespace。 */
+            /* 导入绑定按拼写匹配整份文件；同名参数或非导入局部变量遮蔽别名时按该符号着色
+             * （上方已发出其 canonical token），不发 namespace，也不走模块成员链。 */
             binding = semantic_token_find_import_binding(bindings, content + start, length);
+            if (binding != ZR_NULL &&
+                ZrLanguageServer_LspSemanticToken_ShadowsImportAlias(
+                        analyzer, uri, start, length, startLine, startCharacter)) {
+                continue;
+            }
             if (binding == ZR_NULL) {
                 TZrUInt32 tokenModifiers = 0U;
                 TZrInt32 tokenType = ZrLanguageServer_LspSemanticToken_ResolveCanonical(

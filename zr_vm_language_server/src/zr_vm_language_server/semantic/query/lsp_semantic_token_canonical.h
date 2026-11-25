@@ -48,4 +48,16 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         TZrUInt32 character,
         TZrUInt32 *outModifiers);
 
+/**
+ * @brief 判断与某导入别名同拼写的词元是否其实解析为另一个局部符号（参数或非导入变量）。
+ * @pre 参数含义同 ResolveCanonical；仅在拼写已命中导入绑定时调用。
+ * @return 精确解析为非导入的 PARAMETER/VARIABLE 符号时为 ZR_TRUE；查询失败或是导入别名本身时为 ZR_FALSE。
+ */
+TZrBool ZrLanguageServer_LspSemanticToken_ShadowsImportAlias(
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        TZrSize startOffset,
+        TZrSize length,
+        TZrUInt32 line,
+        TZrUInt32 character);
 #endif
