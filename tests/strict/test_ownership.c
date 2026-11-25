@@ -1,4 +1,5 @@
 #include "zr_vm_strict/ownership.h"
+#include "zr_vm_strict/pool.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -225,7 +226,80 @@ static void test_deep_release_is_iterative_and_preserves_child_fault(void) {
     finish(&fixture, NULL);
 }
 
+static void report_rental(void *context, const char *name, ZrStrictSite origin) {
+    Fixture *fixture = context;
+    assert(strcmp(name, "Student") == 0 && origin.source == site.source && origin.line == site.line);
+    ++fixture->survivors;
+}
+
+static void test_optional_pool_recycle_and_slab_lifetime(void) {
+    Fixture fixture, otherRuntime;
+    start(&fixture);
+    start(&otherRuntime);
+    ZrStrictPool pool = {0}, unrelated = {0};
+    ZrStrictLayout layout = payload_layout(&fixture);
+    ZrStrictLayout otherLayout = payload_layout(&otherRuntime);
+    assert(ZrStrict_PoolInit(&fixture.runtime, &pool, &layout, 2, 3) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolInit(&otherRuntime.runtime, &unrelated, &otherLayout, 2, 3) == ZR_STRICT_OK);
+    assert(fixture.allocations == 0);
+    assert(ZrStrictRuntime_Close(&fixture.runtime, NULL, NULL) == ZR_STRICT_BUSY);
+
+    ZrStrictPoolHandle first = {0}, second = {0}, third = {0}, next = {0}, unrelatedHandle = {0};
+    const Payload value = {.value = 42}, fault = {.value = -1};
+    assert(ZrStrict_PoolRent(&pool, &value, site, &first) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolRent(&pool, &value, site, &second) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolRent(&pool, &value, site, &third) == ZR_STRICT_OK);
+    assert(fixture.allocations == 2 && first.slab == second.slab && first.slab != third.slab);
+    assert(ZrStrict_PoolRent(&pool, &value, site, &next) == ZR_STRICT_OUT_OF_MEMORY && !next.rental);
+    assert(ZrStrict_PoolRent(&unrelated, &value, site, &unrelatedHandle) == ZR_STRICT_OK);
+    assert(!ZrStrict_PoolContains(&unrelated, first) && !ZrStrict_PoolContains(&pool, unrelatedHandle));
+    assert(ZrStrict_PoolClose(&unrelated, NULL, NULL) == ZR_STRICT_OK);
+    finish(&otherRuntime, NULL);
+
+    const ZrStrictPoolHandle copy = first;
+    ZrStrictPoolView viewA = {0}, viewB = {0};
+    assert(ZrStrict_PoolOpenView(&pool, first, 0, &viewA) == ZR_STRICT_OK);
+    assert((uintptr_t)ZrStrict_PoolViewData(&viewA) % layout.alignment == 0);
+    assert(ZrStrict_PoolOpenView(&pool, first, 1, &viewB) == ZR_STRICT_BUSY);
+    assert(ZrStrict_PoolOpenView(&pool, first, 0, &viewB) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolRecycle(&pool, copy) == ZR_STRICT_OK);
+    assert(!ZrStrict_PoolContains(&pool, first) && ZrStrict_PoolRecycle(&pool, first) == ZR_STRICT_EXPIRED);
+    ZrStrictPoolView expired = {0};
+    assert(ZrStrict_PoolOpenView(&pool, first, 0, &expired) == ZR_STRICT_EXPIRED && !expired.pool);
+    assert(((const Payload *)ZrStrict_PoolViewData(&viewA))->value == 42);
+    assert(ZrStrict_PoolViewDataMut(&viewA) == NULL);
+    assert(ZrStrict_PoolClose(&pool, NULL, NULL) == ZR_STRICT_BUSY);
+    assert(ZrStrict_PoolCloseView(&viewA) == ZR_STRICT_OK && fixture.drops == 0);
+    assert(ZrStrict_PoolCloseView(&viewB) == ZR_STRICT_OK && fixture.drops == 1);
+    ZrStrictPoolHandle reused = {0};
+    assert(ZrStrict_PoolRent(&pool, &value, site, &reused) == ZR_STRICT_OK);
+    assert(reused.slab == first.slab && reused.slot == first.slot && reused.rental != first.rental);
+    assert(!ZrStrict_PoolContains(&pool, first) && ZrStrict_PoolContains(&pool, reused));
+    assert(ZrStrict_PoolRecycle(&pool, reused) == ZR_STRICT_OK && fixture.drops == 2);
+    assert(ZrStrict_PoolRecycle(&pool, second) == ZR_STRICT_OK && fixture.drops == 3);
+    assert(fixture.frees == 0 && ZrStrict_PoolShrink(&pool) == 1 && fixture.frees == 1);
+
+    fixture.failAllocation = 1;
+    assert(ZrStrict_PoolRent(&pool, &value, site, &next) == ZR_STRICT_OUT_OF_MEMORY && !next.rental);
+    fixture.failAllocation = 0;
+    assert(ZrStrict_PoolRent(&pool, &fault, site, &next) == ZR_STRICT_OK);
+    assert(!ZrStrict_PoolContains(&pool, copy) && next.slab != first.slab);
+    assert(ZrStrict_PoolOpenView(&pool, next, 1, &viewA) == ZR_STRICT_OK);
+    assert(((Payload *)ZrStrict_PoolViewDataMut(&viewA))->value == -1);
+    assert(ZrStrict_PoolCloseView(&viewA) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolClose(&pool, report_rental, &fixture) == ZR_STRICT_FAULT);
+    assert(fixture.survivors == 2 && fixture.drops == 5);
+
+    ZrStrictPoolHandle reopened = {0};
+    assert(ZrStrict_PoolInit(&fixture.runtime, &pool, &layout, 2, 3) == ZR_STRICT_OK);
+    assert(ZrStrict_PoolRent(&pool, &value, site, &reopened) == ZR_STRICT_OK);
+    assert(!ZrStrict_PoolContains(&pool, copy) && ZrStrict_PoolContains(&pool, reopened));
+    assert(ZrStrict_PoolClose(&pool, NULL, NULL) == ZR_STRICT_OK);
+    finish(&fixture, NULL);
+}
+
 int main(void) {
+    test_optional_pool_recycle_and_slab_lifetime();
     test_last_strong_releases_payload_and_weak_delays_storage();
     test_failed_constructor_and_destructor();
     test_cycle_survives_until_shutdown();

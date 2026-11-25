@@ -68,7 +68,7 @@ ZrStrictStatus ZrStrictRuntime_Close(ZrStrictRuntime *runtime,
     if (!runtime_open(runtime)) {
         return ZR_STRICT_INVALID_ARGUMENT;
     }
-    if (runtime->dropDepth) {
+    if (runtime->dropDepth || runtime->openPools) {
         return ZR_STRICT_BUSY;
     }
     runtime->closing = 1;
@@ -98,7 +98,7 @@ ZrStrictStatus ZrStrict_OwnBegin(ZrStrictRuntime *runtime, const ZrStrictLayout 
         return ZR_STRICT_INVALID_ARGUMENT;
     }
     *payload = NULL;
-    if (runtime->dropDepth) {
+    if (runtime->dropDepth || runtime->poolDropDepth) {
         return ZR_STRICT_BUSY;
     }
     alignmentMask = layout->alignment - 1;

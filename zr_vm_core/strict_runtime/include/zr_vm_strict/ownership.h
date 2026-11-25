@@ -2,6 +2,7 @@
 #define ZR_VM_STRICT_OWNERSHIP_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +41,8 @@ typedef struct ZrStrictRuntime {
     size_t dropDepth;
     ZrStrictAllocation **dropAppend;
     unsigned closing;
+    size_t openPools, poolDropDepth;
+    uint64_t lastPoolIdentity;
 } ZrStrictRuntime;
 
 typedef struct ZrStrictLayout {
