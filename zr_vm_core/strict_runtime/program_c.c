@@ -35,7 +35,7 @@ static int emit_instruction(FILE *file, const ZrStrictProgram *p, uint32_t pc) {
     }
 }
 
-static int emit_owned_body(FILE *file, const ZrStrictProgram *p) {
+static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned char *labels) {
     if (fputs("    static uint8_t kinds[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%u,", p->kinds[slot]) < 0) return 0;
     if (fputs("};\n    static uint32_t types[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
@@ -54,19 +54,31 @@ static int emit_owned_body(FILE *file, const ZrStrictProgram *p) {
     if (fprintf(file, "    };\n    static const ZrStrictProgram program = { .kinds = kinds, .slotCount = %" PRIu32
                       ", .slotLayouts = types, .layouts = layouts, .layoutCount = %" PRIu32 " };\n"
                       "    ZrStrictFrame frame;\n"
-                      "    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, &program, NULL);\n"
+                      "    ZrStrictFrameSlot slots[%" PRIu32 "];\n"
+                      "    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, &program, slots, %" PRIu32 ", NULL);\n"
                       "    if (status != ZR_STRICT_PROGRAM_OK) return status;\n"
-                      "    *out = (ZrStrictResult){0};\n", p->slotCount, p->layoutCount) < 0) return 0;
+                      "    *out = (ZrStrictResult){0};\n", p->slotCount, p->layoutCount, p->slotCount ? p->slotCount : 1,
+                      p->slotCount) < 0) return 0;
     for (uint32_t pc = 0; pc < p->instructionCount; ++pc) {
         const ZrStrictInstruction *i = &p->instructions[pc];
+        if (labels[pc] && fprintf(file, "pc_%" PRIu32 ":;\n", pc) < 0) return 0;
         if (i->op == ZR_STRICT_OP_RETURN) {
             if (fprintf(file, "    out->kind = %u; out->scalar = ZrStrictFrame_Scalar(&frame, %" PRIu32 ");\n    goto cleanup;\n",
                         (unsigned)p->kinds[i->lhs], i->lhs) < 0) return 0;
-            break;
+            continue;
         }
         if (i->op == ZR_STRICT_OP_HALT) {
             if (fputs("    goto cleanup;\n", file) < 0) return 0;
-            break;
+            continue;
+        }
+        if (i->op == ZR_STRICT_OP_JUMP) {
+            if (fprintf(file, "    goto pc_%" PRIu64 ";\n", i->immediate) < 0) return 0;
+            continue;
+        }
+        if (i->op == ZR_STRICT_OP_JUMP_IF_FALSE) {
+            if (fprintf(file, "    if (!ZrStrictFrame_Scalar(&frame, %" PRIu32 ")) goto pc_%" PRIu64 ";\n",
+                        i->lhs, i->immediate) < 0) return 0;
+            continue;
         }
         if (fprintf(file, "    status = ZrStrictFrame_Apply(&frame, &(ZrStrictInstruction){%" PRIu32 ",%" PRIu32 ",%" PRIu32
                           ",%" PRIu32 ",UINT64_C(%" PRIu64 ")});\n"
@@ -101,7 +113,7 @@ ZrStrictProgramStatus ZrStrictProgram_EmitC(FILE *file, const ZrStrictProgram *p
                 "static ZrStrictProgramStatus run(ZrStrictResult *out, uint32_t *fault) {\n",
                 ZR_STRICT_PROGRAM_ABI) < 0) goto done;
     if (p->layoutCount) {
-        if (!emit_owned_body(file, p)) goto done;
+        if (!emit_owned_body(file, p, labels)) goto done;
     } else {
     if (p->slotCount && fprintf(file, "    int64_t slots[%" PRIu32 "] = {0};\n", p->slotCount) < 0) goto done;
     if (fputs(scalar ? "    ZrStrictProgramStatus status;\n" : "    (void)fault;\n", file) < 0 ||

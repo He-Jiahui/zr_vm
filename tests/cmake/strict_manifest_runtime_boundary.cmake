@@ -130,10 +130,34 @@ function(check_strict_owner name source expected fault)
     file(WRITE "${manifest}" "${envelope},\"StrictNoGC\":true}\n")
     file(WRITE "${src}" "${source}\n")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ZR_VM_TRACE_CORE_BOOTSTRAP=1 ZR_VM_TRACE_PROJECT_STARTUP=1
-            "${CLI_EXE}" "${manifest}" --emit-executed-via
+            ZR_VM_TRACE_STRICT_EXECUTION=1 "${CLI_EXE}" "${manifest}" --emit-executed-via
             RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
     string(REPLACE "\r\n" "\n" output "${output}")
     string(STRIP "${output}" output)
+    string(REPLACE "\r\n" "\n" error "${error}")
+    # The CLI compiles source before entering the strict runtime. Compiler
+    # bootstrap is outside the StrictNoGC execution contract.
+    set(begin "[zr-strict-execution] begin\n")
+    set(end "[zr-strict-execution] end\n")
+    string(FIND "${error}" "${begin}" begin_at)
+    if(begin_at LESS 0)
+        string(LENGTH "${error}" length)
+        math(EXPR last "${length} - 1024")
+        if(last LESS 0)
+            set(last 0)
+        endif()
+        string(SUBSTRING "${error}" ${last} -1 error_tail)
+        message(FATAL_ERROR "${name}: Did not reach strict execution (${status}): ${output}\n${error_tail}")
+    endif()
+    string(LENGTH "${begin}" begin_size)
+    math(EXPR inside "${begin_at} + ${begin_size}")
+    string(SUBSTRING "${error}" ${inside} -1 error)
+    string(FIND "${error}" "${end}" end_at)
+    if(NOT end_at EQUAL 0)
+        message(FATAL_ERROR "${name}: Unexpected output during strict execution: ${error}")
+    endif()
+    string(LENGTH "${end}" end_size)
+    string(SUBSTRING "${error}" ${end_size} -1 error)
     string(STRIP "${error}" error)
     if(fault)
         if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error MATCHES "^StrictNoGC: .* at instruction [0-9]+$")
@@ -200,11 +224,28 @@ set(borrow_program [=[
 struct Grade { pub var score: int = 10; }
 let grade = init Grade();
 let student: Unique<Student> = own Student(32);
-let view: ref Student = ref student;
-view.id = view.id + grade.score;
-return view.id;
+if (grade.score == 10) {
+    let view: ref Student = ref student;
+    view.id = view.id + grade.score;
+} else {
+    return 0;
+}
+let owner = share(student);
+return owner.id;
 ]=])
 check_strict_owner(borrow "${student_decl}${borrow_program}" 42 FALSE)
+
+set(loop_program [=[
+let student: Unique<Student> = own Student(30);
+while (student.id < 42) {
+    let increment: Unique<Student> = own Student(3);
+    let view: ref Student = ref student;
+    view.id = view.id + increment.id;
+}
+let owner = share(student);
+return owner.id;
+]=])
+check_strict_owner(loop "${student_decl}${loop_program}" 42 FALSE)
 
 set(weak_start [=[
 let student: Unique<Student> = own Student(42);
@@ -248,6 +289,12 @@ drop(student);
 return view.id;
 ]=])
 reject_strict_owner(drop_while_borrowed "${borrowed_program}" "conflicting borrow")
+set(branch_move_program [=[
+let student: Unique<Student> = own Student(42);
+if (student.id != 0) { drop(student); }
+return student.id;
+]=])
+reject_strict_owner(path_dependent_move "${branch_move_program}" "agree on which owners are live")
 set(shared_write_program [=[
 let student: Unique<Student> = own Student(42);
 let owner = share(student);

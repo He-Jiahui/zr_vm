@@ -99,7 +99,7 @@ ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *p, uint32_t 
             return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
         }
     }
-    if (p->layoutCount && !zr_strict_verify_ownership(p, badPc)) return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
+    if (p->layoutCount) return zr_strict_verify_ownership(p, badPc);
     return ZR_STRICT_PROGRAM_OK;
 }
 
@@ -144,7 +144,8 @@ ZrStrictProgramStatus ZrStrictProgram_Scalar(uint32_t op, int64_t a, int64_t b, 
 
 static ZrStrictProgramStatus run_owned(const ZrStrictProgram *p, ZrStrictResult *result, uint32_t *badPc) {
     ZrStrictFrame frame;
-    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, p, NULL);
+    ZrStrictFrameSlot slots[ZR_STRICT_MAX_SLOTS];
+    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, p, slots, ZR_STRICT_MAX_SLOTS, NULL);
     uint32_t pc = 0;
     if (status != ZR_STRICT_PROGRAM_OK) return status;
     while (pc < p->instructionCount) {
@@ -155,6 +156,12 @@ static ZrStrictProgramStatus run_owned(const ZrStrictProgram *p, ZrStrictResult 
             break;
         }
         if (i->op == ZR_STRICT_OP_HALT) break;
+        if (i->op == ZR_STRICT_OP_JUMP ||
+            (i->op == ZR_STRICT_OP_JUMP_IF_FALSE && !ZrStrictFrame_Scalar(&frame, i->lhs))) {
+            pc = (uint32_t)i->immediate;
+            continue;
+        }
+        if (i->op == ZR_STRICT_OP_JUMP_IF_FALSE) { ++pc; continue; }
         status = ZrStrictFrame_Apply(&frame, i);
         if (status != ZR_STRICT_PROGRAM_OK) {
             if (badPc) *badPc = pc;

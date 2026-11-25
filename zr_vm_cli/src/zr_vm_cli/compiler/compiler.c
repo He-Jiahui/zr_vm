@@ -1007,7 +1007,11 @@ static int run_strict_program(const SZrCliCommand *command, const ZrStrictProgra
                               const TZrChar *executionMode) {
     ZrStrictResult result;
     uint32_t pc;
+    const char *trace = getenv("ZR_VM_TRACE_STRICT_EXECUTION");
+    TZrBool traceExecution = trace != NULL && strcmp(trace, "1") == 0;
+    if (traceExecution) fputs("[zr-strict-execution] begin\n", stderr);
     ZrStrictProgramStatus status = ZrStrictProgram_Run(program, &result, &pc);
+    if (traceExecution) fputs("[zr-strict-execution] end\n", stderr);
     if (status != ZR_STRICT_PROGRAM_OK) {
         fprintf(stderr, "StrictNoGC: %s at instruction %" PRIu32 "\n", ZrStrictProgram_StatusName(status), pc);
         return 1;

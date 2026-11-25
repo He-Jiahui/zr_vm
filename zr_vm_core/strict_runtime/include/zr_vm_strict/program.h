@@ -120,16 +120,29 @@ void ZrStrictProgram_Free(ZrStrictProgram *program);
 ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *program, uint32_t *badPc);
 ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *program, ZrStrictResult *result, uint32_t *badPc);
 
-/* The common frame API is for the interpreter and verified generated C. The
- * caller retains the program descriptor and must close on every exit. */
-typedef struct ZrStrictFrameSlot ZrStrictFrameSlot;
+/* The interpreter and generated C supply automatic storage for typed slots.
+ * The slot representation is private to the frame helpers. */
+typedef struct ZrStrictFrameSlot {
+    union {
+        int64_t scalar;
+        int64_t record[ZR_STRICT_MAX_FIELDS];
+        ZrStrictUnique unique;
+        ZrStrictShared shared;
+        ZrStrictWeak weak;
+        uint32_t borrowedFrom;
+    } value;
+    unsigned live;
+} ZrStrictFrameSlot;
 typedef struct ZrStrictFrame {
     const ZrStrictProgram *program;
     ZrStrictFrameSlot *slots;
     ZrStrictRuntime ownership;
 } ZrStrictFrame;
+/* Use verified instructions only. The caller keeps `program` and `slots`
+ * alive through Close, and closes the frame on each successful Open. */
 ZrStrictProgramStatus ZrStrictFrame_Open(ZrStrictFrame *frame, const ZrStrictProgram *program,
-                                          const ZrStrictAllocator *allocator);
+                                        ZrStrictFrameSlot *slots, uint32_t capacity,
+                                        const ZrStrictAllocator *allocator);
 ZrStrictProgramStatus ZrStrictFrame_Close(ZrStrictFrame *frame);
 ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictInstruction *instruction);
 int64_t ZrStrictFrame_Scalar(const ZrStrictFrame *frame, uint32_t slot);

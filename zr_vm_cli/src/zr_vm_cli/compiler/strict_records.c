@@ -29,6 +29,7 @@ typedef struct Lowerer {
     SZrFileRange *locations;
     uint8_t live[ZR_STRICT_MAX_SLOTS];
     uint32_t depth, bindingCount, capacity;
+    TZrBool terminated;
     const char *path;
     char *error;
     size_t errorSize;
@@ -385,25 +386,124 @@ static uint8_t binding_type(Lowerer *l, const SZrType *type, uint32_t *layout) {
 
 static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node);
 
+static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first) {
+    for (uint32_t slot = l->program.slotCount; slot > first;) {
+        uint8_t kind = l->program.kinds[--slot];
+        if (!l->live[slot]) continue;
+        if (!l->terminated && !emit(l, node, kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW
+                ? ZR_STRICT_OP_END_BORROW : ZR_STRICT_OP_DROP, 0, slot, 0)) return ZR_FALSE;
+        l->live[slot] = 0;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool lower_block(Lowerer *l, const SZrAstNode *node) {
     const SZrAstNodeArray *body = node->data.block.body;
     uint32_t first = l->program.slotCount, bindings = l->bindingCount;
     ++l->depth;
     for (size_t index = 0; index < count(body); ++index)
         if (!lower_statement(l, body->nodes[index])) return ZR_FALSE;
-    for (uint32_t slot = l->program.slotCount; slot > first;) {
-        uint8_t kind = l->program.kinds[--slot];
-        if (l->live[slot] && !emit(l, node, kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW
-                ? ZR_STRICT_OP_END_BORROW : ZR_STRICT_OP_DROP, 0, slot, 0)) return ZR_FALSE;
-    }
+    if (!release_slots(l, node, first)) return ZR_FALSE;
     --l->depth;
     l->bindingCount = bindings;
     return ZR_TRUE;
 }
 
+static uint32_t lower_condition(Lowerer *l, const SZrAstNode *condition) {
+    uint32_t first = l->program.slotCount;
+    uint32_t slot = lower_expression(l, condition, ZR_STRICT_VALUE_BOOL);
+    if (slot == INVALID_SLOT) return INVALID_SLOT;
+    if (l->program.kinds[slot] != ZR_STRICT_VALUE_BOOL)
+        return refuse(l, condition, "strict condition must be bool");
+    return release_slots(l, condition, first) ? slot : INVALID_SLOT;
+}
+
+static TZrBool lower_if(Lowerer *l, const SZrAstNode *node) {
+    const SZrIfExpression *branch = &node->data.ifExpression;
+    uint32_t condition = lower_condition(l, branch->condition);
+    uint32_t jumpElse = l->program.instructionCount, jumpEnd = INVALID_SLOT;
+    uint32_t owned = l->program.slotCount;
+    uint8_t *state;
+    TZrBool thenReturns, ok = ZR_FALSE;
+    if (condition == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_JUMP_IF_FALSE, 0, condition, 0)) return ZR_FALSE;
+    state = malloc((size_t)owned * 2);
+    if (!state) {
+        (void)refuse(l, node, "could not save ownership state at branch");
+        return ZR_FALSE;
+    }
+    memcpy(state, l->live, owned);
+    if (!lower_statement(l, branch->thenExpr)) goto done;
+    thenReturns = l->terminated;
+    if (branch->elseExpr) {
+        if (!thenReturns) {
+            jumpEnd = l->program.instructionCount;
+            if (!emit(l, node, ZR_STRICT_OP_JUMP, 0, 0, 0)) goto done;
+        }
+        memcpy(state + owned, l->live, owned);
+        memcpy(l->live, state, owned);
+        l->terminated = ZR_FALSE;
+        l->program.instructions[jumpElse].immediate = l->program.instructionCount;
+        if (!lower_statement(l, branch->elseExpr)) goto done;
+        if (!thenReturns) {
+            if (l->terminated) memcpy(l->live, state + owned, owned);
+            else if (memcmp(l->live, state + owned, owned)) goto disagree;
+            l->terminated = ZR_FALSE;
+            l->program.instructions[jumpEnd].immediate = l->program.instructionCount;
+        }
+    } else {
+        l->program.instructions[jumpElse].immediate = l->program.instructionCount;
+        if (thenReturns) memcpy(l->live, state, owned);
+        else if (memcmp(l->live, state, owned)) goto disagree;
+        l->terminated = ZR_FALSE;
+    }
+    ok = ZR_TRUE;
+    goto done;
+disagree:
+    (void)refuse(l, node, "branches that continue must agree on which owners are live");
+done:
+    free(state);
+    return ok;
+}
+
+static TZrBool lower_while(Lowerer *l, const SZrAstNode *node) {
+    const SZrWhileLoop *loop = &node->data.whileLoop;
+    uint32_t repeat = l->program.instructionCount;
+    uint32_t condition = lower_condition(l, loop->cond);
+    uint32_t exit = l->program.instructionCount, owned = l->program.slotCount;
+    uint8_t *state;
+    TZrBool ok = ZR_FALSE;
+    if (condition == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_JUMP_IF_FALSE, 0, condition, 0)) return ZR_FALSE;
+    state = malloc(owned);
+    if (!state) {
+        (void)refuse(l, node, "could not save ownership state at loop");
+        return ZR_FALSE;
+    }
+    memcpy(state, l->live, owned);
+    if (!lower_statement(l, loop->block)) goto done;
+    if (!l->terminated) {
+        if (memcmp(l->live, state, owned)) {
+            (void)refuse(l, node, "each loop iteration must preserve the ownership state at its entry");
+            goto done;
+        }
+        if (!emit(l, node, ZR_STRICT_OP_JUMP, 0, 0, repeat)) goto done;
+    } else {
+        memcpy(l->live, state, owned);
+    }
+    l->terminated = ZR_FALSE;
+    l->program.instructions[exit].immediate = l->program.instructionCount;
+    ok = ZR_TRUE;
+done:
+    free(state);
+    return ok;
+}
+
 static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
     uint32_t input, dst, type = 0, field;
     const SZrAstNode *expr = node->type == ZR_AST_EXPRESSION_STATEMENT ? node->data.expressionStatement.expr : node;
+    if (l->terminated) {
+        (void)refuse(l, node, "unreachable statement after unconditional strict exit");
+        return ZR_FALSE;
+    }
     switch (expr->type) {
         case ZR_AST_VARIABLE_DECLARATION: {
             const SZrVariableDeclaration *decl = &expr->data.variableDeclaration;
@@ -426,8 +526,15 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             return bind(l, node, identifier(decl->pattern), dst);
         }
         case ZR_AST_BLOCK: return lower_block(l, expr);
+        case ZR_AST_IF_EXPRESSION:
+            if (expr->data.ifExpression.isStatement) return lower_if(l, expr);
+            break;
+        case ZR_AST_WHILE_LOOP:
+            if (expr->data.whileLoop.isStatement) return lower_while(l, expr);
+            break;
         case ZR_AST_RETURN_STATEMENT:
-            if (l->depth || expr->data.returnStatement.isReferenceReturn) break;
+            if (expr->data.returnStatement.isReferenceReturn) break;
+            l->terminated = ZR_TRUE;
             if (!expr->data.returnStatement.expr) return emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
             input = lower_expression(l, expr->data.returnStatement.expr, 0);
             return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);

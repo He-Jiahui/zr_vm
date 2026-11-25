@@ -127,6 +127,43 @@ static void test_owned_program_borrow_move_and_weak_lifecycle(void) {
     assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 0);
 }
 
+static void test_ownership_joins_validate_all_incoming_paths(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_BOOL, ZR_STRICT_VALUE_BORROW};
+    uint32_t types[] = {0, 1, 0, 1};
+    ZrStrictRecordLayout layout = {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_I64}, .name = "Student"};
+    ZrStrictInstruction instructions[] = {
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 42},
+        {ZR_STRICT_OP_OWN_RECORD, 1, 0, 0, 0},
+        {ZR_STRICT_OP_CONST, 2, 0, 0, 1},
+        {ZR_STRICT_OP_JUMP_IF_FALSE, 0, 2, 0, 6},
+        {ZR_STRICT_OP_BORROW, 3, 1, 0, 0},
+        {ZR_STRICT_OP_END_BORROW, 0, 3, 0, 0},
+        {ZR_STRICT_OP_FIELD_READ, 0, 1, 0, 0},
+        {ZR_STRICT_OP_RETURN, 0, 0, 0, 0},
+        {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
+    };
+    ZrStrictProgram source = {.kinds = kinds, .slotCount = 4, .instructions = instructions, .instructionCount = 9,
+                              .slotLayouts = types, .layouts = &layout, .layoutCount = 1};
+    ZrStrictResult result;
+    uint32_t pc;
+    assert(ZrStrictProgram_Run(&source, &result, &pc) == ZR_STRICT_PROGRAM_OK && result.scalar == 42);
+    instructions[2].immediate = 0;
+    assert(ZrStrictProgram_Run(&source, &result, &pc) == ZR_STRICT_PROGRAM_OK && result.scalar == 42);
+    instructions[5] = (ZrStrictInstruction){ZR_STRICT_OP_JUMP, 0, 0, 0, 6};
+    assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 6);
+    instructions[5] = (ZrStrictInstruction){ZR_STRICT_OP_END_BORROW, 0, 3, 0, 0};
+    instructions[7] = (ZrStrictInstruction){ZR_STRICT_OP_HALT, 0, 0, 0, 0};
+    instructions[8] = (ZrStrictInstruction){ZR_STRICT_OP_BORROW, 3, UINT32_MAX, 0, 0};
+    /* Keep the malformed operation unreachable but in the executable. */
+    ZrStrictInstruction unreachable[] = {
+        instructions[0], instructions[1], instructions[2], instructions[3], instructions[4], instructions[5],
+        instructions[6], instructions[7], instructions[8], {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
+    };
+    source.instructions = unreachable;
+    source.instructionCount = 10;
+    assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 8);
+}
+
 typedef struct FaultAllocator { unsigned attempts, frees; } FaultAllocator;
 static void *fail_second(void *context, size_t size) {
     FaultAllocator *fault = context;
@@ -139,25 +176,30 @@ static void fault_free(void *context, void *memory) {
 }
 
 static void test_owned_frame_unwinds_allocation_failure(void) {
-    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_UNIQUE};
-    uint32_t types[] = {0, 1, 1};
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_RECORD};
+    uint32_t types[] = {0, 1, 1, 1};
     ZrStrictRecordLayout layout = {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_I64}, .name = "Student"};
     ZrStrictInstruction instructions[] = {
         {ZR_STRICT_OP_CONST, 0, 0, 0, 42},
         {ZR_STRICT_OP_OWN_RECORD, 1, 0, 0, 0},
+        {ZR_STRICT_OP_INIT_RECORD, 3, 0, 0, 0},
         {ZR_STRICT_OP_OWN_RECORD, 2, 0, 0, 0},
         {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
     };
-    ZrStrictProgram source = {.kinds = kinds, .slotCount = 3, .instructions = instructions, .instructionCount = 4,
+    ZrStrictProgram source = {.kinds = kinds, .slotCount = 4, .instructions = instructions, .instructionCount = 5,
                               .slotLayouts = types, .layouts = &layout, .layoutCount = 1};
     FaultAllocator fault = {0};
     ZrStrictAllocator allocator = {fail_second, fault_free, &fault};
     ZrStrictFrame frame;
+    ZrStrictFrameSlot storage[4];
     assert(ZrStrictProgram_Verify(&source, NULL) == ZR_STRICT_PROGRAM_OK);
-    assert(ZrStrictFrame_Open(&frame, &source, &allocator) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Open(&frame, &source, storage, 3, &allocator) == ZR_STRICT_PROGRAM_BAD_LAYOUT);
+    assert(ZrStrictFrame_Open(&frame, &source, storage, 4, &allocator) == ZR_STRICT_PROGRAM_OK);
+    assert(fault.attempts == 0);
     assert(ZrStrictFrame_Apply(&frame, &instructions[0]) == ZR_STRICT_PROGRAM_OK);
     assert(ZrStrictFrame_Apply(&frame, &instructions[1]) == ZR_STRICT_PROGRAM_OK);
-    assert(ZrStrictFrame_Apply(&frame, &instructions[2]) == ZR_STRICT_PROGRAM_OUT_OF_MEMORY);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[2]) == ZR_STRICT_PROGRAM_OK && fault.attempts == 1);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[3]) == ZR_STRICT_PROGRAM_OUT_OF_MEMORY);
     assert(ZrStrictFrame_Close(&frame) == ZR_STRICT_PROGRAM_OK);
     assert(fault.attempts == 2 && fault.frees == 1);
 }
@@ -167,6 +209,7 @@ int main(void) {
     test_unverified_programs_fail_closed();
     test_arithmetic_fault_is_checked();
     test_owned_program_borrow_move_and_weak_lifecycle();
+    test_ownership_joins_validate_all_incoming_paths();
     test_owned_frame_unwinds_allocation_failure();
     return 0;
 }

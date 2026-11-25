@@ -11,9 +11,7 @@ static inline int zr_strict_is_borrow(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW;
 }
 
-/* Start with a linear ownership region. Scalar-only programs still support
- * arbitrary verified control flow. Extending ownership to joins requires a
- * definite-ownership proof on every incoming edge. */
-int zr_strict_verify_ownership(const ZrStrictProgram *program, uint32_t *badPc);
+/* Every incoming edge must agree on which owners and borrows are live. */
+ZrStrictProgramStatus zr_strict_verify_ownership(const ZrStrictProgram *program, uint32_t *badPc);
 
 #endif

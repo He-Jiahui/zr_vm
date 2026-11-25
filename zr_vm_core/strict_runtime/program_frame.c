@@ -1,20 +1,7 @@
 #include "program_ownership.h"
 
 #include <inttypes.h>
-#include <stdlib.h>
 #include <string.h>
-
-struct ZrStrictFrameSlot {
-    union {
-        int64_t scalar;
-        int64_t record[ZR_STRICT_MAX_FIELDS];
-        ZrStrictUnique unique;
-        ZrStrictShared shared;
-        ZrStrictWeak weak;
-        uint32_t borrowedFrom;
-    } value;
-    unsigned live;
-};
 
 static ZrStrictProgramStatus from_ownership(ZrStrictStatus status) {
     if (status == ZR_STRICT_OK) return ZR_STRICT_PROGRAM_OK;
@@ -23,17 +10,14 @@ static ZrStrictProgramStatus from_ownership(ZrStrictStatus status) {
 }
 
 ZrStrictProgramStatus ZrStrictFrame_Open(ZrStrictFrame *frame, const ZrStrictProgram *program,
-                                          const ZrStrictAllocator *allocator) {
-    if (!frame || !program || program->slotCount > ZR_STRICT_MAX_SLOTS) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+                                        ZrStrictFrameSlot *slots, uint32_t capacity,
+                                        const ZrStrictAllocator *allocator) {
+    if (!frame || !program || program->slotCount > ZR_STRICT_MAX_SLOTS ||
+        program->slotCount > capacity || (program->slotCount && !slots)) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     memset(frame, 0, sizeof(*frame));
     if (ZrStrictRuntime_Init(&frame->ownership, allocator) != ZR_STRICT_OK) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
-    if (program->slotCount) {
-        frame->slots = calloc(program->slotCount, sizeof(*frame->slots));
-        if (!frame->slots) {
-            (void)ZrStrictRuntime_Close(&frame->ownership, NULL, NULL);
-            return ZR_STRICT_PROGRAM_OUT_OF_MEMORY;
-        }
-    }
+    if (program->slotCount) memset(slots, 0, program->slotCount * sizeof(*slots));
+    frame->slots = slots;
     frame->program = program;
     return ZR_STRICT_PROGRAM_OK;
 }
@@ -79,7 +63,6 @@ ZrStrictProgramStatus ZrStrictFrame_Close(ZrStrictFrame *frame) {
 #else
     close = ZrStrictRuntime_Close(&frame->ownership, NULL, NULL);
 #endif
-    free(frame->slots);
     memset(frame, 0, sizeof(*frame));
     return from_ownership(first == ZR_STRICT_OK ? close : first);
 }
