@@ -47,8 +47,8 @@ endif()
 
 set(aot_exe "${TEST_WORK_DIR}/strict-native${EXE_SUFFIX}")
 if(MSVC)
-    set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}"
-            "/Fe${aot_exe}" "/Fo${TEST_WORK_DIR}/strict-native.obj")
+    set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}"
+            "/Fe${aot_exe}" "/Fo${TEST_WORK_DIR}/strict-native.obj" /link "${STRICT_ARCHIVE}")
 else()
     set(compile_args -std=c11 "-I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}" -o "${aot_exe}")
 endif()
@@ -232,8 +232,8 @@ function(check_strict_owner name source expected fault)
 
     set(aot_exe "${work}/strict-native${EXE_SUFFIX}")
     if(MSVC)
-        set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}"
-                "/Fe${aot_exe}" "/Fo${work}/strict-native.obj")
+        set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}"
+                "/Fe${aot_exe}" "/Fo${work}/strict-native.obj" /link "${STRICT_ARCHIVE}")
     else()
         set(compile_args -std=c11 "-I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}" -o "${aot_exe}")
     endif()
