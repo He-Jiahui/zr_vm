@@ -18,4 +18,11 @@ typedef enum EZrStrictNoGcSourceResult {
 ZR_PARSER_API EZrStrictNoGcSourceResult ZrParser_StrictNoGc_CheckSource(
         SZrAstNode *root, TZrStrictNoGcSourceDiagnostic diagnostic, void *context);
 
+/* Compiler-only bridge to the canonical, retained scalar IR producer. Source
+ * must already have passed the closed scalar input gate. Never execute the
+ * returned managed Function; only project its verified IR, then free it. */
+struct SZrFunction;
+ZR_PARSER_API struct SZrFunction *ZrParser_StrictNoGc_CompileScalarIr(
+        SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
+
 #endif

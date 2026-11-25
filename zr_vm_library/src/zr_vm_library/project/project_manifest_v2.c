@@ -128,6 +128,35 @@ EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectFileMemoryPolicy(TZrNati
     return result;
 }
 
+TZrBool ZrLibrary_Project_ReadStrictRuntimePaths(TZrNativeString path, TZrChar *binaryRoot,
+                                                 TZrSize binaryRootSize, TZrChar *entry, TZrSize entrySize) {
+    TZrNativeString text;
+    TZrChar directory[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar joined[ZR_LIBRARY_MAX_PATH_LENGTH];
+    cJSON *manifest;
+    const TZrChar *entryName;
+    const TZrChar *binaryName;
+    TZrBool success = ZR_FALSE;
+    if (!path || !binaryRoot || !binaryRootSize || !entry || !entrySize) return ZR_FALSE;
+    binaryRoot[0] = entry[0] = '\0';
+    text = library_project_manifest_read_file(path);
+    if (!text) return ZR_FALSE;
+    manifest = cJSON_ParseWithOpts(text, ZR_NULL, 1);
+    free(text);
+    if (library_project_manifest_memory_policy(manifest, ZR_NULL) != ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC ||
+        !ZrLibrary_File_GetDirectory(path, directory)) goto done;
+    entryName = cJSON_GetObjectItemCaseSensitive(manifest, "entry")->valuestring;
+    binaryName = cJSON_GetObjectItemCaseSensitive(manifest, "binary")->valuestring;
+    ZrLibrary_File_PathJoin(directory, binaryName, joined);
+    if (!joined[0] || strlen(joined) >= binaryRootSize ||
+        !ZrLibrary_Project_NormalizeModuleKey(entryName, entry, entrySize)) goto done;
+    memcpy(binaryRoot, joined, strlen(joined) + 1);
+    success = ZR_TRUE;
+done:
+    cJSON_Delete(manifest);
+    return success;
+}
+
 /* v2 项目构造需先具备非空基础定位字段，再建立声明数组。 */
 TZrBool library_project_manifest_v2_validate_base(cJSON *manifestJson) {
     return library_project_manifest_v2_has_required_string(manifestJson, "name") &&

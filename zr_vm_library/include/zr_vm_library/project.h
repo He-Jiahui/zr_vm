@@ -308,6 +308,10 @@ typedef struct SZrLibrary_Project SZrLibrary_Project;
 /** Read the manifest envelope without creating a VM. StrictNoGC requires v3. */
 ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectMemoryPolicy(const TZrChar *manifest);
 ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectFileMemoryPolicy(TZrNativeString path);
+/* Resolve binary root and entry from a validated strict manifest without a VM. */
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ReadStrictRuntimePaths(
+        TZrNativeString path, TZrChar *binaryRoot, TZrSize binaryRootSize,
+        TZrChar *entry, TZrSize entrySize);
 /** @brief 解析项目 manifest，并建立 CLI、解析器及运行器共用的项目状态。
  * @pre state、state->global、raw 与 file 为有效输入。
  * @return 失败时返回空指针；成功结果必须由 Project_Free 释放原始数组和归档。 */

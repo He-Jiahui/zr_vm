@@ -116,6 +116,9 @@ endfunction()
 add_executable(zr_vm_test_strict_ownership strict/test_ownership.c)
 target_link_libraries(zr_vm_test_strict_ownership PRIVATE zr_vm_strict_runtime)
 add_test(NAME test_strict_ownership COMMAND zr_vm_test_strict_ownership)
+add_executable(zr_vm_test_strict_program strict/test_program.c)
+target_link_libraries(zr_vm_test_strict_program PRIVATE zr_vm_strict_runtime)
+add_test(NAME test_strict_program COMMAND zr_vm_test_strict_program)
 
 add_executable(
         zr_vm_test_log_failure_probe
@@ -875,6 +878,10 @@ if(TARGET zr_vm_cli_executable)
             COMMAND ${CMAKE_COMMAND}
             "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
             "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/strict_manifest_runtime_boundary"
+            "-DC_COMPILER=${CMAKE_C_COMPILER}" "-DMSVC=${MSVC}" "-DEXE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}"
+            "-DMSVC_CRT=$<IF:$<CONFIG:Debug>,/MDd,/MD>"
+            "-DSTRICT_INCLUDE=${CMAKE_SOURCE_DIR}/zr_vm_core/strict_runtime/include"
+            "-DSTRICT_ARCHIVE=$<TARGET_FILE:zr_vm_strict_runtime>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/strict_manifest_runtime_boundary.cmake")
     foreach(case IN ITEMS writeback field_write nested_init)
         foreach(mode IN ITEMS interp binary)

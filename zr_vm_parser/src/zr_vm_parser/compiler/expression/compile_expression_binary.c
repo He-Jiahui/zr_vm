@@ -403,7 +403,9 @@ void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize first = cs->instructionCount;
     compile_binary_expression_unfolded(cs, node);
     SZrTypeValue folded;
-    if (cs->hasError || cs->instructionCount <= first || !compile_try_literal_number(node, 0u, &folded)) return;
+    /* Do not introduce VM-only constants into a required source IR witness. */
+    if (cs->preserveSourceLiteralPool || cs->hasError || cs->instructionCount <= first ||
+        !compile_try_literal_number(node, 0u, &folded)) return;
     TZrUInt32 constant = add_constant(cs, &folded);
     for (TZrSize i = first; i + 1u < cs->instructionCount; ++i) {
         TZrInstruction *instruction = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, i);

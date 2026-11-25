@@ -44,10 +44,7 @@ int ZrCli_App_Run(int argc, char **argv) {
             return 1;
         }
         if (policy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
-            if (ZrCli_Compiler_CheckStrictSources(&command)) {
-                fprintf(stderr, "StrictNoGC project requires the strict runtime: %s\n", command.projectPath);
-            }
-            return 1;
+            return ZrCli_Compiler_DispatchStrict(&command);
         }
     }
 

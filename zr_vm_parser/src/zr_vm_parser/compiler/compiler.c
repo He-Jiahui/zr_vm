@@ -9,6 +9,7 @@
 #include "compiler/compiler_top_level_duplicate.h"
 #include "compiler/semantic/compiler_source_retention_internal.h"
 #include "zr_vm_parser/semantic_calls.h"
+#include "zr_vm_parser/strict_no_gc.h"
 #include "semantic/semantic_scope_facts.h"
 
 /* Children finish quickening before their owner. A source graph is published
@@ -1042,6 +1043,7 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
     cs.emitTestManifest = emitTestManifest;
+    cs.preserveSourceLiteralPool = retention != ZR_SOURCE_RETENTION_NONE;
     cs.currentAst = ast;
     cs.currentModuleKey = currentModuleKey;
     cs.submissionContext = submissionContext;
@@ -1429,6 +1431,22 @@ struct SZrFunction *ZrParser_Source_CompileWithOptions(
     return zr_parser_source_compile_mode(
             state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL,
             retention, diagnostic);
+}
+
+struct SZrFunction *ZrParser_StrictNoGc_CompileScalarIr(
+        SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName) {
+    SZrSourceCompileDiagnostic diagnostic;
+    SZrFunction *function = zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR, &diagnostic);
+    if (!function) {
+        zr_parser_compile_trace("StrictNoGC scalar retention refused: stage=%u result=%u execIr=%u source=%u expected=%llu actual=%llu",
+                                (unsigned)diagnostic.stage, (unsigned)diagnostic.result, (unsigned)diagnostic.execIr.code,
+                                (unsigned)diagnostic.execIr.sourceId,
+                                (unsigned long long)diagnostic.execIr.expectedHash,
+                                (unsigned long long)diagnostic.execIr.actualHash);
+    }
+    return function;
 }
 
 struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
