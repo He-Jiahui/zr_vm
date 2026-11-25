@@ -447,6 +447,22 @@ static TZrBool backend_aot_constant_int_is_known_non_zero(const SZrFunction *fun
     return constantValue->value.nativeObject.nativeInt64 != 0;
 }
 
+/* 有符号除法还会在 INT64_MIN / -1 上报溢出，因此常量除数需同时排除 0 与 -1。 */
+static TZrBool backend_aot_constant_signed_divisor_is_safe(const SZrFunction *function, TZrUInt32 constantIndex) {
+    const SZrTypeValue *constantValue;
+
+    if (!backend_aot_constant_int_is_known_non_zero(function, constantIndex)) {
+        return ZR_FALSE;
+    }
+
+    constantValue = &function->constantValueList[constantIndex];
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type)) {
+        return (TZrBool)(constantValue->value.nativeObject.nativeUInt64 != ~(TZrUInt64)0u);
+    }
+
+    return (TZrBool)(constantValue->value.nativeObject.nativeInt64 != -1);
+}
+
 static TZrBool backend_aot_instruction_const_div_mod_is_known_non_zero(const SZrFunction *function,
                                                                        const TZrInstruction *instruction) {
     if (instruction == ZR_NULL) {
@@ -456,6 +472,12 @@ static TZrBool backend_aot_instruction_const_div_mod_is_known_non_zero(const SZr
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
+        /* 融合形式的常量下标同样位于 operand1[1]；物化常量/栈槽本身不会抛错。 */
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_constant_signed_divisor_is_safe(function, instruction->instruction.operand.operand1[1]);
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
@@ -513,6 +535,14 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         /* 融合形式的加法/乘法仍会报溢出，与除数是否为零无关。 */
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+        /* 先物化常量/栈槽再做带检查的加减乘：溢出时需发布融合指令自身的 PC。 */
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
         case ZR_INSTRUCTION_ENUM(DIV):
@@ -560,6 +590,10 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
             return backend_aot_instruction_const_div_mod_is_known_non_zero(function, instruction)
                            ? ZR_AOT_EMITTER_STEP_FLAG_NONE
                            : ZR_AOT_EMITTER_STEP_FLAG_MAY_THROW;
