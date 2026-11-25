@@ -643,7 +643,27 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
 
         trimStart = lineStart;
         trimEnd = lineEnd;
-        /* BUG: parser 允许反引号模板跨行；TEMPLATE_STRING 模式下也剪空白并重加缩进，会改变模板字符串值。 */
+        /* 行首已在多行模板文本或块注释内部：整行是字面内容，原样保留（不剪空白、不加缩进、
+         * 不做行首 `}` 降级），只推进扫描状态，让行内闭合的模板或插值继续影响后续行。
+         * 置 trimEnd = trimStart 使下方代码行路径跳过本行。 */
+        if (scanState.mode == ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING ||
+            scanState.mode == ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT) {
+            SZrLspIndentScanData literalData;
+
+            literalData.indent = &indent;
+            if (!lsp_text_builder_append_range(&builder, content + lineStart, lineEnd - lineStart) ||
+                !lsp_editor_scan_structural_chars(content,
+                                                  contentLength,
+                                                  lineStart,
+                                                  lineEnd,
+                                                  &scanState,
+                                                  lsp_editor_indent_scan_callback,
+                                                  &literalData)) {
+                free(builder.data);
+                return ZR_NULL;
+            }
+            trimEnd = trimStart;
+        }
         while (trimStart < trimEnd &&
                (content[trimStart] == ' ' || content[trimStart] == '\t')) {
             trimStart++;
@@ -679,14 +699,22 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
                 return ZR_NULL;
             }
 
+            /* 扫到行尾而非 trimEnd：代码态空白不产生事件；若本行在模板文本中结束，
+             * 被剪掉的尾随空白是模板值的一部分，须原样补回。 */
             data.indent = &indent;
             if (!lsp_editor_scan_structural_chars(content,
                                                   contentLength,
                                                   scanStart,
-                                                  trimEnd,
+                                                  lineEnd,
                                                   &scanState,
                                                   lsp_editor_indent_scan_callback,
                                                   &data)) {
+                free(builder.data);
+                return ZR_NULL;
+            }
+            if (scanState.mode == ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING &&
+                trimEnd < lineEnd &&
+                !lsp_text_builder_append_range(&builder, content + trimEnd, lineEnd - trimEnd)) {
                 free(builder.data);
                 return ZR_NULL;
             }
