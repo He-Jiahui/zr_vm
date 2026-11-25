@@ -46,6 +46,7 @@ typedef struct SZrCliModuleRecord {
     SZrCliStringList imports;
     TZrChar *strictSource;
     TZrSize strictSourceLength;
+    SZrAstNode *strictAst;
     TZrBool strictScalarCandidate;
     TZrBool dirty;
 } SZrCliModuleRecord;
@@ -860,7 +861,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
             return ZR_FALSE;
         }
 
-        ZrParser_Ast_Free(state, ast);
+        if (strict) recordSlot->strictAst = ast;
+        else ZrParser_Ast_Free(state, ast);
 
         /* Recursive collection can move records; retain the index and fetch
          * the current record again before reading the next import. */
@@ -950,13 +952,19 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
     }
     if (ok) {
         const SZrCliModuleRecord *record = &modules.records[0];
-        if (modules.count != 1u) {
-            snprintf(error, sizeof(error), "%s: source shape is not yet supported by the StrictNoGC executable compiler",
-                     record->sourcePath);
-            ok = ZR_FALSE;
-        } else if (!record->strictScalarCandidate) {
-            ok = ZrCli_StrictRecords_Compile(compiler->mainThreadState, record->strictSource,
-                    record->strictSourceLength, record->sourcePath, program, error, sizeof(error));
+        if (modules.count != 1u || !record->strictScalarCandidate) {
+            SZrCliStrictModuleInput *inputs = calloc(modules.count, sizeof(*inputs));
+            if (!inputs) {
+                snprintf(error, sizeof(error), "could not link StrictNoGC source dependencies");
+                ok = ZR_FALSE;
+            } else {
+                for (TZrSize index = 0; index < modules.count; ++index) {
+                    const SZrCliModuleRecord *module = &modules.records[index];
+                    inputs[index] = (SZrCliStrictModuleInput){module->moduleName, module->sourcePath, module->strictAst};
+                }
+                ok = ZrCli_StrictRecords_Compile(inputs, modules.count, program, error, sizeof(error));
+                free(inputs);
+            }
         } else {
             /* The canonical scalar producer is project-independent. Selection
              * and every import check have already used the strict manifest. */
@@ -973,6 +981,8 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
     if (!ok) {
         fprintf(stderr, "%s\n", error[0] != '\0' ? error : "Could not resolve the StrictNoGC project sources.");
     }
+    for (TZrSize index = 0; index < modules.count; ++index)
+        ZrParser_Ast_Free(compiler->mainThreadState, modules.records[index].strictAst);
     zr_cli_module_collection_free(&modules);
     compiler->userData = ZR_NULL;
     ZrLibrary_Project_Free(compiler->mainThreadState, metadata);

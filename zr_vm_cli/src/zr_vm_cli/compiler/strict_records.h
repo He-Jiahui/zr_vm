@@ -4,7 +4,12 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_strict/program.h"
 
-TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const TZrChar *source, TZrSize length,
-                                    const TZrChar *path, ZrStrictProgram *out,
-                                    TZrChar *error, TZrSize errorSize);
+typedef struct SZrCliStrictModuleInput {
+    const TZrChar *key;
+    const TZrChar *path;
+    SZrAstNode *root; /* borrowed, with imports already canonicalized */
+} SZrCliStrictModuleInput;
+
+TZrBool ZrCli_StrictRecords_Compile(const SZrCliStrictModuleInput *modules, TZrSize moduleCount,
+                                    ZrStrictProgram *out, TZrChar *error, TZrSize errorSize);
 #endif

@@ -122,6 +122,15 @@ if(NOT status STREQUAL "1" OR NOT error MATCHES "StrictNoGC requires verifiable 
 endif()
 # Append to strict_manifest_runtime_boundary.cmake after the scalar and
 # compiler policy controls. Use a fresh project for each ownership fixture.
+function(write_strict_dependencies root)
+    foreach(module IN LISTS strict_dependencies)
+        set(file "${root}/src/${module}.zr")
+        get_filename_component(dir "${file}" DIRECTORY)
+        file(MAKE_DIRECTORY "${dir}")
+        file(WRITE "${file}" "${strict_dependency_${module}}\n")
+    endforeach()
+endfunction()
+
 function(check_strict_owner name source expected fault)
     set(work "${TEST_WORK_DIR}/owner-${name}")
     set(src "${work}/src/main.zr")
@@ -129,6 +138,7 @@ function(check_strict_owner name source expected fault)
     file(MAKE_DIRECTORY "${work}/src")
     file(WRITE "${manifest}" "${envelope},\"StrictNoGC\":true}\n")
     file(WRITE "${src}" "${source}\n")
+    write_strict_dependencies("${work}")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ZR_VM_TRACE_CORE_BOOTSTRAP=1 ZR_VM_TRACE_PROJECT_STARTUP=1
             ZR_VM_TRACE_STRICT_EXECUTION=1 "${CLI_EXE}" "${manifest}" --emit-executed-via
             RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
@@ -179,6 +189,9 @@ function(check_strict_owner name source expected fault)
         message(FATAL_ERROR "${name}: Strict ownership compilation failed (${status}): ${output}\n${error}")
     endif()
     file(RENAME "${src}" "${work}/main.hidden")
+    foreach(module IN LISTS strict_dependencies)
+        file(RENAME "${work}/src/${module}.zr" "${work}/src/${module}.hidden")
+    endforeach()
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ZR_VM_TRACE_CORE_BOOTSTRAP=1 ZR_VM_TRACE_PROJECT_STARTUP=1
             "${CLI_EXE}" "${manifest}" --execution-mode binary --emit-executed-via
             RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
@@ -271,6 +284,7 @@ function(reject_strict_owner name source expected_diagnostic)
     file(MAKE_DIRECTORY "${work}/src")
     file(WRITE "${manifest}" "${envelope},\"StrictNoGC\":true}\n")
     file(WRITE "${work}/src/main.zr" "${student_decl}${source}\n")
+    write_strict_dependencies("${work}")
     execute_process(COMMAND "${CLI_EXE}" --require-strict-no-gc --compile "${manifest}" --emit-aot-c
             RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
     if(NOT status STREQUAL "1" OR NOT error MATCHES "${expected_diagnostic}" OR EXISTS "${work}/bin/main.zro")
@@ -571,3 +585,94 @@ let forbidden: ref Child = ref shared.child;
 return forbidden.id;
 ]=])
 reject_strict_owner(aggregate_shared_mutation "${aggregate_decl}${aggregate_shared_receiver}" "conflicting borrow")
+
+set(strict_dependencies factory helper)
+set(strict_dependency_helper [=[
+fn Delta(): int { return 1; }
+pub fn Adjust(id: int): int { return id + Delta(); }
+]=])
+set(strict_dependency_factory [=[
+let { Adjust } = import(".helper");
+pub resource class Student {
+    var id: int;
+    pub @constructor(id: int) { this.id = id; }
+    pub const fn score(): int { return this.id; }
+}
+pub let Baseline = Adjust(7);
+pub let Initial = own Student(5);
+pub fn Make(id: int): Unique<Student> { return own Student(Adjust(id)); }
+pub fn Read(view: ref readonly Student): int { return view.score(); }
+pub fn ReadInitial(): int { return Initial.score(); }
+fn Hidden(): int { return 999; }
+]=])
+set(module_program [=[
+let tools = import(".factory");
+let { Make, Baseline } = import(".factory");
+resource class Student {
+    pub var localId: int;
+    pub @constructor(id: int) { this.localId = id; }
+}
+let fromFactory: Unique<tools.Student> = Make(25);
+let ownLocal = own Student(2);
+let direct: Unique<tools.Student> = own tools.Student(1);
+return tools.Read(ref fromFactory) + ownLocal.localId + direct.score() + Baseline + tools.ReadInitial();
+]=])
+check_strict_owner(module_owned "${module_program}" 42 FALSE)
+
+set(private_import [=[
+let { Hidden } = import(".factory");
+return Hidden();
+]=])
+reject_strict_owner(module_private "${private_import}" "unknown or non-public source export")
+set(private_namespace [=[
+let tools = import(".factory");
+return tools.Hidden();
+]=])
+reject_strict_owner(module_private_namespace "${private_namespace}" "not a statically resolved StrictNoGC function")
+set(nominal_collision [=[
+let tools = import(".factory");
+let wrong: Unique<Student> = tools.Make(42);
+return wrong.id;
+]=])
+reject_strict_owner(module_nominal_identity "${nominal_collision}" "initializer does not match the declared strict type")
+set(module_move_alias [=[
+let tools = import(".factory");
+let { Initial } = import(".factory");
+let moved = tools.Initial;
+let duplicate = Initial;
+return duplicate.score();
+]=])
+reject_strict_owner(module_shared_initialization "${module_move_alias}" "use after move or drop")
+
+string(APPEND strict_dependency_factory [=[
+
+pub fn Broken(): int {
+    let owner = own Student(1);
+    let loan: ref readonly Student = ref owner;
+    drop(owner);
+    return loan.score();
+}
+]=])
+set(module_borrow_error [=[
+let { Broken } = import(".factory");
+return Broken();
+]=])
+reject_strict_owner(module_borrow_error "${module_borrow_error}" "factory\\.zr:[0-9]+:[0-9]+: StrictNoGC:.*conflicting borrow")
+unset(strict_dependencies)
+
+set(strict_dependencies startup)
+set(strict_dependency_startup [=[
+resource class InitGuard {
+    pub @constructor() {}
+    pub @destructor() { let unexpected = 1 / 0; }
+}
+let guard = own InitGuard();
+]=])
+set(module_startup [=[
+let startup = import(".startup");
+return 42;
+]=])
+check_strict_owner(module_startup_cleanup "${module_startup}" "" TRUE "strict destructor fault")
+string(APPEND strict_dependency_startup "\nlet failed = 2 / 0;\n")
+check_strict_owner(module_startup_fault "${module_startup}" "" TRUE "arithmetic fault")
+unset(strict_dependencies)
