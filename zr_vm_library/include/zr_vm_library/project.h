@@ -297,6 +297,16 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;
+
+typedef enum EZrLibrary_ProjectMemoryPolicy {
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID = 0,
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC
+} EZrLibrary_ProjectMemoryPolicy;
+
+/** Read the manifest envelope without creating a VM. StrictNoGC requires v3. */
+ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectMemoryPolicy(const TZrChar *manifest);
+ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectFileMemoryPolicy(TZrNativeString path);
 /** @brief 解析项目 manifest，并建立 CLI、解析器及运行器共用的项目状态。
  * @pre state、state->global、raw 与 file 为有效输入。
  * @return 失败时返回空指针；成功结果必须由 Project_Free 释放原始数组和归档。 */

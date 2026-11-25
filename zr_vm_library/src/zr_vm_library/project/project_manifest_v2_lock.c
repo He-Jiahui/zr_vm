@@ -288,7 +288,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_ReadDependencyLock(
     library_project_manifest_v2_lock_set_error(
             errorBuffer, errorBufferSize, ZR_NULL);
     if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL ||
-        project->manifestVersion != 2u || rawLock == ZR_NULL) {
+        project->manifestVersion < 2u || rawLock == ZR_NULL) {
         library_project_manifest_v2_lock_set_error(
                 errorBuffer,
                 errorBufferSize,

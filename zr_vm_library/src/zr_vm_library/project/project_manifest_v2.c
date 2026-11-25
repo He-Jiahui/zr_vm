@@ -3,10 +3,12 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_library/file.h"
 
 static TZrBool library_project_manifest_v2_has_required_string(cJSON *manifestJson, const TZrChar *fieldName) {
     cJSON *field;
@@ -19,7 +21,7 @@ static TZrBool library_project_manifest_v2_has_required_string(cJSON *manifestJs
     return cJSON_IsString(field) && field->valuestring != ZR_NULL && field->valuestring[0] != '\0';
 }
 
-/* 无 manifestVersion 的旧清单按 v1 解释，显式版本仅接受当前支持的整数 1 或 2。 */
+/* v3 inherits v2 declarations and introduces the runtime memory policy. */
 TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32 *outManifestVersion) {
     cJSON *manifestVersionJson;
     TZrUInt32 manifestVersion;
@@ -34,7 +36,7 @@ TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32
         return ZR_TRUE;
     }
     if (!cJSON_IsNumber(manifestVersionJson) ||
-        (manifestVersionJson->valueint != 1 && manifestVersionJson->valueint != 2) ||
+        (manifestVersionJson->valueint < 1 || manifestVersionJson->valueint > 3) ||
         manifestVersionJson->valuedouble != (double)manifestVersionJson->valueint) {
         return ZR_FALSE;
     }
@@ -42,6 +44,88 @@ TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32
     manifestVersion = (TZrUInt32)manifestVersionJson->valueint;
     *outManifestVersion = manifestVersion;
     return ZR_TRUE;
+}
+
+EZrLibrary_ProjectMemoryPolicy library_project_manifest_memory_policy(cJSON *manifestJson,
+                                                                      TZrUInt32 *outManifestVersion) {
+    cJSON *entry;
+    cJSON *strict = ZR_NULL;
+    TZrBool hasVersion = ZR_FALSE;
+    TZrUInt32 version = 0u;
+    if (!library_project_manifest_validate_version(manifestJson, &version) ||
+        (version >= 2u && !library_project_manifest_v2_validate_base(manifestJson))) {
+        return ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID;
+    }
+    cJSON_ArrayForEach(entry, manifestJson) {
+        if (strcmp(entry->string, "manifestVersion") == 0) {
+            if (hasVersion) {
+                return ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID;
+            }
+            hasVersion = ZR_TRUE;
+        } else if (strcmp(entry->string, "StrictNoGC") == 0) {
+            if (strict != ZR_NULL || !cJSON_IsBool(entry)) {
+                return ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID;
+            }
+            strict = entry;
+        }
+    }
+    if (cJSON_IsTrue(strict) && version < 3u) {
+        return ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID;
+    }
+    if (outManifestVersion != ZR_NULL) {
+        *outManifestVersion = version;
+    }
+    return cJSON_IsTrue(strict) ? ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC
+                               : ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED;
+}
+
+EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectMemoryPolicy(const TZrChar *manifest) {
+    cJSON *json = manifest != ZR_NULL ? cJSON_ParseWithOpts(manifest, ZR_NULL, 1) : ZR_NULL;
+    EZrLibrary_ProjectMemoryPolicy result = library_project_manifest_memory_policy(json, ZR_NULL);
+    cJSON_Delete(json);
+    return result;
+}
+
+TZrNativeString library_project_manifest_read_file(TZrNativeString path) {
+    SZrLibrary_File_StreamOpenResult stream;
+    TZrNativeString buffer = ZR_NULL;
+    TZrInt64 length = 0;
+    TZrSize offset = 0u;
+    if (ZrLibrary_File_Exist(path) != ZR_LIBRARY_FILE_IS_FILE ||
+        !ZrLibrary_File_OpenHandle(path, "rb", &stream)) {
+        return ZR_NULL;
+    }
+    if (ZrLibrary_File_GetHandleLength(stream.handle, &length) && length > 0 &&
+        (uintmax_t)length < SIZE_MAX) {
+        buffer = malloc((TZrSize)length + 1u);
+    }
+    if (buffer != ZR_NULL) {
+        TZrSize count;
+        TZrChar extra;
+        while (offset < (TZrSize)length) {
+            if (!ZrLibrary_File_ReadHandle(stream.handle, buffer + offset, (TZrSize)length - offset, &count) ||
+                count == 0u) {
+                break;
+            }
+            offset += count;
+        }
+        if (offset != (TZrSize)length || memchr(buffer, '\0', offset) != ZR_NULL ||
+            !ZrLibrary_File_ReadHandle(stream.handle, &extra, 1u, &count) || count != 0u) {
+            free(buffer);
+            buffer = ZR_NULL;
+        } else {
+            buffer[offset] = '\0';
+        }
+    }
+    (void)ZrLibrary_File_CloseHandle(stream.handle);
+    return buffer;
+}
+
+EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectFileMemoryPolicy(TZrNativeString path) {
+    TZrNativeString manifest = library_project_manifest_read_file(path);
+    EZrLibrary_ProjectMemoryPolicy result = ZrLibrary_Project_InspectMemoryPolicy(manifest);
+    free(manifest);
+    return result;
 }
 
 /* v2 项目构造需先具备非空基础定位字段，再建立声明数组。 */
@@ -562,7 +646,7 @@ TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
                                                         SZrLibrary_Project *project,
                                                         cJSON *manifestJson) {
     if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL || manifestJson == ZR_NULL ||
-        project->manifestVersion != 2u || !cJSON_IsObject(manifestJson) ||
+        project->manifestVersion < 2u || !cJSON_IsObject(manifestJson) ||
         cJSON_GetObjectItemCaseSensitive(manifestJson, "pathAliases") != ZR_NULL ||
         cJSON_GetObjectItemCaseSensitive(manifestJson, "references") != ZR_NULL ||
         cJSON_GetObjectItemCaseSensitive(manifestJson, "dependency") != ZR_NULL ||
@@ -1264,7 +1348,7 @@ static TZrBool library_project_manifest_v2_validate_dependency_collection(
 
 /* 发布投影的前置门禁比本地加载严格，检查 v2 基础、来源与包导出关系。 */
 TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Project *project) {
-    if (project == ZR_NULL || project->manifestVersion != 2u ||
+    if (project == ZR_NULL || (project->manifestVersion != 2u && project->manifestVersion != 3u) ||
         !library_project_manifest_v2_has_nonempty_string(project->name) ||
         !library_project_manifest_v2_has_nonempty_string(project->version) ||
         !library_project_manifest_v2_has_nonempty_string(project->assemblyKind) ||
@@ -1456,7 +1540,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Projec
     }
     manifestJson = cJSON_CreateObject();
     if (manifestJson == ZR_NULL ||
-        cJSON_AddNumberToObject(manifestJson, "manifestVersion", 2) == ZR_NULL ||
+        cJSON_AddNumberToObject(manifestJson, "manifestVersion", project->manifestVersion) == ZR_NULL ||
         cJSON_AddStringToObject(manifestJson, "name", library_project_manifest_v2_string_text(project->name)) == ZR_NULL ||
         cJSON_AddStringToObject(manifestJson, "version", library_project_manifest_v2_string_text(project->version)) == ZR_NULL ||
         cJSON_AddStringToObject(manifestJson, "kind", library_project_manifest_v2_string_text(project->assemblyKind)) == ZR_NULL ||

@@ -914,7 +914,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                                           currentModuleKey,
                                                                           &currentDependencyModulePath);
 
-    if (project != ZR_NULL && project->manifestVersion == 2u &&
+    if (project != ZR_NULL && project->manifestVersion >= 2u &&
         currentDependencyPackage == ZR_NULL && rawSpecifier[0] == '#') {
         SZrLibrary_ModuleSpecifier alias;
         SZrLibrary_ModuleSpecifier target;

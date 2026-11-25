@@ -7,6 +7,10 @@
 
 /** @brief 构造项目时选择 v1/v2 清单语义；无显式版本按 v1 兼容。 */
 TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32 *outManifestVersion);
+EZrLibrary_ProjectMemoryPolicy library_project_manifest_memory_policy(cJSON *manifestJson,
+                                                                      TZrUInt32 *outManifestVersion);
+/* Native read, independent of a global state. The caller frees the buffer. */
+TZrNativeString library_project_manifest_read_file(TZrNativeString path);
 
 /** @brief v2 声明解析前确认项目最小可装载字段齐备。 */
 TZrBool library_project_manifest_v2_validate_base(cJSON *manifestJson);

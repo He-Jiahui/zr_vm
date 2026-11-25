@@ -6,6 +6,7 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
+#include "project/project_manifest_v2.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -93,6 +94,15 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
         return ZR_NULL;
     }
 
+    TZrNativeString configContent = library_project_manifest_read_file(configFilePath);
+    EZrLibrary_ProjectMemoryPolicy policy = ZrLibrary_Project_InspectMemoryPolicy(configContent);
+    if (policy != ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED) {
+        if (policy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
+            fprintf(stderr, "StrictNoGC project requires the strict runtime: %s\n", configFilePath);
+        }
+        free(configContent);
+        return ZR_NULL;
+    }
 
     SZrGlobalState *global =
             ZrCore_GlobalState_New(ZrLibrary_CommonState_BuiltinAllocator, ZR_NULL, 0x1234567890ABCDEF, &callback);
@@ -100,20 +110,13 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
                                   global != ZR_NULL ? (void *)global->mainThreadState : ZR_NULL);
 
     if (global == ZR_NULL) {
+        free(configContent);
         return ZR_NULL;
     }
 
-    TZrNativeString configContent = ZrLibrary_File_ReadAll(global, configFilePath);
-    zr_library_common_state_trace("configContent=%p", (void *)configContent);
-    if (configContent == ZR_NULL) {
-        ZrCore_GlobalState_Free(global);
-        return ZR_NULL;
-    }
     SZrLibrary_Project *project = ZrLibrary_Project_New(global->mainThreadState, configContent, configFilePath);
+    free(configContent);
     zr_library_common_state_trace("project=%p", (void *)project);
-    TZrSize configLength = ZrCore_NativeString_Length(configContent);
-    ZrCore_Memory_RawFreeWithType(global, configContent, configLength + 1,
-                            ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     if (project == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         return ZR_NULL;

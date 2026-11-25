@@ -531,7 +531,7 @@ TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
     if (outArtifact != ZR_NULL) {
         memset(outArtifact, 0, sizeof(*outArtifact));
     }
-    if (project == ZR_NULL || project->manifestVersion != 2U ||
+    if (project == ZR_NULL || project->manifestVersion < 2U ||
         rawSpecifier == ZR_NULL || archivePath == ZR_NULL ||
         outArtifact == ZR_NULL) {
         compile_tool_artifact_set_error(

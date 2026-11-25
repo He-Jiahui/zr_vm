@@ -2118,13 +2118,9 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
     memset(project, 0, sizeof(SZrLibrary_Project));
     project->signature = ZR_LIBRARY_PROJECT_SIGNATURE;
 
-    cJSON *projectJson = cJSON_Parse(raw);
-    if (projectJson == ZR_NULL) {
-        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
-        return ZR_NULL;
-    }
-    if (!library_project_manifest_validate_version(projectJson, &project->manifestVersion) ||
-        (project->manifestVersion == 2u && !library_project_manifest_v2_validate_base(projectJson))) {
+    cJSON *projectJson = cJSON_ParseWithOpts(raw, ZR_NULL, 1);
+    if (library_project_manifest_memory_policy(projectJson, &project->manifestVersion) !=
+        ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED) {
         cJSON_Delete(projectJson);
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
@@ -2328,7 +2324,7 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         project->supportMultithread =
                 cJSON_IsBool(supportMultithread) ? (cJSON_IsTrue(supportMultithread) ? ZR_TRUE : ZR_FALSE) : ZR_FALSE;
     }
-    if (project->manifestVersion == 2u &&
+    if (project->manifestVersion >= 2u &&
         !library_project_manifest_v2_parse_declarations(state, project, projectJson)) {
         cJSON_Delete(projectJson);
         library_project_free_feature_switches(global, project);
