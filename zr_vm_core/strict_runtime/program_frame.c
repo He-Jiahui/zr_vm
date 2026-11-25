@@ -28,6 +28,9 @@ static ZrStrictStatus drop_slot(ZrStrictFrame *frame, uint32_t index) {
     if (!slot->live) return status;
     switch (frame->program->kinds[index]) {
         case ZR_STRICT_VALUE_UNIQUE: status = ZrStrict_UniqueDrop(&slot->value.unique); break;
+        case ZR_STRICT_VALUE_MANUAL_BLOCK:
+            if (slot->value.manual.owner.record) status = ZrStrict_ManualFree(&slot->value.manual);
+            break;
         case ZR_STRICT_VALUE_WEAK: status = ZrStrict_WeakDrop(&slot->value.weak); break;
         case ZR_STRICT_VALUE_SHARED:
         case ZR_STRICT_VALUE_MAYBE_SHARED:
@@ -104,6 +107,40 @@ ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictIn
     switch (i->op) {
         case ZR_STRICT_OP_CONST: dst->value.scalar = ZrStrictProgram_IntBits(i->immediate); return ZR_STRICT_PROGRAM_OK;
         case ZR_STRICT_OP_COPY: dst->value.scalar = src->value.scalar; return ZR_STRICT_PROGRAM_OK;
+        case ZR_STRICT_OP_MANUAL_TRY_ALLOC: {
+            const int64_t byteCount = src->value.scalar;
+            const size_t size = (size_t)byteCount;
+            const ZrStrictSite site = {NULL, (unsigned)(i->immediate >> 32), (unsigned)(i->immediate & UINT32_MAX)};
+            if (byteCount >= 0 && (uint64_t)size == (uint64_t)byteCount) {
+                status = ZrStrict_ManualAlloc(&frame->ownership, size, site, &dst->value.manual);
+                if (status == ZR_STRICT_OK) memset(ZrStrict_ManualData(&dst->value.manual, NULL), 0, size);
+                if (status == ZR_STRICT_OUT_OF_MEMORY) status = ZR_STRICT_OK; /* observed as null */
+            }
+            break;
+        }
+        case ZR_STRICT_OP_BYTE_LENGTH:
+        case ZR_STRICT_OP_BYTE_READ:
+        case ZR_STRICT_OP_BYTE_WRITE: {
+            const uint32_t view = i->op == ZR_STRICT_OP_BYTE_WRITE ? i->dst : i->lhs;
+            const uint32_t owner = base_slot(frame, view);
+            size_t length;
+            unsigned char *bytes = ZrStrict_ManualData(&frame->slots[owner].value.manual, &length);
+            if (!bytes) return ZR_STRICT_PROGRAM_OWNERSHIP_FAULT;
+            if (i->op == ZR_STRICT_OP_BYTE_LENGTH) {
+                dst->value.scalar = (int64_t)length;
+                return ZR_STRICT_PROGRAM_OK;
+            }
+            const int64_t index = i->op == ZR_STRICT_OP_BYTE_WRITE ? src->value.scalar : frame->slots[i->rhs].value.scalar;
+            if (index < 0 || (uint64_t)index >= length) return ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT;
+            if (i->op == ZR_STRICT_OP_BYTE_READ) {
+                dst->value.scalar = bytes[(size_t)index];
+            } else {
+                const int64_t value = frame->slots[i->rhs].value.scalar;
+                if (value < 0 || value > 255) return ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT;
+                bytes[(size_t)index] = (unsigned char)value;
+            }
+            return ZR_STRICT_PROGRAM_OK;
+        }
         case ZR_STRICT_OP_INIT_RECORD:
         case ZR_STRICT_OP_OWN_RECORD: {
             const ZrStrictRecordLayout *layout = &frame->program->layouts[frame->program->slotLayouts[i->dst] - 1];
@@ -147,11 +184,16 @@ ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictIn
             if (status == ZR_STRICT_EXPIRED) status = ZR_STRICT_OK;
             break;
         case ZR_STRICT_OP_IS_NULL:
-            dst->value.scalar = src->value.shared.record == NULL;
+            dst->value.scalar = frame->program->kinds[i->lhs] == ZR_STRICT_VALUE_MANUAL_BLOCK
+                    ? src->value.manual.owner.record == NULL : src->value.shared.record == NULL;
             return ZR_STRICT_PROGRAM_OK;
         case ZR_STRICT_OP_DROP:
         case ZR_STRICT_OP_END_BORROW: return from_ownership(drop_slot(frame, i->lhs));
-        case ZR_STRICT_OP_BORROW: dst->value.borrowedFrom = i->lhs; break;
+        case ZR_STRICT_OP_BORROW:
+            if (frame->program->kinds[i->lhs] == ZR_STRICT_VALUE_MANUAL_BLOCK && !src->value.manual.owner.record)
+                return ZR_STRICT_PROGRAM_OWNERSHIP_FAULT;
+            dst->value.borrowedFrom = i->lhs;
+            break;
         case ZR_STRICT_OP_FIELD_READ: {
             const int64_t *data = record_read(frame, i->lhs);
             if (!data) return ZR_STRICT_PROGRAM_OWNERSHIP_FAULT;

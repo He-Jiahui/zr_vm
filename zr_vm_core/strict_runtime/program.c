@@ -15,7 +15,7 @@ static int scalar_slot(const ZrStrictProgram *p, uint32_t index) {
     return index < p->slotCount && zr_strict_is_scalar(p->kinds[index]);
 }
 
-static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
+static int verify_instruction(const ZrStrictProgram *p, uint32_t pc, int usesFrame) {
     const ZrStrictInstruction *i = &p->instructions[pc];
     if (pc + 1 == p->instructionCount && i->op != ZR_STRICT_OP_JUMP &&
         i->op != ZR_STRICT_OP_RETURN && i->op != ZR_STRICT_OP_HALT) {
@@ -63,7 +63,7 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
         case ZR_STRICT_OP_HALT:
             return !i->dst && !i->lhs && !i->rhs && !i->immediate;
         default:
-            return p->layoutCount && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_FIELD_WRITE;
+            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_BYTE_WRITE;
     }
 }
 
@@ -88,18 +88,21 @@ ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *p, uint32_t 
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) {
         uint8_t kind = p->kinds[slot];
         uint32_t type = p->slotLayouts ? p->slotLayouts[slot] : 0;
-        if (zr_strict_is_scalar(kind) ? type != 0 :
-            (kind < ZR_STRICT_VALUE_RECORD || kind > ZR_STRICT_VALUE_READONLY_BORROW || !type || type > p->layoutCount)) {
+        if (kind >= ZR_STRICT_VALUE_RECORD && kind <= ZR_STRICT_VALUE_READONLY_BORROW) {
+            if (!type || type > p->layoutCount) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+        } else if (type || (!zr_strict_is_scalar(kind) && kind != ZR_STRICT_VALUE_MANUAL_BLOCK &&
+                           !zr_strict_is_byte_view(kind))) {
             return ZR_STRICT_PROGRAM_BAD_LAYOUT;
         }
     }
+    int usesFrame = zr_strict_uses_frame(p);
     for (uint32_t pc = 0; pc < p->instructionCount; ++pc) {
-        if (!verify_instruction(p, pc)) {
+        if (!verify_instruction(p, pc, usesFrame)) {
             if (badPc) *badPc = pc;
             return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
         }
     }
-    if (p->layoutCount) return zr_strict_verify_ownership(p, badPc);
+    if (usesFrame) return zr_strict_verify_ownership(p, badPc);
     return ZR_STRICT_PROGRAM_OK;
 }
 
@@ -182,7 +185,7 @@ ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *p, ZrStrictResu
     if (status != ZR_STRICT_PROGRAM_OK) return status;
     if (!result) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     *result = (ZrStrictResult){0};
-    if (p->layoutCount) return run_owned(p, result, badPc);
+    if (zr_strict_uses_frame(p)) return run_owned(p, result, badPc);
     memset(slots, 0, (size_t)p->slotCount * sizeof(*slots));
     for (;;) {
         const ZrStrictInstruction *i = &p->instructions[pc];
@@ -350,6 +353,7 @@ const char *ZrStrictProgram_StatusName(ZrStrictProgramStatus status) {
         case ZR_STRICT_PROGRAM_IO_ERROR: return "I/O error";
         case ZR_STRICT_PROGRAM_FAULT: return "arithmetic fault";
         case ZR_STRICT_PROGRAM_OWNERSHIP_FAULT: return "ownership fault";
+        case ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT: return "manual byte index or value out of range";
         default: return "unknown strict execution status";
     }
 }

@@ -1,4 +1,4 @@
-#include "zr_vm_strict/program.h"
+#include "program_ownership.h"
 
 #include <inttypes.h>
 #include <stdlib.h>
@@ -39,8 +39,10 @@ static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned 
     if (fputs("    static uint8_t kinds[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%u,", p->kinds[slot]) < 0) return 0;
     if (fputs("};\n    static uint32_t types[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
-    for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%" PRIu32 ",", p->slotLayouts[slot]) < 0) return 0;
-    if (fputs("};\n    static ZrStrictRecordLayout layouts[] = {\n", file) < 0) return 0;
+    for (uint32_t slot = 0; slot < p->slotCount; ++slot)
+        if (fprintf(file, "%" PRIu32 ",", p->slotLayouts ? p->slotLayouts[slot] : 0u) < 0) return 0;
+    if (fputs("};\n    static ZrStrictRecordLayout layouts[] = {\n", file) < 0 ||
+        (!p->layoutCount && fputs("        {0},\n", file) < 0)) return 0;
     for (uint32_t index = 0; index < p->layoutCount; ++index) {
         const ZrStrictRecordLayout *layout = &p->layouts[index];
         if (fprintf(file, "        {%" PRIu32 ",%" PRIu32 ",{", layout->fieldCount, layout->readonlyMask) < 0) return 0;
@@ -112,7 +114,7 @@ ZrStrictProgramStatus ZrStrictProgram_EmitC(FILE *file, const ZrStrictProgram *p
                 "#if ZR_STRICT_PROGRAM_ABI != %u\n#error StrictNoGC ABI mismatch\n#endif\n\n"
                 "static ZrStrictProgramStatus run(ZrStrictResult *out, uint32_t *fault) {\n",
                 ZR_STRICT_PROGRAM_ABI) < 0) goto done;
-    if (p->layoutCount) {
+    if (zr_strict_uses_frame(p)) {
         if (!emit_owned_body(file, p, labels)) goto done;
     } else {
     if (p->slotCount && fprintf(file, "    int64_t slots[%" PRIu32 "] = {0};\n", p->slotCount) < 0) goto done;

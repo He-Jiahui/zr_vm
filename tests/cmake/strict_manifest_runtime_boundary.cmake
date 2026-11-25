@@ -308,3 +308,47 @@ let text = "no managed allocation workaround";
 return student.id;
 ]=])
 reject_strict_owner(hidden_allocation "${string_program}" "no verified StrictNoGC lowering")
+
+set(byte_program [=[
+let memory: ManualBlock = ManualBlock.tryAlloc(2);
+if (memory == null) { return -1; }
+if (true) {
+    let writable: ref ManualBlock = ref memory;
+    writable[0] = 40;
+}
+let moved = memory;
+let bytes: ref readonly ManualBlock = ref moved;
+return bytes[0] + bytes[1] + bytes.length;
+]=])
+check_strict_owner(manual_bytes "${byte_program}" 42 FALSE)
+
+set(invalid_byte_count [=[
+let memory = ManualBlock.tryAlloc(-1);
+return memory == null;
+]=])
+check_strict_owner(manual_fallible "${invalid_byte_count}" true FALSE)
+
+set(byte_bounds_program [=[
+let memory = ManualBlock.tryAlloc(1);
+if (memory == null) { return -1; }
+let bytes: ref ManualBlock = ref memory;
+bytes[bytes.length] = 1;
+return 0;
+]=])
+check_strict_owner(manual_bounds "${byte_bounds_program}" "" TRUE)
+
+set(readonly_byte_program [=[
+let memory = ManualBlock.tryAlloc(1);
+let bytes: ref readonly ManualBlock = ref memory;
+bytes[0] = 1;
+return 0;
+]=])
+reject_strict_owner(manual_readonly "${readonly_byte_program}" "writable view")
+
+set(moved_byte_program [=[
+let memory = ManualBlock.tryAlloc(1);
+let bytes: ref ManualBlock = ref memory;
+let moved = memory;
+return bytes.length;
+]=])
+reject_strict_owner(manual_move_while_borrowed "${moved_byte_program}" "conflicting borrow")

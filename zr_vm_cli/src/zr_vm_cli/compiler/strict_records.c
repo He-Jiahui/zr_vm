@@ -59,6 +59,18 @@ static const char *identifier(const SZrAstNode *node) {
 static size_t count(const SZrAstNodeArray *a) { return a ? a->count : 0; }
 static TZrBool same(const char *a, const char *b) { return a && b && !strcmp(a, b); }
 
+static TZrBool byte_view(uint8_t kind) {
+    return kind == ZR_STRICT_VALUE_BYTE_VIEW || kind == ZR_STRICT_VALUE_READONLY_BYTE_VIEW;
+}
+
+static TZrBool is_borrow(uint8_t kind) {
+    return byte_view(kind) || kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW;
+}
+
+static uint64_t allocation_site(const SZrAstNode *node) {
+    return ((uint64_t)(uint32_t)node->location.start.line << 32) | (uint32_t)node->location.start.column;
+}
+
 static uint32_t layout_id(const Lowerer *l, const char *name) {
     for (uint32_t index = 0; index < l->program.layoutCount; ++index)
         if (same(name, l->program.layouts[index].name)) return index + 1;
@@ -112,6 +124,7 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
         op == ZR_STRICT_OP_END_BORROW) l->live[lhs] = 0;
     if (dst < l->program.slotCount && l->program.kinds[dst] >= ZR_STRICT_VALUE_RECORD &&
         op != ZR_STRICT_OP_DROP && op != ZR_STRICT_OP_END_BORROW && op != ZR_STRICT_OP_FIELD_WRITE &&
+        op != ZR_STRICT_OP_BYTE_WRITE &&
         op != ZR_STRICT_OP_RETURN && op != ZR_STRICT_OP_HALT) l->live[dst] = 1;
     return ZR_TRUE;
 oom:
@@ -224,7 +237,7 @@ static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *
     }
     output = new_slot(l, owned ? ZR_STRICT_VALUE_UNIQUE : ZR_STRICT_VALUE_RECORD, type, node);
     if (output == INVALID_SLOT || !emit(l, node, owned ? ZR_STRICT_OP_OWN_RECORD : ZR_STRICT_OP_INIT_RECORD,
-            output, first, owned ? ((uint64_t)(uint32_t)node->location.start.line << 32) | (uint32_t)node->location.start.column : 0))
+            output, first, owned ? allocation_site(node) : 0))
         return INVALID_SLOT;
     return output;
 fail:
@@ -296,6 +309,87 @@ static uint32_t resolve_field(Lowerer *l, const SZrAstNode *node, uint32_t *slot
     return index;
 }
 
+static const SZrFunctionCall *manual_try_alloc_call(const SZrAstNode *node) {
+    const SZrAstNodeArray *members = node->data.primaryExpression.members;
+    const SZrAstNode *member, *call;
+    if (count(members) != 2 || !same(identifier(node->data.primaryExpression.property), "ManualBlock")) return NULL;
+    member = members->nodes[0];
+    call = members->nodes[1];
+    if (member->type != ZR_AST_MEMBER_EXPRESSION || member->data.memberExpression.computed ||
+        member->data.memberExpression.accessMode != ZR_POSTFIX_ACCESS_DIRECT ||
+        !same(identifier(member->data.memberExpression.property), "tryAlloc") ||
+        call->type != ZR_AST_FUNCTION_CALL || call->data.functionCall.accessMode != ZR_POSTFIX_ACCESS_DIRECT) return NULL;
+    return &call->data.functionCall;
+}
+
+static uint32_t lower_manual_try_alloc(Lowerer *l, const SZrAstNode *node, const SZrFunctionCall *call) {
+    uint32_t size, dst;
+    if (lookup(l, "ManualBlock") != INVALID_SLOT || call->hasNamedArgs || count(call->genericArguments) || count(call->args) != 1)
+        return refuse(l, node, "ManualBlock.tryAlloc requires one positional byte count");
+    if (call->argumentMarkers && call->argumentMarkers->length) {
+        const SZrCallArgumentSyntax *marker = ZrCore_Array_Get(call->argumentMarkers, 0);
+        if (!marker || marker->marker != ZR_CALL_ARGUMENT_MARKER_NONE)
+            return refuse(l, node, "ManualBlock.tryAlloc takes a byte count by value");
+    }
+    size = lower_expression(l, call->args->nodes[0], ZR_STRICT_VALUE_I64);
+    if (size == INVALID_SLOT) return INVALID_SLOT;
+    if (l->program.kinds[size] != ZR_STRICT_VALUE_I64) return refuse(l, node, "manual byte count must be int");
+    dst = new_slot(l, ZR_STRICT_VALUE_MANUAL_BLOCK, 0, node);
+    return dst != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_MANUAL_TRY_ALLOC, dst, size, allocation_site(node))
+            ? dst : INVALID_SLOT;
+}
+
+/* Match a single member selection off a local byte view; multi-part or
+ * computed access on ordinary records stays outside this built-in. */
+static const SZrMemberExpression *manual_view_member(Lowerer *l, const SZrAstNode *node, uint32_t *view) {
+    const SZrAstNode *member;
+    uint32_t local;
+    if (!node || node->type != ZR_AST_PRIMARY_EXPRESSION || count(node->data.primaryExpression.members) != 1) return NULL;
+    local = lookup(l, identifier(node->data.primaryExpression.property));
+    if (local == INVALID_SLOT || !byte_view(l->program.kinds[local])) return NULL;
+    member = node->data.primaryExpression.members->nodes[0];
+    if (member->type != ZR_AST_MEMBER_EXPRESSION || member->data.memberExpression.accessMode != ZR_POSTFIX_ACCESS_DIRECT)
+        return NULL;
+    *view = local;
+    return &member->data.memberExpression;
+}
+
+static uint32_t lower_byte_read(Lowerer *l, const SZrAstNode *node, uint32_t view, const SZrMemberExpression *member) {
+    uint32_t op, index = 0, result;
+    if (!l->live[view]) return refuse(l, node, "byte view has expired");
+    if (member->computed) {
+        index = lower_expression(l, member->property, ZR_STRICT_VALUE_I64);
+        if (index == INVALID_SLOT) return INVALID_SLOT;
+        if (l->program.kinds[index] != ZR_STRICT_VALUE_I64) return refuse(l, node, "byte index must be int");
+        op = ZR_STRICT_OP_BYTE_READ;
+    } else {
+        if (!same(identifier(member->property), "length")) return refuse(l, node, "unknown byte view member");
+        op = ZR_STRICT_OP_BYTE_LENGTH;
+    }
+    result = new_slot(l, ZR_STRICT_VALUE_I64, 0, node);
+    if (result == INVALID_SLOT || !emit(l, node, op, result, view, 0)) return INVALID_SLOT;
+    l->program.instructions[l->program.instructionCount - 1].rhs = index;
+    return result;
+}
+
+static TZrBool lower_byte_write(Lowerer *l, const SZrAstNode *node, uint32_t view, const SZrMemberExpression *member) {
+    uint32_t index, input;
+    if (!member->computed || !l->live[view] || l->program.kinds[view] != ZR_STRICT_VALUE_BYTE_VIEW) {
+        (void)refuse(l, node, "byte assignment requires an indexed writable view");
+        return ZR_FALSE;
+    }
+    index = lower_expression(l, member->property, ZR_STRICT_VALUE_I64);
+    input = lower_expression(l, node->data.assignmentExpression.right, ZR_STRICT_VALUE_I64);
+    if (index == INVALID_SLOT || input == INVALID_SLOT) return ZR_FALSE;
+    if (l->program.kinds[index] != ZR_STRICT_VALUE_I64 || l->program.kinds[input] != ZR_STRICT_VALUE_I64) {
+        (void)refuse(l, node, "byte index and assigned value must be int");
+        return ZR_FALSE;
+    }
+    if (!emit(l, node, ZR_STRICT_OP_BYTE_WRITE, view, index, 0)) return ZR_FALSE;
+    l->program.instructions[l->program.instructionCount - 1].rhs = input;
+    return ZR_TRUE;
+}
+
 static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t expected) {
     const char *name = identifier(node);
     uint32_t slot, input, index;
@@ -314,11 +408,13 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             if (expr->isResourceSurface && expr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE)
                 return lower_construct(l, node, identifier(expr->target), expr->args, ZR_TRUE);
             if (!expr->isNew && expr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW) {
-                if (expected != ZR_STRICT_VALUE_BORROW && expected != ZR_STRICT_VALUE_READONLY_BORROW)
+                if (!is_borrow(expected))
                     return refuse(l, node, "declare a scoped ref or ref readonly binding for this borrow");
                 input = lookup(l, identifier(expr->target));
-                if (input == INVALID_SLOT || !l->program.slotLayouts[input])
-                    return refuse(l, node, "borrow requires a live record binding");
+                if (input == INVALID_SLOT || !l->live[input]) return refuse(l, node, "borrow requires a live owner");
+                if (byte_view(expected) ? l->program.kinds[input] != ZR_STRICT_VALUE_MANUAL_BLOCK
+                                        : !l->program.slotLayouts[input])
+                    return refuse(l, node, "borrow target does not match the requested view");
                 slot = new_slot(l, expected, l->program.slotLayouts[input], node);
                 return slot != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_BORROW, slot, input, 0) ? slot : INVALID_SLOT;
             }
@@ -332,11 +428,17 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             break;
         }
         case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION: return ownership_expression(l, node);
-        case ZR_AST_PRIMARY_EXPRESSION:
+        case ZR_AST_PRIMARY_EXPRESSION: {
+            const SZrFunctionCall *allocation = manual_try_alloc_call(node);
+            const SZrMemberExpression *member;
+            if (allocation) return lower_manual_try_alloc(l, node, allocation);
+            member = manual_view_member(l, node, &input);
+            if (member) return lower_byte_read(l, node, input, member);
             index = resolve_field(l, node, &input);
             if (index == INVALID_SLOT) return INVALID_SLOT;
             slot = new_slot(l, l->program.layouts[l->program.slotLayouts[input] - 1].fields[index], 0, node);
             return slot != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_FIELD_READ, slot, input, index) ? slot : INVALID_SLOT;
+        }
         case ZR_AST_UNARY_EXPRESSION:
             if (same(node->data.unaryExpression.op.op, "-") || same(node->data.unaryExpression.op.op, "!")) {
                 TZrBool neg = same(node->data.unaryExpression.op.op, "-");
@@ -378,6 +480,11 @@ static uint8_t binding_type(Lowerer *l, const SZrType *type, uint32_t *layout) {
         }
     }
     if (type->ownershipQualifier) return 0;
+    if (same(identifier(node), "ManualBlock")) {
+        if (type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) return ZR_STRICT_VALUE_READONLY_BYTE_VIEW;
+        if (type->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) return ZR_STRICT_VALUE_BYTE_VIEW;
+        return ZR_STRICT_VALUE_MANUAL_BLOCK;
+    }
     if (!(*layout = layout_id(l, identifier(node)))) return 0;
     if (type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) return ZR_STRICT_VALUE_READONLY_BORROW;
     if (type->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) return ZR_STRICT_VALUE_BORROW;
@@ -390,8 +497,8 @@ static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first)
     for (uint32_t slot = l->program.slotCount; slot > first;) {
         uint8_t kind = l->program.kinds[--slot];
         if (!l->live[slot]) continue;
-        if (!l->terminated && !emit(l, node, kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW
-                ? ZR_STRICT_OP_END_BORROW : ZR_STRICT_OP_DROP, 0, slot, 0)) return ZR_FALSE;
+        if (!l->terminated && !emit(l, node, is_borrow(kind) ? ZR_STRICT_OP_END_BORROW : ZR_STRICT_OP_DROP,
+                                    0, slot, 0)) return ZR_FALSE;
         l->live[slot] = 0;
     }
     return ZR_TRUE;
@@ -519,7 +626,8 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             dst = input;
             if (identifier(decl->value)) {
                 uint32_t op = kind < ZR_STRICT_VALUE_RECORD ? ZR_STRICT_OP_COPY :
-                    kind == ZR_STRICT_VALUE_UNIQUE ? ZR_STRICT_OP_TRANSFER : ZR_STRICT_OP_CLONE;
+                    (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK)
+                    ? ZR_STRICT_OP_TRANSFER : ZR_STRICT_OP_CLONE;
                 dst = new_slot(l, kind, l->program.slotLayouts[input], node);
                 if (dst == INVALID_SLOT || !emit(l, node, op, dst, input, 0)) return ZR_FALSE;
             }
@@ -542,12 +650,16 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             if (expr->data.ownershipIntrinsicExpression.operation != ZR_OWNERSHIP_INTRINSIC_DROP) break;
             input = lower_expression(l, expr->data.ownershipIntrinsicExpression.argument, 0);
             return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_DROP, 0, input, 0);
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
+        case ZR_AST_ASSIGNMENT_EXPRESSION: {
+            const SZrMemberExpression *member;
             if (!same(expr->data.assignmentExpression.op.op, "=")) break;
+            member = manual_view_member(l, expr->data.assignmentExpression.left, &dst);
+            if (member) return lower_byte_write(l, expr, dst, member);
             field = resolve_field(l, expr->data.assignmentExpression.left, &dst);
             if (field == INVALID_SLOT) return ZR_FALSE;
             input = lower_expression(l, expr->data.assignmentExpression.right, 0);
             return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_FIELD_WRITE, dst, input, field);
+        }
         default: break;
     }
     (void)refuse(l, expr, "statement has no verified StrictNoGC lowering");
@@ -572,6 +684,10 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
         name = name_of(decl->name);
         members = decl->members;
         readonly = decl->isReadonly;
+    }
+    if (same(name, "ManualBlock")) {
+        (void)refuse(l, node, "ManualBlock is reserved for the strict byte buffer type");
+        return ZR_FALSE;
     }
     if (!name || strlen(name) >= ZR_STRICT_LAYOUT_NAME_SIZE || layout_id(l, name) ||
         l->program.layoutCount == ZR_STRICT_MAX_LAYOUTS) goto unsupported;

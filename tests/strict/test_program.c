@@ -52,7 +52,7 @@ static void test_unverified_programs_fail_closed(void) {
     assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 0);
     instructions[0].immediate = 1;
     assert(ZrStrictProgram_Write(file, &source) == ZR_STRICT_PROGRAM_OK);
-    assert(fseek(file, 8, SEEK_SET) == 0 && fputc(255, file) != EOF);
+    assert(fseek(file, 8, SEEK_SET) == 0 && fputc(ZR_STRICT_PROGRAM_ABI - 1, file) != EOF);
     rewind(file);
     assert(ZrStrictProgram_Read(file, &reloaded) == ZR_STRICT_PROGRAM_BAD_VERSION);
     assert(fseek(file, 8, SEEK_SET) == 0 && fputc(ZR_STRICT_PROGRAM_ABI, file) != EOF);
@@ -204,6 +204,59 @@ static void test_owned_frame_unwinds_allocation_failure(void) {
     assert(fault.attempts == 2 && fault.frees == 1);
 }
 
+static void test_manual_byte_ownership_and_faults(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_MANUAL_BLOCK, ZR_STRICT_VALUE_MANUAL_BLOCK,
+                       ZR_STRICT_VALUE_BOOL, ZR_STRICT_VALUE_BYTE_VIEW, ZR_STRICT_VALUE_I64};
+    ZrStrictInstruction instructions[] = {
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 2},
+        {ZR_STRICT_OP_MANUAL_TRY_ALLOC, 1, 0, 0, 0},
+        {ZR_STRICT_OP_MANUAL_TRY_ALLOC, 2, 0, 0, 0},
+        {ZR_STRICT_OP_IS_NULL, 3, 2, 0, 0},
+        {ZR_STRICT_OP_BORROW, 4, 1, 0, 0},
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 1},
+        {ZR_STRICT_OP_BYTE_READ, 5, 4, 0, 0},
+        {ZR_STRICT_OP_CONST, 5, 0, 0, 42},
+        {ZR_STRICT_OP_BYTE_WRITE, 4, 0, 5, 0},
+        {ZR_STRICT_OP_BYTE_READ, 5, 4, 0, 0},
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 2},
+        {ZR_STRICT_OP_BYTE_READ, 5, 4, 0, 0},
+        {ZR_STRICT_OP_END_BORROW, 0, 4, 0, 0},
+        {ZR_STRICT_OP_RETURN, 0, 5, 0, 0},
+    };
+    ZrStrictProgram p = {.kinds = kinds, .slotCount = 6, .instructions = instructions, .instructionCount = 14};
+    ZrStrictFrame frame;
+    ZrStrictFrameSlot storage[6];
+    FaultAllocator failure = {0};
+    ZrStrictAllocator allocator = {fail_second, fault_free, &failure};
+    ZrStrictProgram loaded = {0};
+    ZrStrictResult result;
+    uint32_t pc;
+    FILE *stream = tmpfile();
+    assert(stream && ZrStrictProgram_Write(stream, &p) == ZR_STRICT_PROGRAM_OK);
+    rewind(stream);
+    assert(ZrStrictProgram_Read(stream, &loaded) == ZR_STRICT_PROGRAM_OK && loaded.layoutCount == 0);
+    assert(ZrStrictProgram_Run(&loaded, &result, &pc) == ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT && pc == 11);
+    ZrStrictProgram_Free(&loaded);
+    fclose(stream);
+
+    assert(ZrStrictFrame_Open(&frame, &p, storage, 6, &allocator) == ZR_STRICT_PROGRAM_OK);
+    for (size_t index = 0; index <= 6; ++index)
+        assert(ZrStrictFrame_Apply(&frame, &instructions[index]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Scalar(&frame, 3) == 1 && ZrStrictFrame_Scalar(&frame, 5) == 0);
+    for (size_t index = 7; index <= 10; ++index)
+        assert(ZrStrictFrame_Apply(&frame, &instructions[index]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Scalar(&frame, 5) == 42);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[11]) == ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT);
+    assert(ZrStrictFrame_Close(&frame) == ZR_STRICT_PROGRAM_OK);
+    assert(failure.attempts == 2 && failure.frees == 1);
+
+    kinds[4] = ZR_STRICT_VALUE_READONLY_BYTE_VIEW;
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 8);
+    kinds[4] = ZR_STRICT_VALUE_BYTE_VIEW;
+    instructions[8] = (ZrStrictInstruction){ZR_STRICT_OP_DROP, 0, 1, 0, 0};
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 8);
+}
+
 int main(void) {
     test_verified_control_flow_round_trip();
     test_unverified_programs_fail_closed();
@@ -211,5 +264,6 @@ int main(void) {
     test_owned_program_borrow_move_and_weak_lifecycle();
     test_ownership_joins_validate_all_incoming_paths();
     test_owned_frame_unwinds_allocation_failure();
+    test_manual_byte_ownership_and_faults();
     return 0;
 }

@@ -12,7 +12,7 @@ extern "C" {
 
 /* The strict executable has its own magic and version; managed artifacts
  * must never be interpreted as strict programs. These limits precede allocation. */
-#define ZR_STRICT_PROGRAM_ABI 2u
+#define ZR_STRICT_PROGRAM_ABI 3u
 #define ZR_STRICT_MAX_SLOTS 4096u
 #define ZR_STRICT_MAX_INSTRUCTIONS 1048576u
 #define ZR_STRICT_MAX_LAYOUTS 1024u
@@ -29,7 +29,10 @@ typedef enum ZrStrictKind {
     ZR_STRICT_VALUE_WEAK,
     ZR_STRICT_VALUE_MAYBE_SHARED,
     ZR_STRICT_VALUE_BORROW,
-    ZR_STRICT_VALUE_READONLY_BORROW
+    ZR_STRICT_VALUE_READONLY_BORROW,
+    ZR_STRICT_VALUE_MANUAL_BLOCK,
+    ZR_STRICT_VALUE_BYTE_VIEW,
+    ZR_STRICT_VALUE_READONLY_BYTE_VIEW
 } ZrStrictKind;
 
 typedef enum ZrStrictOp {
@@ -64,7 +67,11 @@ typedef enum ZrStrictOp {
     ZR_STRICT_OP_BORROW,
     ZR_STRICT_OP_END_BORROW,
     ZR_STRICT_OP_FIELD_READ,
-    ZR_STRICT_OP_FIELD_WRITE
+    ZR_STRICT_OP_FIELD_WRITE,
+    ZR_STRICT_OP_MANUAL_TRY_ALLOC,
+    ZR_STRICT_OP_BYTE_LENGTH,
+    ZR_STRICT_OP_BYTE_READ,
+    ZR_STRICT_OP_BYTE_WRITE
 } ZrStrictOp;
 
 typedef struct ZrStrictInstruction {
@@ -87,7 +94,8 @@ typedef struct ZrStrictProgram {
     uint32_t slotCount;
     ZrStrictInstruction *instructions;
     uint32_t instructionCount;
-    /* Each record/owner/borrow slot names a one-based layout. Scalars use 0. */
+    /* Record values and their handles name a one-based layout. Scalars and
+     * the built-in manual byte block and its views use 0. */
     uint32_t *slotLayouts;
     ZrStrictRecordLayout *layouts;
     uint32_t layoutCount;
@@ -107,7 +115,8 @@ typedef enum ZrStrictProgramStatus {
     ZR_STRICT_PROGRAM_OUT_OF_MEMORY,
     ZR_STRICT_PROGRAM_IO_ERROR,
     ZR_STRICT_PROGRAM_FAULT,
-    ZR_STRICT_PROGRAM_OWNERSHIP_FAULT
+    ZR_STRICT_PROGRAM_OWNERSHIP_FAULT,
+    ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT
 } ZrStrictProgramStatus;
 
 /* Read and Write use canonical little-endian records, not native struct
@@ -129,6 +138,7 @@ typedef struct ZrStrictFrameSlot {
         ZrStrictUnique unique;
         ZrStrictShared shared;
         ZrStrictWeak weak;
+        ZrStrictManualBlock manual;
         uint32_t borrowedFrom;
     } value;
     unsigned live;
