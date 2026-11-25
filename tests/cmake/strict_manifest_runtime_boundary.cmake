@@ -120,3 +120,144 @@ execute_process(COMMAND "${CLI_EXE}" --compile "${manifest}"
 if(NOT status STREQUAL "1" OR NOT error MATCHES "StrictNoGC requires verifiable source for import")
     message(FATAL_ERROR "Strict source check accepted an unverified binary (${status}): ${output}\n${error}")
 endif()
+# Append to strict_manifest_runtime_boundary.cmake after the scalar and
+# compiler policy controls. Use a fresh project for each ownership fixture.
+function(check_strict_owner name source expected fault)
+    set(work "${TEST_WORK_DIR}/owner-${name}")
+    set(src "${work}/src/main.zr")
+    set(manifest "${work}/owner.zrp")
+    file(MAKE_DIRECTORY "${work}/src")
+    file(WRITE "${manifest}" "${envelope},\"StrictNoGC\":true}\n")
+    file(WRITE "${src}" "${source}\n")
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env ZR_VM_TRACE_CORE_BOOTSTRAP=1 ZR_VM_TRACE_PROJECT_STARTUP=1
+            "${CLI_EXE}" "${manifest}" --emit-executed-via
+            RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    string(REPLACE "\r\n" "\n" output "${output}")
+    string(STRIP "${output}" output)
+    string(STRIP "${error}" error)
+    if(fault)
+        if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error MATCHES "^StrictNoGC: .* at instruction [0-9]+$")
+            message(FATAL_ERROR "${name}: Strict interpreter failed to report the expected runtime fault (${status}): ${output}\n${error}")
+        endif()
+        set(reference_fault "${error}")
+    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL "${expected}\nexecuted_via=strict-interp" OR NOT error STREQUAL "")
+        message(FATAL_ERROR "${name}: Strict ownership interpreter failed (${status}): ${output}\n${error}")
+    endif()
+
+    execute_process(COMMAND "${CLI_EXE}" --require-strict-no-gc --compile "${manifest}" --emit-aot-c
+            RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    set(binary "${work}/bin/main.zro")
+    set(aot_source "${work}/bin/aot_c/src/main.c")
+    if(NOT status STREQUAL "0" OR NOT EXISTS "${binary}" OR NOT EXISTS "${aot_source}")
+        message(FATAL_ERROR "${name}: Strict ownership compilation failed (${status}): ${output}\n${error}")
+    endif()
+    file(RENAME "${src}" "${work}/main.hidden")
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env ZR_VM_TRACE_CORE_BOOTSTRAP=1 ZR_VM_TRACE_PROJECT_STARTUP=1
+            "${CLI_EXE}" "${manifest}" --execution-mode binary --emit-executed-via
+            RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    string(REPLACE "\r\n" "\n" output "${output}")
+    string(STRIP "${output}" output)
+    string(STRIP "${error}" error)
+    if(fault)
+        if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error STREQUAL reference_fault)
+            message(FATAL_ERROR "${name}: Strict binary fault diverged (${status}): ${output}\n${error}")
+        endif()
+    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL "${expected}\nexecuted_via=strict-binary" OR NOT error STREQUAL "")
+        message(FATAL_ERROR "${name}: Strict binary needed source or a managed bootstrap (${status}): ${output}\n${error}")
+    endif()
+
+    set(aot_exe "${work}/strict-native${EXE_SUFFIX}")
+    if(MSVC)
+        set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}"
+                "/Fe${aot_exe}" "/Fo${work}/strict-native.obj")
+    else()
+        set(compile_args -std=c11 "-I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}" -o "${aot_exe}")
+    endif()
+    execute_process(COMMAND "${C_COMPILER}" ${compile_args} WORKING_DIRECTORY "${work}"
+            RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    if(NOT status STREQUAL "0")
+        message(FATAL_ERROR "${name}: Strict ownership native code did not link against the strict archive (${status}): ${output}\n${error}")
+    endif()
+    execute_process(COMMAND "${aot_exe}" RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    string(STRIP "${output}" output)
+    string(STRIP "${error}" error)
+    if(fault)
+        if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error STREQUAL reference_fault)
+            message(FATAL_ERROR "${name}: Strict native fault diverged (${status}): ${output}\n${error}")
+        endif()
+    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL expected OR NOT error STREQUAL "")
+        message(FATAL_ERROR "${name}: Strict ownership AOT C and interpreter disagree (${status}): ${output}\n${error}")
+    endif()
+endfunction()
+
+set(student_decl [=[
+resource class Student {
+    pub var id: int;
+    pub @constructor(id: int) { this.id = id; }
+}
+]=])
+set(borrow_program [=[
+struct Grade { pub var score: int = 10; }
+let grade = init Grade();
+let student: Unique<Student> = own Student(32);
+let view: ref Student = ref student;
+view.id = view.id + grade.score;
+return view.id;
+]=])
+check_strict_owner(borrow "${student_decl}${borrow_program}" 42 FALSE)
+
+set(weak_start [=[
+let student: Unique<Student> = own Student(42);
+let owner: Shared<Student> = share(student);
+let clone = owner;
+let observer: Weak<Student> = degrade(owner);
+drop(owner);
+]=])
+check_strict_owner(weak_live "${student_decl}${weak_start}\nreturn wake(observer) != null;" true FALSE)
+check_strict_owner(weak_expired "${student_decl}${weak_start}\ndrop(clone);\nreturn wake(observer) == null;" true FALSE)
+set(fault_program [=[
+let student: Unique<Student> = own Student(42);
+return student.id / 0;
+]=])
+check_strict_owner(fault_unwind "${student_decl}${fault_program}" "" TRUE)
+
+function(reject_strict_owner name source expected_diagnostic)
+    set(work "${TEST_WORK_DIR}/reject-owner-${name}")
+    set(manifest "${work}/owner.zrp")
+    file(MAKE_DIRECTORY "${work}/src")
+    file(WRITE "${manifest}" "${envelope},\"StrictNoGC\":true}\n")
+    file(WRITE "${work}/src/main.zr" "${student_decl}${source}\n")
+    execute_process(COMMAND "${CLI_EXE}" --require-strict-no-gc --compile "${manifest}" --emit-aot-c
+            RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
+    if(NOT status STREQUAL "1" OR NOT error MATCHES "${expected_diagnostic}" OR EXISTS "${work}/bin/main.zro")
+        message(FATAL_ERROR "${name}: Illegal strict ownership source was not rejected (${status}): ${output}\n${error}")
+    endif()
+endfunction()
+
+set(moved_program [=[
+let student: Unique<Student> = own Student(42);
+let owner = share(student);
+drop(student);
+return owner.id;
+]=])
+reject_strict_owner(use_after_move "${moved_program}" "use after move or drop")
+set(borrowed_program [=[
+let student: Unique<Student> = own Student(42);
+let view: ref Student = ref student;
+drop(student);
+return view.id;
+]=])
+reject_strict_owner(drop_while_borrowed "${borrowed_program}" "conflicting borrow")
+set(shared_write_program [=[
+let student: Unique<Student> = own Student(42);
+let owner = share(student);
+owner.id = 0;
+return owner.id;
+]=])
+reject_strict_owner(write_through_shared "${shared_write_program}" "readonly field")
+set(string_program [=[
+let student: Unique<Student> = own Student(42);
+let text = "no managed allocation workaround";
+return student.id;
+]=])
+reject_strict_owner(hidden_allocation "${string_program}" "no verified StrictNoGC lowering")

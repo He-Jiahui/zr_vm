@@ -1,6 +1,7 @@
 #include "compiler/compiler.h"
 #include "compiler/compiler_aot.h"
 #include "compiler/strict_scalar.h"
+#include "compiler/strict_records.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -949,10 +950,13 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
     }
     if (ok) {
         const SZrCliModuleRecord *record = &modules.records[0];
-        if (modules.count != 1u || !record->strictScalarCandidate) {
+        if (modules.count != 1u) {
             snprintf(error, sizeof(error), "%s: source shape is not yet supported by the StrictNoGC executable compiler",
                      record->sourcePath);
             ok = ZR_FALSE;
+        } else if (!record->strictScalarCandidate) {
+            ok = ZrCli_StrictRecords_Compile(compiler->mainThreadState, record->strictSource,
+                    record->strictSourceLength, record->sourcePath, program, error, sizeof(error));
         } else {
             /* The canonical scalar producer is project-independent. Selection
              * and every import check have already used the strict manifest. */

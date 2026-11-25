@@ -1,4 +1,4 @@
-#include "zr_vm_strict/program.h"
+#include "program_ownership.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -11,6 +11,10 @@ static int valid_slot(const ZrStrictProgram *p, uint32_t index, ZrStrictKind kin
     return index < p->slotCount && (kind == ZR_STRICT_VALUE_VOID || p->kinds[index] == kind);
 }
 
+static int scalar_slot(const ZrStrictProgram *p, uint32_t index) {
+    return index < p->slotCount && zr_strict_is_scalar(p->kinds[index]);
+}
+
 static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
     const ZrStrictInstruction *i = &p->instructions[pc];
     if (pc + 1 == p->instructionCount && i->op != ZR_STRICT_OP_JUMP &&
@@ -19,10 +23,10 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
     }
     switch (i->op) {
         case ZR_STRICT_OP_CONST:
-            return valid_slot(p, i->dst, ZR_STRICT_VALUE_VOID) && !i->lhs && !i->rhs &&
+            return scalar_slot(p, i->dst) && !i->lhs && !i->rhs &&
                    (p->kinds[i->dst] == ZR_STRICT_VALUE_I64 || i->immediate <= 1);
         case ZR_STRICT_OP_COPY:
-            return valid_slot(p, i->dst, ZR_STRICT_VALUE_VOID) &&
+            return scalar_slot(p, i->dst) &&
                    valid_slot(p, i->lhs, (ZrStrictKind)p->kinds[i->dst]) && !i->rhs && !i->immediate;
         case ZR_STRICT_OP_ADD:
         case ZR_STRICT_OP_SUB:
@@ -35,7 +39,7 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
         case ZR_STRICT_OP_EQ:
         case ZR_STRICT_OP_NE:
             return valid_slot(p, i->dst, ZR_STRICT_VALUE_BOOL) &&
-                   valid_slot(p, i->lhs, ZR_STRICT_VALUE_VOID) &&
+                   scalar_slot(p, i->lhs) &&
                    valid_slot(p, i->rhs, (ZrStrictKind)p->kinds[i->lhs]) && !i->immediate;
         case ZR_STRICT_OP_LT:
         case ZR_STRICT_OP_LE:
@@ -55,11 +59,11 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc) {
             return !i->dst && valid_slot(p, i->lhs, ZR_STRICT_VALUE_BOOL) && !i->rhs &&
                    i->immediate < p->instructionCount;
         case ZR_STRICT_OP_RETURN:
-            return !i->dst && valid_slot(p, i->lhs, ZR_STRICT_VALUE_VOID) && !i->rhs && !i->immediate;
+            return !i->dst && scalar_slot(p, i->lhs) && !i->rhs && !i->immediate;
         case ZR_STRICT_OP_HALT:
             return !i->dst && !i->lhs && !i->rhs && !i->immediate;
         default:
-            return 0;
+            return p->layoutCount && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_FIELD_WRITE;
     }
 }
 
@@ -69,8 +73,23 @@ ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *p, uint32_t 
         !p->instructionCount || p->instructionCount > ZR_STRICT_MAX_INSTRUCTIONS || !p->instructions) {
         return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     }
+    if (p->layoutCount > ZR_STRICT_MAX_LAYOUTS || (p->layoutCount && (!p->layouts || !p->slotLayouts))) {
+        return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+    }
+    for (uint32_t index = 0; index < p->layoutCount; ++index) {
+        const ZrStrictRecordLayout *layout = &p->layouts[index];
+        if (layout->fieldCount > ZR_STRICT_MAX_FIELDS || layout->readonlyMask >> layout->fieldCount ||
+            !layout->name[0] || !memchr(layout->name, '\0', sizeof(layout->name))) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+        for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field) {
+            if (field < layout->fieldCount ? !zr_strict_is_scalar(layout->fields[field]) : layout->fields[field] != 0)
+                return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+        }
+    }
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) {
-        if (p->kinds[slot] != ZR_STRICT_VALUE_I64 && p->kinds[slot] != ZR_STRICT_VALUE_BOOL) {
+        uint8_t kind = p->kinds[slot];
+        uint32_t type = p->slotLayouts ? p->slotLayouts[slot] : 0;
+        if (zr_strict_is_scalar(kind) ? type != 0 :
+            (kind < ZR_STRICT_VALUE_RECORD || kind > ZR_STRICT_VALUE_READONLY_BORROW || !type || type > p->layoutCount)) {
             return ZR_STRICT_PROGRAM_BAD_LAYOUT;
         }
     }
@@ -80,6 +99,7 @@ ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *p, uint32_t 
             return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
         }
     }
+    if (p->layoutCount && !zr_strict_verify_ownership(p, badPc)) return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
     return ZR_STRICT_PROGRAM_OK;
 }
 
@@ -122,6 +142,32 @@ ZrStrictProgramStatus ZrStrictProgram_Scalar(uint32_t op, int64_t a, int64_t b, 
     return ZR_STRICT_PROGRAM_OK;
 }
 
+static ZrStrictProgramStatus run_owned(const ZrStrictProgram *p, ZrStrictResult *result, uint32_t *badPc) {
+    ZrStrictFrame frame;
+    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, p, NULL);
+    uint32_t pc = 0;
+    if (status != ZR_STRICT_PROGRAM_OK) return status;
+    while (pc < p->instructionCount) {
+        const ZrStrictInstruction *i = &p->instructions[pc];
+        if (i->op == ZR_STRICT_OP_RETURN) {
+            result->kind = (ZrStrictKind)p->kinds[i->lhs];
+            result->scalar = ZrStrictFrame_Scalar(&frame, i->lhs);
+            break;
+        }
+        if (i->op == ZR_STRICT_OP_HALT) break;
+        status = ZrStrictFrame_Apply(&frame, i);
+        if (status != ZR_STRICT_PROGRAM_OK) {
+            if (badPc) *badPc = pc;
+            break;
+        }
+        ++pc;
+    }
+    {
+        ZrStrictProgramStatus cleanup = ZrStrictFrame_Close(&frame);
+        return status == ZR_STRICT_PROGRAM_OK ? cleanup : status;
+    }
+}
+
 ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *p, ZrStrictResult *result, uint32_t *badPc) {
     ZrStrictProgramStatus status = ZrStrictProgram_Verify(p, badPc);
     int64_t slots[ZR_STRICT_MAX_SLOTS];
@@ -129,6 +175,7 @@ ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *p, ZrStrictResu
     if (status != ZR_STRICT_PROGRAM_OK) return status;
     if (!result) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     *result = (ZrStrictResult){0};
+    if (p->layoutCount) return run_owned(p, result, badPc);
     memset(slots, 0, (size_t)p->slotCount * sizeof(*slots));
     for (;;) {
         const ZrStrictInstruction *i = &p->instructions[pc];
@@ -177,9 +224,20 @@ ZrStrictProgramStatus ZrStrictProgram_Write(FILE *file, const ZrStrictProgram *p
     if (status != ZR_STRICT_PROGRAM_OK) return status;
     if (!file || fwrite(magic, 1, sizeof(magic), file) != sizeof(magic) ||
         !write_uint(file, ZR_STRICT_PROGRAM_ABI, 4) || !write_uint(file, program->slotCount, 4) ||
-        !write_uint(file, program->instructionCount, 4) ||
+        !write_uint(file, program->instructionCount, 4) || !write_uint(file, program->layoutCount, 4) ||
         (program->slotCount && fwrite(program->kinds, 1, program->slotCount, file) != program->slotCount)) {
         return ZR_STRICT_PROGRAM_IO_ERROR;
+    }
+    if (program->layoutCount) {
+        for (uint32_t slot = 0; slot < program->slotCount; ++slot) {
+            if (!write_uint(file, program->slotLayouts[slot], 4)) return ZR_STRICT_PROGRAM_IO_ERROR;
+        }
+        for (uint32_t index = 0; index < program->layoutCount; ++index) {
+            const ZrStrictRecordLayout *layout = &program->layouts[index];
+            if (!write_uint(file, layout->fieldCount, 4) || !write_uint(file, layout->readonlyMask, 4) ||
+                fwrite(layout->fields, 1, sizeof(layout->fields), file) != sizeof(layout->fields) ||
+                fwrite(layout->name, 1, sizeof(layout->name), file) != sizeof(layout->name)) return ZR_STRICT_PROGRAM_IO_ERROR;
+        }
     }
     for (uint32_t pc = 0; pc < program->instructionCount; ++pc) {
         const ZrStrictInstruction *i = &program->instructions[pc];
@@ -195,16 +253,19 @@ void ZrStrictProgram_Free(ZrStrictProgram *p) {
     if (p) {
         free(p->kinds);
         free(p->instructions);
+        free(p->slotLayouts);
+        free(p->layouts);
         *p = (ZrStrictProgram){0};
     }
 }
 
 ZrStrictProgramStatus ZrStrictProgram_Read(FILE *file, ZrStrictProgram *out) {
     unsigned char actual[sizeof(magic)];
-    uint64_t abi, slots, instructions;
+    uint64_t abi, slots, instructions, layouts;
     ZrStrictProgram p = {0};
     ZrStrictProgramStatus status;
-    if (!file || !out || out->kinds || out->slotCount || out->instructions || out->instructionCount) {
+    if (!file || !out || out->kinds || out->slotCount || out->instructions || out->instructionCount ||
+        out->slotLayouts || out->layouts || out->layoutCount) {
         return ZR_STRICT_PROGRAM_BAD_FORMAT;
     }
     if (fread(actual, 1, sizeof(actual), file) != sizeof(actual) || memcmp(actual, magic, sizeof(magic)) ||
@@ -212,8 +273,8 @@ ZrStrictProgramStatus ZrStrictProgram_Read(FILE *file, ZrStrictProgram *out) {
         return ZR_STRICT_PROGRAM_BAD_FORMAT;
     }
     if (abi != ZR_STRICT_PROGRAM_ABI) return ZR_STRICT_PROGRAM_BAD_VERSION;
-    if (!read_uint(file, &slots, 4) || !read_uint(file, &instructions, 4) ||
-        slots > ZR_STRICT_MAX_SLOTS || !instructions || instructions > ZR_STRICT_MAX_INSTRUCTIONS) {
+    if (!read_uint(file, &slots, 4) || !read_uint(file, &instructions, 4) || !read_uint(file, &layouts, 4) ||
+        layouts > ZR_STRICT_MAX_LAYOUTS || slots > ZR_STRICT_MAX_SLOTS || !instructions || instructions > ZR_STRICT_MAX_INSTRUCTIONS) {
         return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     }
     p.slotCount = (uint32_t)slots;
@@ -225,6 +286,29 @@ ZrStrictProgramStatus ZrStrictProgram_Read(FILE *file, ZrStrictProgram *out) {
         goto fail;
     }
     if (p.slotCount && fread(p.kinds, 1, p.slotCount, file) != p.slotCount) goto bad_format;
+    p.layoutCount = (uint32_t)layouts;
+    if (p.layoutCount) {
+        p.slotLayouts = calloc(p.slotCount ? p.slotCount : 1, sizeof(*p.slotLayouts));
+        p.layouts = calloc(p.layoutCount, sizeof(*p.layouts));
+        if (!p.slotLayouts || !p.layouts) {
+            status = ZR_STRICT_PROGRAM_OUT_OF_MEMORY;
+            goto fail;
+        }
+        for (uint32_t slot = 0; slot < p.slotCount; ++slot) {
+            uint64_t type;
+            if (!read_uint(file, &type, 4)) goto bad_format;
+            p.slotLayouts[slot] = (uint32_t)type;
+        }
+        for (uint32_t index = 0; index < p.layoutCount; ++index) {
+            ZrStrictRecordLayout *layout = &p.layouts[index];
+            uint64_t fields, readonly;
+            if (!read_uint(file, &fields, 4) || !read_uint(file, &readonly, 4) ||
+                fread(layout->fields, 1, sizeof(layout->fields), file) != sizeof(layout->fields) ||
+                fread(layout->name, 1, sizeof(layout->name), file) != sizeof(layout->name)) goto bad_format;
+            layout->fieldCount = (uint32_t)fields;
+            layout->readonlyMask = (uint32_t)readonly;
+        }
+    }
     for (uint32_t pc = 0; pc < p.instructionCount; ++pc) {
         uint64_t op, dst, lhs, rhs, immediate;
         if (!read_uint(file, &op, 4) || !read_uint(file, &dst, 4) || !read_uint(file, &lhs, 4) ||
@@ -258,6 +342,7 @@ const char *ZrStrictProgram_StatusName(ZrStrictProgramStatus status) {
         case ZR_STRICT_PROGRAM_OUT_OF_MEMORY: return "out of memory";
         case ZR_STRICT_PROGRAM_IO_ERROR: return "I/O error";
         case ZR_STRICT_PROGRAM_FAULT: return "arithmetic fault";
+        case ZR_STRICT_PROGRAM_OWNERSHIP_FAULT: return "ownership fault";
         default: return "unknown strict execution status";
     }
 }

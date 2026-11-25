@@ -35,6 +35,48 @@ static int emit_instruction(FILE *file, const ZrStrictProgram *p, uint32_t pc) {
     }
 }
 
+static int emit_owned_body(FILE *file, const ZrStrictProgram *p) {
+    if (fputs("    static uint8_t kinds[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
+    for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%u,", p->kinds[slot]) < 0) return 0;
+    if (fputs("};\n    static uint32_t types[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
+    for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%" PRIu32 ",", p->slotLayouts[slot]) < 0) return 0;
+    if (fputs("};\n    static ZrStrictRecordLayout layouts[] = {\n", file) < 0) return 0;
+    for (uint32_t index = 0; index < p->layoutCount; ++index) {
+        const ZrStrictRecordLayout *layout = &p->layouts[index];
+        if (fprintf(file, "        {%" PRIu32 ",%" PRIu32 ",{", layout->fieldCount, layout->readonlyMask) < 0) return 0;
+        for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field)
+            if (fprintf(file, "%u,", layout->fields[field]) < 0) return 0;
+        if (fputs("},{", file) < 0) return 0;
+        for (uint32_t byte = 0; byte < ZR_STRICT_LAYOUT_NAME_SIZE; ++byte)
+            if (fprintf(file, "(char)%u,", (unsigned)(unsigned char)layout->name[byte]) < 0) return 0;
+        if (fputs("}},\n", file) < 0) return 0;
+    }
+    if (fprintf(file, "    };\n    static const ZrStrictProgram program = { .kinds = kinds, .slotCount = %" PRIu32
+                      ", .slotLayouts = types, .layouts = layouts, .layoutCount = %" PRIu32 " };\n"
+                      "    ZrStrictFrame frame;\n"
+                      "    ZrStrictProgramStatus status = ZrStrictFrame_Open(&frame, &program, NULL);\n"
+                      "    if (status != ZR_STRICT_PROGRAM_OK) return status;\n"
+                      "    *out = (ZrStrictResult){0};\n", p->slotCount, p->layoutCount) < 0) return 0;
+    for (uint32_t pc = 0; pc < p->instructionCount; ++pc) {
+        const ZrStrictInstruction *i = &p->instructions[pc];
+        if (i->op == ZR_STRICT_OP_RETURN) {
+            if (fprintf(file, "    out->kind = %u; out->scalar = ZrStrictFrame_Scalar(&frame, %" PRIu32 ");\n    goto cleanup;\n",
+                        (unsigned)p->kinds[i->lhs], i->lhs) < 0) return 0;
+            break;
+        }
+        if (i->op == ZR_STRICT_OP_HALT) {
+            if (fputs("    goto cleanup;\n", file) < 0) return 0;
+            break;
+        }
+        if (fprintf(file, "    status = ZrStrictFrame_Apply(&frame, &(ZrStrictInstruction){%" PRIu32 ",%" PRIu32 ",%" PRIu32
+                          ",%" PRIu32 ",UINT64_C(%" PRIu64 ")});\n"
+                          "    if (status != ZR_STRICT_PROGRAM_OK) { *fault = %" PRIu32 "; goto cleanup; }\n",
+                    i->op, i->dst, i->lhs, i->rhs, i->immediate, pc) < 0) return 0;
+    }
+    return fputs("cleanup:;\n    ZrStrictProgramStatus closing = ZrStrictFrame_Close(&frame);\n"
+                 "    return status == ZR_STRICT_PROGRAM_OK ? closing : status;\n", file) >= 0;
+}
+
 ZrStrictProgramStatus ZrStrictProgram_EmitC(FILE *file, const ZrStrictProgram *p) {
     unsigned char *labels;
     int scalar = 0;
@@ -58,11 +100,15 @@ ZrStrictProgramStatus ZrStrictProgram_EmitC(FILE *file, const ZrStrictProgram *p
                 "#if ZR_STRICT_PROGRAM_ABI != %u\n#error StrictNoGC ABI mismatch\n#endif\n\n"
                 "static ZrStrictProgramStatus run(ZrStrictResult *out, uint32_t *fault) {\n",
                 ZR_STRICT_PROGRAM_ABI) < 0) goto done;
+    if (p->layoutCount) {
+        if (!emit_owned_body(file, p)) goto done;
+    } else {
     if (p->slotCount && fprintf(file, "    int64_t slots[%" PRIu32 "] = {0};\n", p->slotCount) < 0) goto done;
     if (fputs(scalar ? "    ZrStrictProgramStatus status;\n" : "    (void)fault;\n", file) < 0 ||
         fputs("    *out = (ZrStrictResult){0};\n", file) < 0) goto done;
     for (uint32_t pc = 0; pc < p->instructionCount; ++pc) {
         if ((labels[pc] && fprintf(file, "pc_%" PRIu32 ":\n", pc) < 0) || !emit_instruction(file, p, pc)) goto done;
+    }
     }
     if (fputs(
             "}\nint main(void) {\n"

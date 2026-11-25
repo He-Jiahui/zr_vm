@@ -12,14 +12,24 @@ extern "C" {
 
 /* The strict executable has its own magic and version; managed artifacts
  * must never be interpreted as strict programs. These limits precede allocation. */
-#define ZR_STRICT_PROGRAM_ABI 1u
+#define ZR_STRICT_PROGRAM_ABI 2u
 #define ZR_STRICT_MAX_SLOTS 4096u
 #define ZR_STRICT_MAX_INSTRUCTIONS 1048576u
+#define ZR_STRICT_MAX_LAYOUTS 1024u
+#define ZR_STRICT_MAX_FIELDS 16u
+#define ZR_STRICT_LAYOUT_NAME_SIZE 64u
 
 typedef enum ZrStrictKind {
     ZR_STRICT_VALUE_VOID = 0,
     ZR_STRICT_VALUE_I64 = 1,
-    ZR_STRICT_VALUE_BOOL = 2
+    ZR_STRICT_VALUE_BOOL = 2,
+    ZR_STRICT_VALUE_RECORD,
+    ZR_STRICT_VALUE_UNIQUE,
+    ZR_STRICT_VALUE_SHARED,
+    ZR_STRICT_VALUE_WEAK,
+    ZR_STRICT_VALUE_MAYBE_SHARED,
+    ZR_STRICT_VALUE_BORROW,
+    ZR_STRICT_VALUE_READONLY_BORROW
 } ZrStrictKind;
 
 typedef enum ZrStrictOp {
@@ -41,7 +51,20 @@ typedef enum ZrStrictOp {
     ZR_STRICT_OP_JUMP,
     ZR_STRICT_OP_JUMP_IF_FALSE,
     ZR_STRICT_OP_RETURN,
-    ZR_STRICT_OP_HALT
+    ZR_STRICT_OP_HALT,
+    ZR_STRICT_OP_INIT_RECORD,
+    ZR_STRICT_OP_OWN_RECORD,
+    ZR_STRICT_OP_TRANSFER,
+    ZR_STRICT_OP_SHARE,
+    ZR_STRICT_OP_CLONE,
+    ZR_STRICT_OP_DEGRADE,
+    ZR_STRICT_OP_WAKE,
+    ZR_STRICT_OP_IS_NULL,
+    ZR_STRICT_OP_DROP,
+    ZR_STRICT_OP_BORROW,
+    ZR_STRICT_OP_END_BORROW,
+    ZR_STRICT_OP_FIELD_READ,
+    ZR_STRICT_OP_FIELD_WRITE
 } ZrStrictOp;
 
 typedef struct ZrStrictInstruction {
@@ -52,11 +75,22 @@ typedef struct ZrStrictInstruction {
     uint64_t immediate;
 } ZrStrictInstruction;
 
+typedef struct ZrStrictRecordLayout {
+    uint32_t fieldCount;
+    uint32_t readonlyMask;
+    uint8_t fields[ZR_STRICT_MAX_FIELDS];
+    char name[ZR_STRICT_LAYOUT_NAME_SIZE];
+} ZrStrictRecordLayout;
+
 typedef struct ZrStrictProgram {
     uint8_t *kinds;
     uint32_t slotCount;
     ZrStrictInstruction *instructions;
     uint32_t instructionCount;
+    /* Each record/owner/borrow slot names a one-based layout. Scalars use 0. */
+    uint32_t *slotLayouts;
+    ZrStrictRecordLayout *layouts;
+    uint32_t layoutCount;
 } ZrStrictProgram;
 
 typedef struct ZrStrictResult {
@@ -72,7 +106,8 @@ typedef enum ZrStrictProgramStatus {
     ZR_STRICT_PROGRAM_BAD_INSTRUCTION,
     ZR_STRICT_PROGRAM_OUT_OF_MEMORY,
     ZR_STRICT_PROGRAM_IO_ERROR,
-    ZR_STRICT_PROGRAM_FAULT
+    ZR_STRICT_PROGRAM_FAULT,
+    ZR_STRICT_PROGRAM_OWNERSHIP_FAULT
 } ZrStrictProgramStatus;
 
 /* Read and Write use canonical little-endian records, not native struct
@@ -84,6 +119,20 @@ ZrStrictProgramStatus ZrStrictProgram_EmitC(FILE *file, const ZrStrictProgram *p
 void ZrStrictProgram_Free(ZrStrictProgram *program);
 ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *program, uint32_t *badPc);
 ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *program, ZrStrictResult *result, uint32_t *badPc);
+
+/* The common frame API is for the interpreter and verified generated C. The
+ * caller retains the program descriptor and must close on every exit. */
+typedef struct ZrStrictFrameSlot ZrStrictFrameSlot;
+typedef struct ZrStrictFrame {
+    const ZrStrictProgram *program;
+    ZrStrictFrameSlot *slots;
+    ZrStrictRuntime ownership;
+} ZrStrictFrame;
+ZrStrictProgramStatus ZrStrictFrame_Open(ZrStrictFrame *frame, const ZrStrictProgram *program,
+                                          const ZrStrictAllocator *allocator);
+ZrStrictProgramStatus ZrStrictFrame_Close(ZrStrictFrame *frame);
+ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictInstruction *instruction);
+int64_t ZrStrictFrame_Scalar(const ZrStrictFrame *frame, uint32_t slot);
 
 /* Used by both the interpreter and emitted C, after type verification. */
 ZrStrictProgramStatus ZrStrictProgram_Scalar(uint32_t op, int64_t lhs, int64_t rhs, int64_t *result);
