@@ -35,7 +35,31 @@ static int emit_instruction(FILE *file, const ZrStrictProgram *p, uint32_t pc) {
     }
 }
 
+/* Both backends dispatch destructor spans through the same no-allocation
+ * helper. Native C carries only the previously verified typed spans. */
+static int emit_destructor_arrays(FILE *file, const ZrStrictProgram *p) {
+    for (uint32_t index = 0; index < p->layoutCount; ++index) {
+        const ZrStrictDestructor *body = &p->layouts[index].destructor;
+        if (!body->instructionCount) continue;
+        if (fprintf(file, "    static uint8_t destructorKinds_%" PRIu32 "[] = {", index) < 0) return 0;
+        for (uint32_t slot = 0; slot < body->slotCount; ++slot)
+            if (fprintf(file, "%u,", body->kinds[slot]) < 0) return 0;
+        if (fprintf(file, "};\n    static uint32_t destructorTypes_%" PRIu32 "[] = {", index) < 0) return 0;
+        for (uint32_t slot = 0; slot < body->slotCount; ++slot)
+            if (fprintf(file, "%" PRIu32 ",", body->slotLayouts[slot]) < 0) return 0;
+        if (fprintf(file, "};\n    static ZrStrictInstruction destructorCode_%" PRIu32 "[] = {\n", index) < 0) return 0;
+        for (uint32_t pc = 0; pc < body->instructionCount; ++pc) {
+            const ZrStrictInstruction *op = &body->instructions[pc];
+            if (fprintf(file, "        {%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",UINT64_C(%" PRIu64 ")},\n",
+                        op->op, op->dst, op->lhs, op->rhs, op->immediate) < 0) return 0;
+        }
+        if (fputs("    };\n", file) < 0) return 0;
+    }
+    return 1;
+}
+
 static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned char *labels) {
+    if (!emit_destructor_arrays(file, p)) return 0;
     if (fputs("    static uint8_t kinds[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) if (fprintf(file, "%u,", p->kinds[slot]) < 0) return 0;
     if (fputs("};\n    static uint32_t types[] = {", file) < 0 || (!p->slotCount && fputs("0", file) < 0)) return 0;
@@ -51,7 +75,11 @@ static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned 
         if (fputs("},{", file) < 0) return 0;
         for (uint32_t byte = 0; byte < ZR_STRICT_LAYOUT_NAME_SIZE; ++byte)
             if (fprintf(file, "(char)%u,", (unsigned)(unsigned char)layout->name[byte]) < 0) return 0;
-        if (fputs("}},\n", file) < 0) return 0;
+        if (layout->destructor.instructionCount) {
+            if (fprintf(file, "},{destructorKinds_%" PRIu32 ",destructorTypes_%" PRIu32 ",destructorCode_%" PRIu32
+                              ",%" PRIu32 ",%" PRIu32 "}},\n", index, index, index,
+                        layout->destructor.slotCount, layout->destructor.instructionCount) < 0) return 0;
+        } else if (fputs("},{0}},\n", file) < 0) return 0;
     }
     if (fprintf(file, "    };\n    static const ZrStrictProgram program = { .kinds = kinds, .slotCount = %" PRIu32
                       ", .slotLayouts = types, .layouts = layouts, .layoutCount = %" PRIu32 " };\n"
@@ -65,12 +93,13 @@ static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned 
         const ZrStrictInstruction *i = &p->instructions[pc];
         if (labels[pc] && fprintf(file, "pc_%" PRIu32 ":;\n", pc) < 0) return 0;
         if (i->op == ZR_STRICT_OP_RETURN) {
-            if (fprintf(file, "    out->kind = %u; out->scalar = ZrStrictFrame_Scalar(&frame, %" PRIu32 ");\n    goto cleanup;\n",
-                        (unsigned)p->kinds[i->lhs], i->lhs) < 0) return 0;
+            if (fprintf(file, "    out->kind = %u; out->scalar = ZrStrictFrame_Scalar(&frame, %" PRIu32 ");\n"
+                              "    *fault = %" PRIu32 "; goto cleanup;\n",
+                        (unsigned)p->kinds[i->lhs], i->lhs, pc) < 0) return 0;
             continue;
         }
         if (i->op == ZR_STRICT_OP_HALT) {
-            if (fputs("    goto cleanup;\n", file) < 0) return 0;
+            if (fprintf(file, "    *fault = %" PRIu32 "; goto cleanup;\n", pc) < 0) return 0;
             continue;
         }
         if (i->op == ZR_STRICT_OP_JUMP) {

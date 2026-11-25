@@ -13,6 +13,7 @@ typedef struct RecordModel {
     const SZrAstNode *defaults[ZR_STRICT_MAX_FIELDS];
     const SZrAstNodeArray *params;
     const SZrAstNode *constructor;
+    SZrAstNode *destructor;
     TZrBool resource;
 } RecordModel;
 
@@ -38,17 +39,25 @@ typedef struct CallScope {
     uint32_t result, firstLocal, exits;
 } CallScope;
 
+typedef struct ConstructorScope {
+    struct ConstructorScope *outer;
+    const CallScope *caller;
+    uint32_t layout;
+    uint32_t fields[ZR_STRICT_MAX_FIELDS];
+} ConstructorScope;
+
 typedef struct Lowerer {
     ZrStrictProgram program;
     RecordModel *models;
     Binding *bindings;
     Callable *callables;
     CallScope *call;
+    ConstructorScope *constructing;
     uint32_t callableCount, bindingFloor;
     SZrFileRange *locations;
     uint8_t live[ZR_STRICT_MAX_SLOTS];
     uint32_t depth, bindingCount, capacity;
-    TZrBool terminated;
+    TZrBool terminated, inDestructor;
     const char *path;
     char *error;
     size_t errorSize;
@@ -113,7 +122,8 @@ static uint8_t scalar_type(const SZrType *type) {
 
 static uint32_t new_slot(Lowerer *l, uint8_t kind, uint32_t layout, const SZrAstNode *node) {
     uint32_t result = l->program.slotCount;
-    if (result == ZR_STRICT_MAX_SLOTS) return refuse(l, node, "too many typed slots");
+    if (result == (l->inDestructor ? ZR_STRICT_MAX_DESTRUCTOR_SLOTS : ZR_STRICT_MAX_SLOTS))
+        return refuse(l, node, "too many typed slots");
     l->program.slotCount++;
     l->program.kinds[result] = kind;
     l->program.slotLayouts[result] = layout;
@@ -123,6 +133,14 @@ static uint32_t new_slot(Lowerer *l, uint8_t kind, uint32_t layout, const SZrAst
 static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t dst, uint32_t lhs,
                     uint64_t immediate) {
     uint32_t ix = l->program.instructionCount;
+    if (l->inDestructor && (op == ZR_STRICT_OP_OWN_RECORD || op == ZR_STRICT_OP_MANUAL_TRY_ALLOC)) {
+        (void)refuse(l, node, "a StrictNoGC destructor and its callees cannot allocate");
+        return ZR_FALSE;
+    }
+    if (l->inDestructor && ix == ZR_STRICT_MAX_DESTRUCTOR_INSTRUCTIONS) {
+        (void)refuse(l, node, "strict destructor exceeds its instruction budget");
+        return ZR_FALSE;
+    }
     if (ix == l->capacity) {
         uint32_t next = l->capacity ? l->capacity * 2 : 64;
         ZrStrictInstruction *instructions;
@@ -192,6 +210,7 @@ static uint32_t literal(Lowerer *l, const SZrAstNode *node) {
 
 static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t expected);
 static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult, uint32_t *result);
+static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first);
 
 static const SZrFunctionCall *final_call(const SZrAstNode *node) {
     const SZrAstNode *last;
@@ -217,7 +236,7 @@ static TZrBool member_expression(const SZrAstNode *node, const char **base, cons
 
 static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *name,
                                 const SZrAstNodeArray *args, TZrBool owned) {
-    uint32_t type = layout_id(l, name), output, first, fields[ZR_STRICT_MAX_FIELDS];
+    uint32_t type = layout_id(l, name), output, first, depth = 0;
     const RecordModel *model;
     const ZrStrictRecordLayout *layout;
     if (!type) return refuse(l, node, "unknown strict record layout");
@@ -225,57 +244,69 @@ static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *
     layout = &l->program.layouts[type - 1];
     if ((model->resource && !owned) || count(args) != count(model->params))
         return refuse(l, node, "construction requires matching positional arguments and resource ownership");
-    /* Resolve arguments before entering the constructor's lexical environment. */
+    /* Evaluate arguments in the caller. The construction itself cannot
+     * capture caller locals or expose its uninitialized receiver to a method. */
     uint32_t values[ZR_STRICT_MAX_FIELDS];
     for (uint32_t index = 0; index < count(args); ++index) {
         values[index] = lower_expression(l, args->nodes[index], 0);
         if (values[index] == INVALID_SLOT) return INVALID_SLOT;
-    }
-    for (uint32_t index = 0; index < count(args); ++index) {
         const SZrParameter *parameter = &model->params->nodes[index]->data.parameter;
-        if (scalar_type(parameter->typeInfo) != l->program.kinds[values[index]]) goto fail;
+        if (scalar_type(parameter->typeInfo) != l->program.kinds[values[index]])
+            return refuse(l, node, "constructor argument does not match the declared scalar type");
+    }
+    for (const ConstructorScope *ancestor = l->constructing; ancestor; ancestor = ancestor->outer)
+        if (ancestor->layout == type || ++depth >= 64)
+            return refuse(l, node, "recursive strict constructor requires a separate execution frame");
+
+    ConstructorScope scope = {.outer = l->constructing, .caller = l->call, .layout = type};
+    uint32_t savedBindings = l->bindingCount, savedFloor = l->bindingFloor, firstLocal = l->program.slotCount;
+    l->constructing = &scope;
+    l->bindingFloor = savedBindings;
+    ++l->depth;
+    for (uint32_t index = 0; index < count(args); ++index) {
+        if (!bind(l, node, name_of(model->params->nodes[index]->data.parameter.name), values[index])) goto fail;
     }
     for (uint32_t field = 0; field < layout->fieldCount; ++field) {
-        fields[field] = model->defaults[field] ? literal(l, model->defaults[field]) : INVALID_SLOT;
-        if (model->defaults[field] && fields[field] == INVALID_SLOT) goto fail;
+        scope.fields[field] = model->defaults[field] ? literal(l, model->defaults[field]) : INVALID_SLOT;
+        if (model->defaults[field] && scope.fields[field] == INVALID_SLOT) goto fail;
     }
     if (model->constructor) {
         const SZrAstNodeArray *body = model->constructor->data.block.body;
         for (size_t index = 0; index < count(body); ++index) {
             const SZrAstNode *stmt = body->nodes[index];
             const SZrAstNode *assign = stmt->type == ZR_AST_EXPRESSION_STATEMENT ? stmt->data.expressionStatement.expr : stmt;
-            const char *base, *member, *param;
-            uint32_t field, value = INVALID_SLOT;
+            const char *base, *member;
             if (!assign || assign->type != ZR_AST_ASSIGNMENT_EXPRESSION || !same(assign->data.assignmentExpression.op.op, "=") ||
                 !member_expression(assign->data.assignmentExpression.left, &base, &member) || !same(base, "this")) goto fail;
-            field = field_id(model, layout->fieldCount, member);
-            if (field == INVALID_SLOT || (fields[field] != INVALID_SLOT && (layout->readonlyMask & (1u << field)))) goto fail;
-            param = identifier(assign->data.assignmentExpression.right);
-            if (param) {
-                for (uint32_t arg = 0; arg < count(model->params); ++arg) {
-                    if (same(param, name_of(model->params->nodes[arg]->data.parameter.name))) value = values[arg];
-                }
-            } else {
-                value = literal(l, assign->data.assignmentExpression.right);
-            }
+            uint32_t field = field_id(model, layout->fieldCount, member);
+            if (field == INVALID_SLOT || (scope.fields[field] != INVALID_SLOT && (layout->readonlyMask & (1u << field)))) goto fail;
+            uint32_t value = lower_expression(l, assign->data.assignmentExpression.right, layout->fields[field]);
             if (value == INVALID_SLOT || l->program.kinds[value] != layout->fields[field]) goto fail;
-            fields[field] = value;
+            scope.fields[field] = value;
         }
     }
+    /* Stage scalar fields before publishing a record or allocating its
+     * ownership header. A fault here cannot invoke the new value's destructor. */
     first = l->program.slotCount;
     for (uint32_t field = 0; field < layout->fieldCount; ++field) {
         uint32_t slot;
-        if (fields[field] == INVALID_SLOT || l->program.kinds[fields[field]] != layout->fields[field]) goto fail;
+        if (scope.fields[field] == INVALID_SLOT) goto fail;
         slot = new_slot(l, layout->fields[field], 0, node);
-        if (slot == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_COPY, slot, fields[field], 0)) goto fail;
+        if (slot == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_COPY, slot, scope.fields[field], 0)) goto fail;
     }
+    if (!release_slots(l, node, firstLocal)) goto fail;
     output = new_slot(l, owned ? ZR_STRICT_VALUE_UNIQUE : ZR_STRICT_VALUE_RECORD, type, node);
     if (output == INVALID_SLOT || !emit(l, node, owned ? ZR_STRICT_OP_OWN_RECORD : ZR_STRICT_OP_INIT_RECORD,
-            output, first, owned ? allocation_site(node) : 0))
-        return INVALID_SLOT;
-    return output;
+            output, first, owned ? allocation_site(node) : 0)) goto fail;
+    goto done;
 fail:
-    return refuse(l, node, "strict constructor requires each field to be initialized from a matching scalar parameter or literal");
+    output = refuse(l, node, "strict constructor must initialize every field with a matching scalar expression");
+done:
+    --l->depth;
+    l->bindingCount = savedBindings;
+    l->bindingFloor = savedFloor;
+    l->constructing = scope.outer;
+    return output;
 }
 
 static uint32_t ownership_expression(Lowerer *l, const SZrAstNode *node) {
@@ -466,6 +497,15 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
         case ZR_AST_PRIMARY_EXPRESSION: {
             const SZrFunctionCall *allocation = manual_try_alloc_call(node);
             const SZrMemberExpression *member;
+            const char *base, *field;
+            const ConstructorScope *constructor = l->constructing;
+            if (constructor && constructor->caller == l->call && member_expression(node, &base, &field) && same(base, "this")) {
+                uint32_t type = constructor->layout;
+                index = field_id(&l->models[type - 1], l->program.layouts[type - 1].fieldCount, field);
+                if (index == INVALID_SLOT || constructor->fields[index] == INVALID_SLOT)
+                    return refuse(l, node, "constructor read an uninitialized record field");
+                return constructor->fields[index];
+            }
             if (allocation) return lower_manual_try_alloc(l, node, allocation);
             if (final_call(node)) return lower_call(l, node, ZR_TRUE, &slot) ? slot : INVALID_SLOT;
             member = manual_view_member(l, node, &input);
@@ -878,9 +918,12 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
         case ZR_AST_RETURN_STATEMENT:
             if (expr->data.returnStatement.isReferenceReturn) break;
             if (l->call) return lower_call_return(l, expr);
-            l->terminated = ZR_TRUE;
-            if (!expr->data.returnStatement.expr) return emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
+            if (!expr->data.returnStatement.expr) {
+                l->terminated = ZR_TRUE;
+                return emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
+            }
             input = lower_expression(l, expr->data.returnStatement.expr, 0);
+            l->terminated = ZR_TRUE;
             return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);
         case ZR_AST_PRIMARY_EXPRESSION: {
             uint32_t first = l->program.slotCount;
@@ -1037,6 +1080,13 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
             const SZrStructField *f = &member->data.structField;
             if (f->isStatic || count(f->decorators) || f->reservedRemovedUsingManaged) goto unsupported;
             type = f->typeInfo; init = f->init; fieldName = name_of(f->name); isConst = f->isConst; access = f->access;
+        } else if (resource && member->type == ZR_AST_CLASS_META_FUNCTION &&
+                   same(name_of(member->data.classMetaFunction.meta), "destructor")) {
+            const SZrClassMetaFunction *m = &member->data.classMetaFunction;
+            if (model->destructor || m->isStatic || m->hasSuperCall || count(m->params) || m->args ||
+                !void_result(m->returnType) || !m->body || m->body->type != ZR_AST_BLOCK) goto unsupported;
+            model->destructor = m->body;
+            continue;
         } else if ((resource && member->type == ZR_AST_CLASS_METHOD) || (!resource && member->type == ZR_AST_STRUCT_METHOD)) {
             if (!add_callable(l, member, l->program.layoutCount)) return ZR_FALSE;
             continue;
@@ -1090,6 +1140,47 @@ unsupported:
     return ZR_FALSE;
 }
 
+static TZrBool lower_destructor(Lowerer *program, uint32_t layout) {
+    SZrAstNode *body = program->models[layout - 1].destructor;
+    if (!body) return ZR_TRUE;
+    Lowerer l = {.models = program->models, .bindings = program->bindings, .callables = program->callables,
+                 .callableCount = program->callableCount, .inDestructor = ZR_TRUE, .path = program->path,
+                 .error = program->error, .errorSize = program->errorSize};
+    Callable target = {.name = "destructor", .body = body, .layout = layout, .receiver = ZR_STRICT_VALUE_BORROW};
+    CallScope scope = {NULL, &target, INVALID_SLOT, 1, 0};
+    TZrBool ok = ZR_FALSE;
+    const uint32_t limit = ZR_STRICT_MAX_DESTRUCTOR_SLOTS;
+    l.program.kinds = calloc(limit, sizeof(*l.program.kinds));
+    l.program.slotLayouts = calloc(limit, sizeof(*l.program.slotLayouts));
+    l.program.layouts = program->program.layouts;
+    l.program.layoutCount = program->program.layoutCount;
+    l.call = &scope;
+    if (!l.program.kinds || !l.program.slotLayouts ||
+        !ZrParser_Ast_Visit(body, check_callable_value_form, &l)) goto done;
+    uint32_t receiver = new_slot(&l, ZR_STRICT_VALUE_RECORD, layout, body);
+    if (receiver == INVALID_SLOT || !bind(&l, body, "this", receiver)) goto done;
+    l.live[receiver] = 1; /* the runtime lends the payload for cleanup */
+    if (!lower_block(&l, body)) goto done;
+    while (scope.exits) {
+        ZrStrictInstruction *exit = &l.program.instructions[scope.exits - 1];
+        scope.exits = (uint32_t)exit->immediate;
+        exit->immediate = l.program.instructionCount;
+    }
+    if (!emit(&l, body, ZR_STRICT_OP_HALT, 0, 0, 0)) goto done;
+    program->program.layouts[layout - 1].destructor = (ZrStrictDestructor){l.program.kinds, l.program.slotLayouts,
+        l.program.instructions, l.program.slotCount, l.program.instructionCount};
+    ok = ZR_TRUE;
+done:
+    if (!ok) {
+        (void)refuse(&l, body, "could not lower strict destructor");
+        free(l.program.kinds);
+        free(l.program.slotLayouts);
+        free(l.program.instructions);
+    }
+    free(l.locations);
+    return ok;
+}
+
 TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const TZrChar *source, TZrSize length,
                                     const TZrChar *path, ZrStrictProgram *out,
                                     TZrChar *error, TZrSize errorSize) {
@@ -1123,6 +1214,8 @@ TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const TZrChar *source, TZrS
     }
     for (uint32_t index = 0; index < l.callableCount; ++index)
         if (!check_callable_types(&l, &l.callables[index])) goto done;
+    for (uint32_t layout = 1; layout <= l.program.layoutCount; ++layout)
+        if (!lower_destructor(&l, layout)) goto done;
     for (size_t index = 0; index < count(statements); ++index) {
         const SZrAstNode *node = statements->nodes[index];
         if (node->type == ZR_AST_STRUCT_DECLARATION || node->type == ZR_AST_CLASS_DECLARATION ||

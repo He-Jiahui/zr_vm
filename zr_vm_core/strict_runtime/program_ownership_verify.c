@@ -55,6 +55,7 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
             if (!kind_is(p, dst, i->op == ZR_STRICT_OP_INIT_RECORD ? ZR_STRICT_VALUE_RECORD : ZR_STRICT_VALUE_UNIQUE) ||
                 (i->op == ZR_STRICT_OP_INIT_RECORD && i->immediate)) return 0;
             layout = &p->layouts[p->slotLayouts[dst] - 1];
+            if (i->op == ZR_STRICT_OP_INIT_RECORD && layout->destructor.instructionCount) return 0;
             if (src > p->slotCount || layout->fieldCount > p->slotCount - src) return 0;
             for (uint32_t field = 0; field < layout->fieldCount; ++field)
                 if (!kind_is(p, src + field, layout->fields[field])) return 0;
@@ -71,8 +72,9 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
             if (i->op == ZR_STRICT_OP_SHARE) return source == ZR_STRICT_VALUE_UNIQUE && destination == ZR_STRICT_VALUE_SHARED;
             if (i->op == ZR_STRICT_OP_DEGRADE) return source == ZR_STRICT_VALUE_SHARED && destination == ZR_STRICT_VALUE_WEAK;
             if (i->op == ZR_STRICT_OP_WAKE) return source == ZR_STRICT_VALUE_WEAK && destination == ZR_STRICT_VALUE_MAYBE_SHARED;
-            return source == destination && (source == ZR_STRICT_VALUE_RECORD || source == ZR_STRICT_VALUE_SHARED ||
-                                            source == ZR_STRICT_VALUE_WEAK || source == ZR_STRICT_VALUE_MAYBE_SHARED);
+            return source == destination &&
+                   ((source == ZR_STRICT_VALUE_RECORD && !p->layouts[p->slotLayouts[src] - 1].destructor.instructionCount) ||
+                     source == ZR_STRICT_VALUE_SHARED || source == ZR_STRICT_VALUE_WEAK || source == ZR_STRICT_VALUE_MAYBE_SHARED);
         case ZR_STRICT_OP_IS_NULL:
             return destination == ZR_STRICT_VALUE_BOOL && !i->immediate &&
                    (source == ZR_STRICT_VALUE_MAYBE_SHARED || source == ZR_STRICT_VALUE_MANUAL_BLOCK);
@@ -235,11 +237,12 @@ done:
     return result;
 }
 
-ZrStrictProgramStatus zr_strict_verify_ownership(const ZrStrictProgram *p, uint32_t *badPc) {
+ZrStrictProgramStatus zr_strict_verify_ownership(const ZrStrictProgram *p, uint32_t *badPc, int liveReceiver) {
     ZrStrictOwnershipFact facts[ZR_STRICT_MAX_SLOTS];
     const size_t rowSize = (size_t)(p->slotCount ? p->slotCount : 1) * sizeof(*facts);
     int hasBranches = 0;
     memset(facts, 0, rowSize);
+    if (liveReceiver) facts[0].available = 1;
     for (uint32_t pc = 0; pc < p->instructionCount; ++pc) {
         const ZrStrictInstruction *i = &p->instructions[pc];
         if (is_jump(i->op)) hasBranches = 1;

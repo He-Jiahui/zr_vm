@@ -3,9 +3,44 @@
 #include <inttypes.h>
 #include <string.h>
 
+typedef struct ZrStrictHeapRecord {
+    uint32_t layout;
+    int64_t fields[];
+} ZrStrictHeapRecord;
+
+static void *deny_allocation(void *context, size_t size) {
+    (void)context;
+    (void)size;
+    return NULL;
+}
+
+static void deny_free(void *context, void *pointer) {
+    (void)context;
+    (void)pointer;
+}
+
+static ZrStrictStatus destroy_record(void *payload, void *context) {
+    ZrStrictHeapRecord *record = payload;
+    const ZrStrictFrame *owner = context;
+    const ZrStrictDestructor *body = &owner->program->layouts[record->layout - 1].destructor;
+    const ZrStrictProgram code = zr_strict_destructor_program(owner->program, body);
+    const ZrStrictAllocator deny = {deny_allocation, deny_free, NULL};
+    ZrStrictFrame frame;
+    ZrStrictFrameSlot slots[ZR_STRICT_MAX_DESTRUCTOR_SLOTS];
+    ZrStrictResult ignored = {0};
+    if (ZrStrictFrame_Open(&frame, &code, slots, ZR_STRICT_MAX_DESTRUCTOR_SLOTS, &deny) != ZR_STRICT_PROGRAM_OK)
+        return ZR_STRICT_FAULT;
+    frame.externalRecord = record->fields;
+    slots[0].live = 1;
+    const ZrStrictProgramStatus status = zr_strict_run_frame(&frame, &ignored, NULL);
+    const ZrStrictProgramStatus cleanup = ZrStrictFrame_Close(&frame);
+    return status == ZR_STRICT_PROGRAM_OK && cleanup == ZR_STRICT_PROGRAM_OK ? ZR_STRICT_OK : ZR_STRICT_FAULT;
+}
+
 static ZrStrictProgramStatus from_ownership(ZrStrictStatus status) {
     if (status == ZR_STRICT_OK) return ZR_STRICT_PROGRAM_OK;
     if (status == ZR_STRICT_OUT_OF_MEMORY) return ZR_STRICT_PROGRAM_OUT_OF_MEMORY;
+    if (status == ZR_STRICT_FAULT) return ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT;
     return ZR_STRICT_PROGRAM_OWNERSHIP_FAULT;
 }
 
@@ -77,23 +112,30 @@ static uint32_t base_slot(const ZrStrictFrame *frame, uint32_t index) {
 
 static const int64_t *record_read(const ZrStrictFrame *frame, uint32_t index) {
     const ZrStrictFrameSlot *slot;
+    const ZrStrictHeapRecord *record;
     index = base_slot(frame, index);
     slot = &frame->slots[index];
+    if (!index && frame->externalRecord) return frame->externalRecord;
     switch (frame->program->kinds[index]) {
         case ZR_STRICT_VALUE_RECORD: return slot->value.record;
-        case ZR_STRICT_VALUE_UNIQUE: return ZrStrict_UniqueData(&slot->value.unique);
-        case ZR_STRICT_VALUE_SHARED: return ZrStrict_SharedData(&slot->value.shared);
+        case ZR_STRICT_VALUE_UNIQUE: record = ZrStrict_UniqueData(&slot->value.unique); break;
+        case ZR_STRICT_VALUE_SHARED: record = ZrStrict_SharedData(&slot->value.shared); break;
         default: return NULL;
     }
+    return record ? record->fields : NULL;
 }
 
 static int64_t *record_write(ZrStrictFrame *frame, uint32_t index) {
     uint8_t kind = frame->program->kinds[index];
     if (kind == ZR_STRICT_VALUE_READONLY_BORROW) return NULL;
     index = base_slot(frame, index);
+    if (!index && frame->externalRecord) return frame->externalRecord;
     kind = frame->program->kinds[index];
     if (kind == ZR_STRICT_VALUE_RECORD) return frame->slots[index].value.record;
-    if (kind == ZR_STRICT_VALUE_UNIQUE) return ZrStrict_UniqueData(&frame->slots[index].value.unique);
+    if (kind == ZR_STRICT_VALUE_UNIQUE) {
+        ZrStrictHeapRecord *record = ZrStrict_UniqueData(&frame->slots[index].value.unique);
+        return record ? record->fields : NULL;
+    }
     return NULL;
 }
 
@@ -148,12 +190,16 @@ ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictIn
             int64_t *data = dst->value.record;
             ZrStrictBuilder builder = {0};
             if (i->op == ZR_STRICT_OP_OWN_RECORD) {
-                const ZrStrictLayout heap = {layout->fieldCount * sizeof(int64_t), _Alignof(int64_t), layout->name, NULL, NULL};
+                const ZrStrictLayout heap = {sizeof(ZrStrictHeapRecord) + layout->fieldCount * sizeof(int64_t),
+                    _Alignof(ZrStrictHeapRecord), layout->name,
+                    layout->destructor.instructionCount ? destroy_record : NULL, frame};
                 ZrStrictSite site = {NULL, (unsigned)(i->immediate >> 32), (unsigned)(i->immediate & UINT32_MAX)};
                 void *payload;
                 status = ZrStrict_OwnBegin(&frame->ownership, &heap, site, &builder, &payload);
                 if (status != ZR_STRICT_OK) return from_ownership(status);
-                data = payload;
+                ZrStrictHeapRecord *record = payload;
+                record->layout = frame->program->slotLayouts[i->dst];
+                data = record->fields;
             }
             for (uint32_t field = 0; field < layout->fieldCount; ++field) data[field] = frame->slots[i->lhs + field].value.scalar;
             if (i->op == ZR_STRICT_OP_OWN_RECORD) {
@@ -172,7 +218,12 @@ ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictIn
             break;
         case ZR_STRICT_OP_CLONE:
             switch (frame->program->kinds[i->lhs]) {
-                case ZR_STRICT_VALUE_RECORD: *dst = *src; break;
+                case ZR_STRICT_VALUE_RECORD: {
+                    const ZrStrictRecordLayout *layout = &frame->program->layouts[frame->program->slotLayouts[i->lhs] - 1];
+                    const int64_t *data = record_read(frame, i->lhs);
+                    memcpy(dst->value.record, data, layout->fieldCount * sizeof(*data));
+                    break;
+                }
                 case ZR_STRICT_VALUE_WEAK: status = ZrStrict_WeakClone(&src->value.weak, &dst->value.weak); break;
                 default:
                     if (src->value.shared.record) status = ZrStrict_SharedClone(&src->value.shared, &dst->value.shared);

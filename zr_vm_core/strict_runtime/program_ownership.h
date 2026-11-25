@@ -31,6 +31,14 @@ static inline int zr_strict_uses_frame(const ZrStrictProgram *program) {
 }
 
 /* Every incoming edge must agree on which owners and borrows are live. */
-ZrStrictProgramStatus zr_strict_verify_ownership(const ZrStrictProgram *program, uint32_t *badPc);
+ZrStrictProgramStatus zr_strict_verify_ownership(const ZrStrictProgram *program, uint32_t *badPc, int liveReceiver);
+ZrStrictProgramStatus zr_strict_run_frame(ZrStrictFrame *frame, ZrStrictResult *result, uint32_t *badPc);
+
+static inline ZrStrictProgram zr_strict_destructor_program(const ZrStrictProgram *owner, const ZrStrictDestructor *body) {
+    ZrStrictProgram program = {.kinds = body->kinds, .slotCount = body->slotCount, .instructions = body->instructions,
+            .instructionCount = body->instructionCount, .slotLayouts = body->slotLayouts,
+            .layouts = owner->layouts, .layoutCount = owner->layoutCount};
+    return program;
+}
 
 #endif

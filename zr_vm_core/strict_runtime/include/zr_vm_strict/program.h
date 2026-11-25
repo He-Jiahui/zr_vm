@@ -12,11 +12,13 @@ extern "C" {
 
 /* The strict executable has its own magic and version; managed artifacts
  * must never be interpreted as strict programs. These limits precede allocation. */
-#define ZR_STRICT_PROGRAM_ABI 4u
+#define ZR_STRICT_PROGRAM_ABI 5u
 #define ZR_STRICT_MAX_SLOTS 4096u
 #define ZR_STRICT_MAX_INSTRUCTIONS 1048576u
 #define ZR_STRICT_MAX_LAYOUTS 1024u
 #define ZR_STRICT_MAX_FIELDS 16u
+#define ZR_STRICT_MAX_DESTRUCTOR_SLOTS 256u
+#define ZR_STRICT_MAX_DESTRUCTOR_INSTRUCTIONS 4096u
 #define ZR_STRICT_LAYOUT_NAME_SIZE 64u
 
 typedef enum ZrStrictKind {
@@ -82,11 +84,22 @@ typedef struct ZrStrictInstruction {
     uint64_t immediate;
 } ZrStrictInstruction;
 
+/* A descriptor is either entirely empty or an allocation-free routine with
+ * a live receiver in slot zero. It shares the containing program's layouts. */
+typedef struct ZrStrictDestructor {
+    uint8_t *kinds;
+    uint32_t *slotLayouts;
+    ZrStrictInstruction *instructions;
+    uint32_t slotCount;
+    uint32_t instructionCount;
+} ZrStrictDestructor;
+
 typedef struct ZrStrictRecordLayout {
     uint32_t fieldCount;
     uint32_t readonlyMask;
     uint8_t fields[ZR_STRICT_MAX_FIELDS];
     char name[ZR_STRICT_LAYOUT_NAME_SIZE];
+    ZrStrictDestructor destructor;
 } ZrStrictRecordLayout;
 
 typedef struct ZrStrictProgram {
@@ -116,7 +129,8 @@ typedef enum ZrStrictProgramStatus {
     ZR_STRICT_PROGRAM_IO_ERROR,
     ZR_STRICT_PROGRAM_FAULT,
     ZR_STRICT_PROGRAM_OWNERSHIP_FAULT,
-    ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT
+    ZR_STRICT_PROGRAM_BYTE_RANGE_FAULT,
+    ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT
 } ZrStrictProgramStatus;
 
 /* Read and Write use canonical little-endian records, not native struct
@@ -146,6 +160,8 @@ typedef struct ZrStrictFrameSlot {
 typedef struct ZrStrictFrame {
     const ZrStrictProgram *program;
     ZrStrictFrameSlot *slots;
+    /* A verified destructor receives a live external record in slot zero. */
+    int64_t *externalRecord;
     ZrStrictRuntime ownership;
 } ZrStrictFrame;
 /* Use verified instructions only. The caller keeps `program` and `slots`

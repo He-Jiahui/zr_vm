@@ -281,6 +281,70 @@ static void test_strict_reborrow_keeps_parent_view_live(void) {
     assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 4);
 }
 
+static void test_verified_destructor_faults_follow_final_release(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_SHARED,
+                       ZR_STRICT_VALUE_SHARED, ZR_STRICT_VALUE_WEAK, ZR_STRICT_VALUE_MAYBE_SHARED, ZR_STRICT_VALUE_BOOL};
+    uint32_t types[] = {0, 1, 1, 1, 1, 1, 0};
+    uint8_t dropKinds[] = {ZR_STRICT_VALUE_RECORD, ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_I64};
+    uint32_t dropTypes[] = {1, 0, 0};
+    ZrStrictInstruction drop[] = {
+        {ZR_STRICT_OP_FIELD_READ, 1, 0, 0, 0},
+        {ZR_STRICT_OP_CONST, 2, 0, 0, 42},
+        {ZR_STRICT_OP_SUB, 2, 1, 2, 0},
+        {ZR_STRICT_OP_DIV, 1, 1, 2, 0},
+        {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
+    };
+    ZrStrictRecordLayout layout = {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_I64}, .name = "Student",
+                                   .destructor = {dropKinds, dropTypes, drop, 3, 5}};
+    ZrStrictInstruction instructions[] = {
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 42},
+        {ZR_STRICT_OP_OWN_RECORD, 1, 0, 0, 0},
+        {ZR_STRICT_OP_SHARE, 2, 1, 0, 0},
+        {ZR_STRICT_OP_CLONE, 3, 2, 0, 0},
+        {ZR_STRICT_OP_DEGRADE, 4, 2, 0, 0},
+        {ZR_STRICT_OP_DROP, 0, 2, 0, 0},
+        {ZR_STRICT_OP_DROP, 0, 3, 0, 0},
+        {ZR_STRICT_OP_WAKE, 5, 4, 0, 0},
+        {ZR_STRICT_OP_IS_NULL, 6, 5, 0, 0},
+        {ZR_STRICT_OP_RETURN, 0, 6, 0, 0},
+    };
+    ZrStrictProgram p = {.kinds = kinds, .slotCount = 7, .instructions = instructions, .instructionCount = 10,
+                         .slotLayouts = types, .layouts = &layout, .layoutCount = 1};
+    ZrStrictProgram loaded = {0};
+    ZrStrictResult result;
+    uint32_t pc;
+    FILE *file = tmpfile();
+    assert(file && ZrStrictProgram_Write(file, &p) == ZR_STRICT_PROGRAM_OK);
+    rewind(file);
+    assert(ZrStrictProgram_Read(file, &loaded) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictProgram_Run(&loaded, &result, &pc) == ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT && pc == 6);
+    ZrStrictProgram_Free(&loaded);
+    fclose(file);
+
+    /* If the destructor faults, its payload is already dead. A weak owner
+     * keeps the header alive but cannot wake the destroyed value. */
+    ZrStrictFrame frame;
+    ZrStrictFrameSlot slots[7];
+    FaultAllocator storage = {0};
+    ZrStrictAllocator allocator = {fail_second, fault_free, &storage};
+    assert(ZrStrictFrame_Open(&frame, &p, slots, 7, &allocator) == ZR_STRICT_PROGRAM_OK);
+    for (size_t ix = 0; ix < 6; ++ix) assert(ZrStrictFrame_Apply(&frame, &instructions[ix]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[6]) == ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[7]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Apply(&frame, &instructions[8]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Scalar(&frame, 6) == 1 && storage.frees == 0);
+    assert(ZrStrictFrame_Close(&frame) == ZR_STRICT_PROGRAM_OK);
+    assert(storage.attempts == 1 && storage.frees == 1);
+
+    kinds[1] = ZR_STRICT_VALUE_RECORD;
+    instructions[1].op = ZR_STRICT_OP_INIT_RECORD;
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 1);
+    kinds[1] = ZR_STRICT_VALUE_UNIQUE;
+    instructions[1].op = ZR_STRICT_OP_OWN_RECORD;
+    drop[3] = (ZrStrictInstruction){ZR_STRICT_OP_MANUAL_TRY_ALLOC, 1, 0, 0, 0};
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION);
+}
+
 int main(void) {
     test_verified_control_flow_round_trip();
     test_unverified_programs_fail_closed();
@@ -290,5 +354,6 @@ int main(void) {
     test_owned_frame_unwinds_allocation_failure();
     test_manual_byte_ownership_and_faults();
     test_strict_reborrow_keeps_parent_view_live();
+    test_verified_destructor_faults_follow_final_release();
     return 0;
 }

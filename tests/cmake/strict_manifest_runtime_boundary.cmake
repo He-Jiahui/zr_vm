@@ -163,6 +163,9 @@ function(check_strict_owner name source expected fault)
         if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error MATCHES "^StrictNoGC: .* at instruction [0-9]+$")
             message(FATAL_ERROR "${name}: Strict interpreter failed to report the expected runtime fault (${status}): ${output}\n${error}")
         endif()
+        if(ARGC GREATER 4 AND NOT error MATCHES "${ARGV4}")
+            message(FATAL_ERROR "${name}: wrong strict runtime fault: ${error}")
+        endif()
         set(reference_fault "${error}")
     elseif(NOT status STREQUAL "0" OR NOT output STREQUAL "${expected}\nexecuted_via=strict-interp" OR NOT error STREQUAL "")
         message(FATAL_ERROR "${name}: Strict ownership interpreter failed (${status}): ${output}\n${error}")
@@ -411,3 +414,60 @@ fn Unused(): int {
 return 1;
 ]=])
 reject_strict_owner(call_hidden "${call_hidden_program}" "managed or unsupported value form")
+
+set(destructor_decl [=[
+resource class Cleanup {
+    var token: int;
+    pub @constructor(token: int) { this.token = token; }
+    pub const fn divisor(): int { return this.token; }
+    pub @destructor() { let result = 42 / this.divisor(); }
+}
+]=])
+check_strict_owner(destructor_normal "${destructor_decl}\nlet owner = own Cleanup(2);\ndrop(owner);\nreturn 42;" 42 FALSE)
+
+set(destructor_last_shared [=[
+let owner = own Cleanup(0);
+let shared = share(owner);
+let finalOwner = shared;
+drop(shared);
+drop(finalOwner);
+return 42;
+]=])
+check_strict_owner(destructor_last_shared "${destructor_decl}${destructor_last_shared}" "" TRUE "strict destructor fault")
+check_strict_owner(destructor_scope "${destructor_decl}\nlet owner = own Cleanup(0);\nreturn 42;" "" TRUE "strict destructor fault")
+check_strict_owner(destructor_preserves_fault "${destructor_decl}\nlet owner = own Cleanup(0);\nreturn 2 / 0;" "" TRUE "arithmetic fault")
+
+set(destructor_allocates [=[
+fn OpenBuffer(): ManualBlock { return ManualBlock.tryAlloc(8); }
+resource class InvalidCleanup {
+    pub @constructor() {}
+    pub @destructor() { let buffer = OpenBuffer(); }
+}
+return 0;
+]=])
+reject_strict_owner(destructor_callee_allocates "${destructor_allocates}" "destructor and its callees cannot allocate")
+
+set(construct_decl [=[
+resource class Staged {
+    pub var initial: int;
+    pub var result: int;
+    pub @constructor(divisor: int) {
+        this.initial = 42;
+        this.result = this.initial / divisor;
+    }
+    pub @destructor() { let result = 1 / (this.result - 21); }
+}
+]=])
+check_strict_owner(constructor_fault "${construct_decl}\nlet owner = own Staged(0);\nreturn 0;" "" TRUE "arithmetic fault")
+check_strict_owner(constructor_committed "${construct_decl}\nlet owner = own Staged(2);\nreturn owner.result;" "" TRUE "strict destructor fault")
+
+set(uninitialized_field [=[
+resource class Uninitialized {
+    pub var first: int;
+    pub var second: int;
+    pub @constructor() { this.first = this.second; this.second = 42; }
+}
+let bad = own Uninitialized();
+return 0;
+]=])
+reject_strict_owner(constructor_uninitialized "${uninitialized_field}" "uninitialized record field")
