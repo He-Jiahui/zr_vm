@@ -9075,6 +9075,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_receiver_completion_projection_cases.h"
 #include "test_lsp_project_module_summary_range_cases.h"
 #include "test_lsp_decorator_fallback_ast_cases.h"
+#include "test_lsp_semantic_token_contextual_word_cases.h"
 
 /* 本测试目标的唯一 CTest 入口；先建 VM 与原生注册表，再按主题运行本文件及末尾
  * 包含的用例，最后以共享失败计数决定退出状态。 */
@@ -9397,6 +9398,10 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_ignore_template_string_tokens(state);
+    test_lsp_semantic_tokens_contextual_words_resolve_as_symbols(state);
+    test_lsp_semantic_tokens_contextual_import_alias_is_namespace(state);
+    test_lsp_semantic_tokens_parameter_shadows_import_alias(state);
+    test_lsp_semantic_tokens_keep_keyword_positions(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_builds_native_receiver_member_hover(state);

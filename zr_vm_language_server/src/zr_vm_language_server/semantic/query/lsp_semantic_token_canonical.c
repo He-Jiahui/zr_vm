@@ -189,3 +189,36 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
     return semantic_token_type_from_type_id(
             analyzer->semanticContext, typeQuery.typeId);
 }
+
+/* 导入别名的文本着色按拼写匹配整份文件；同名参数或局部变量遮蔽别名时，
+ * 精确符号事实（非 import 的 PARAMETER/VARIABLE）优先，调用方据此跳过 namespace 与成员链。 */
+TZrBool ZrLanguageServer_LspSemanticToken_ShadowsImportAlias(
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        TZrSize startOffset,
+        TZrSize length,
+        TZrUInt32 line,
+        TZrUInt32 character) {
+    SZrParserSemanticSymbolQuery symbol;
+    SZrFilePosition start;
+    SZrFilePosition end;
+    SZrFileRange range;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        uri == ZR_NULL || length == 0U) {
+        return ZR_FALSE;
+    }
+
+    start = ZrParser_FilePosition_Create(startOffset, line, character);
+    end = ZrParser_FilePosition_Create(
+            startOffset + length, line, character + (TZrUInt32)length);
+    range = ZrParser_FileRange_Create(start, end, uri);
+    if (!ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext, range, ZR_NULL, &symbol) ||
+        symbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
+        symbol.isImport || symbol.hasExternalTarget) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(symbol.kind == ZR_SEMANTIC_SYMBOL_KIND_PARAMETER ||
+                     symbol.kind == ZR_SEMANTIC_SYMBOL_KIND_VARIABLE);
+}
