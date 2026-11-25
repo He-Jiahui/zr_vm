@@ -63,7 +63,7 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc, int usesFra
         case ZR_STRICT_OP_HALT:
             return !i->dst && !i->lhs && !i->rhs && !i->immediate;
         default:
-            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_BORROW_FIELD;
+            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_UNWRAP_SHARED;
     }
 }
 

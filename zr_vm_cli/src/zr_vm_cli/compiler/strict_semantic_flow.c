@@ -82,6 +82,7 @@ static TZrBool project_instruction(StrictFlow *flow, const ZrStrictInstruction *
         case ZR_STRICT_OP_CLONE:
         case ZR_STRICT_OP_DEGRADE:
         case ZR_STRICT_OP_WAKE:
+        case ZR_STRICT_OP_UNWRAP_SHARED:
         case ZR_STRICT_OP_FIELD_READ:
             return step(flow, src, ZR_SEMANTIC_IR_LOAD, NULL) && step(flow, dst, ZR_SEMANTIC_IR_INITIALIZE, NULL);
         case ZR_STRICT_OP_IS_NULL:

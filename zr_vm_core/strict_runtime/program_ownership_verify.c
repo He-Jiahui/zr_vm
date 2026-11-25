@@ -24,7 +24,7 @@ static int kind_is(const ZrStrictProgram *p, uint32_t slot, uint8_t kind) {
 
 static int record_data_kind(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_RECORD || kind == ZR_STRICT_VALUE_UNIQUE ||
-           kind == ZR_STRICT_VALUE_SHARED || zr_strict_is_record_borrow(kind);
+           kind == ZR_STRICT_VALUE_SHARED || kind == ZR_STRICT_VALUE_MAYBE_SHARED || zr_strict_is_record_borrow(kind);
 }
 
 static int writable_record_kind(uint8_t kind) {
@@ -70,6 +70,7 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
         case ZR_STRICT_OP_CLONE:
         case ZR_STRICT_OP_DEGRADE:
         case ZR_STRICT_OP_WAKE:
+        case ZR_STRICT_OP_UNWRAP_SHARED:
             if (destination < ZR_STRICT_VALUE_RECORD || source < ZR_STRICT_VALUE_RECORD ||
                 zr_strict_is_borrow(destination) || zr_strict_is_borrow(source) || i->immediate ||
                 (p->slotLayouts && p->slotLayouts[dst] != p->slotLayouts[src])) return 0;
@@ -77,6 +78,8 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
             if (i->op == ZR_STRICT_OP_SHARE) return source == ZR_STRICT_VALUE_UNIQUE && destination == ZR_STRICT_VALUE_SHARED;
             if (i->op == ZR_STRICT_OP_DEGRADE) return source == ZR_STRICT_VALUE_SHARED && destination == ZR_STRICT_VALUE_WEAK;
             if (i->op == ZR_STRICT_OP_WAKE) return source == ZR_STRICT_VALUE_WEAK && destination == ZR_STRICT_VALUE_MAYBE_SHARED;
+            if (i->op == ZR_STRICT_OP_UNWRAP_SHARED)
+                return source == ZR_STRICT_VALUE_MAYBE_SHARED && destination == ZR_STRICT_VALUE_SHARED;
             return source == destination &&
                    ((source == ZR_STRICT_VALUE_RECORD && !p->layouts[p->slotLayouts[src] - 1].destructor.instructionCount &&
                      !zr_strict_layout_has_owners(&p->layouts[p->slotLayouts[src] - 1])) ||
@@ -92,8 +95,7 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
                     (destination == ZR_STRICT_VALUE_READONLY_BYTE_VIEW && source == ZR_STRICT_VALUE_READONLY_BYTE_VIEW));
             }
             return zr_strict_is_record_borrow(destination) && record_data_kind(source) &&
-                   !(destination == ZR_STRICT_VALUE_BORROW &&
-                     (source == ZR_STRICT_VALUE_SHARED || source == ZR_STRICT_VALUE_READONLY_BORROW)) &&
+                   (destination == ZR_STRICT_VALUE_READONLY_BORROW || writable_record_kind(source)) &&
                    !i->immediate && p->slotLayouts[dst] == p->slotLayouts[src];
         case ZR_STRICT_OP_BORROW_FIELD:
             if (!zr_strict_is_borrow(destination) || !record_data_kind(source)) return 0;
@@ -148,6 +150,7 @@ static int apply_owner_flow(const ZrStrictProgram *p, const ZrStrictInstruction 
         case ZR_STRICT_OP_CLONE:
         case ZR_STRICT_OP_DEGRADE:
         case ZR_STRICT_OP_WAKE:
+        case ZR_STRICT_OP_UNWRAP_SHARED:
             if (facts[dst].available || !facts[src].available || facts[src].writer) return 0;
             break;
         case ZR_STRICT_OP_IS_NULL:

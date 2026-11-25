@@ -63,4 +63,4 @@ cmake --build E:/cargo-targets/zr_vm/build/local-msvc `
 | `tests` | 回归、集成、固定输入与验证 harness |
 | `docs` | 语言指南、模块文档、设计与验收记录 |
 
-更多操作见 [构建与第一个项目](docs/wiki/02-getting-started.md)、[CLI 文档](docs/cli-and-tooling/zr-vm-cli-command-system.md)和 [测试验证](docs/wiki/04-tools/testing.md)。
+更多操作见 [构建与第一个项目](docs/wiki/02-getting-started.md)、[CLI 文档](docs/cli-and-tooling/zr-vm-cli-command-system.md)、[StrictNoGC 项目](docs/cli-and-tooling/strict-no-gc.md)和 [测试验证](docs/wiki/04-tools/testing.md)。

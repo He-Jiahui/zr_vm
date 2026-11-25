@@ -147,7 +147,8 @@ static const ZrStrictCell *record_read(const ZrStrictFrame *frame, uint32_t inde
         case ZR_STRICT_VALUE_BORROW: return slot->value.writableRecord;
         case ZR_STRICT_VALUE_READONLY_BORROW: return slot->value.recordView;
         case ZR_STRICT_VALUE_UNIQUE:
-        case ZR_STRICT_VALUE_SHARED: return owned_record_read(&slot->value.cell, kind);
+        case ZR_STRICT_VALUE_SHARED:
+        case ZR_STRICT_VALUE_MAYBE_SHARED: return owned_record_read(&slot->value.cell, kind);
         default: return NULL;
     }
 }
@@ -298,6 +299,10 @@ ZrStrictProgramStatus ZrStrictFrame_Apply(ZrStrictFrame *frame, const ZrStrictIn
         case ZR_STRICT_OP_WAKE:
             status = ZrStrict_Wake(&src->value.cell.weak, &dst->value.cell.shared);
             if (status == ZR_STRICT_EXPIRED) status = ZR_STRICT_OK;
+            break;
+        case ZR_STRICT_OP_UNWRAP_SHARED:
+            if (!src->value.cell.shared.record) return ZR_STRICT_PROGRAM_OWNERSHIP_FAULT;
+            status = ZrStrict_SharedClone(&src->value.cell.shared, &dst->value.cell.shared);
             break;
         case ZR_STRICT_OP_IS_NULL:
             dst->value.cell.scalar = frame->program->kinds[i->lhs] == ZR_STRICT_VALUE_MANUAL_BLOCK

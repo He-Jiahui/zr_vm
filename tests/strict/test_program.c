@@ -115,6 +115,14 @@ static void test_owned_program_borrow_move_and_weak_lifecycle(void) {
     rewind(file);
     assert(ZrStrictProgram_Read(file, &loaded) == ZR_STRICT_PROGRAM_OK);
     assert(ZrStrictProgram_Run(&loaded, &result, &pc) == ZR_STRICT_PROGRAM_OK && result.scalar == 1);
+    /* Source requires a null guard. A serialized program also gets its own
+     * checked fault path and may never take a writable borrow of a wake result. */
+    loaded.instructions[9] = (ZrStrictInstruction){ZR_STRICT_OP_UNWRAP_SHARED, 3, 5, 0, 0};
+    loaded.instructions[10] = (ZrStrictInstruction){ZR_STRICT_OP_RETURN, 0, 7, 0, 0};
+    assert(ZrStrictProgram_Verify(&loaded, &pc) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictProgram_Run(&loaded, &result, &pc) == ZR_STRICT_PROGRAM_OWNERSHIP_FAULT && pc == 9);
+    loaded.instructions[9] = (ZrStrictInstruction){ZR_STRICT_OP_BORROW, 2, 5, 0, 0};
+    assert(ZrStrictProgram_Verify(&loaded, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 9);
     ZrStrictProgram_Free(&loaded);
     fclose(file);
 

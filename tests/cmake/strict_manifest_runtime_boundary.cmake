@@ -272,6 +272,36 @@ drop(owner);
 ]=])
 check_strict_owner(weak_live "${student_decl}${weak_start}\nreturn wake(observer) != null;" true FALSE)
 check_strict_owner(weak_expired "${student_decl}${weak_start}\ndrop(clone);\nreturn wake(observer) == null;" true FALSE)
+set(weak_payload [=[
+let candidate = wake(observer);
+if (candidate != null) {
+    drop(clone);
+    let view: ref readonly Student = ref candidate;
+    return view.id;
+}
+return 0;
+]=])
+check_strict_owner(weak_borrow_payload "${student_decl}${weak_start}${weak_payload}" 42 FALSE)
+set(weak_recover [=[
+let candidate = wake(observer);
+if (null == candidate) {
+    return 0;
+} else {
+    drop(clone);
+    let recovered: Shared<Student> = candidate;
+    drop(candidate);
+    return recovered.id;
+}
+]=])
+check_strict_owner(weak_recover_owner "${student_decl}${weak_start}${weak_recover}" 42 FALSE)
+set(weak_expired_payload [=[
+drop(clone);
+let candidate = wake(observer);
+if (candidate != null) { return candidate.id; }
+return 42;
+]=])
+check_strict_owner(weak_expired_payload "${student_decl}${weak_start}${weak_expired_payload}" 42 FALSE)
+
 set(fault_program [=[
 let student: Unique<Student> = own Student(42);
 return student.id / 0;
@@ -291,6 +321,15 @@ function(reject_strict_owner name source expected_diagnostic)
         message(FATAL_ERROR "${name}: Illegal strict ownership source was not rejected (${status}): ${output}\n${error}")
     endif()
 endfunction()
+
+reject_strict_owner(weak_unguarded_payload "${weak_start}let candidate = wake(observer); return candidate.id;"
+    "check the result of wake against null")
+reject_strict_owner(weak_unguarded_owner "${weak_start}let candidate = wake(observer); let owner2: Shared<Student> = candidate;"
+    "check the result of wake against null")
+reject_strict_owner(weak_wrong_branch "${weak_start}let candidate = wake(observer); if (candidate == null) { return candidate.id; } return 0;"
+    "check the result of wake against null")
+reject_strict_owner(weak_readonly_payload "${weak_start}let candidate = wake(observer); if (candidate != null) { candidate.id = 0; } return 0;"
+    "readonly field")
 
 set(moved_program [=[
 let student: Unique<Student> = own Student(42);

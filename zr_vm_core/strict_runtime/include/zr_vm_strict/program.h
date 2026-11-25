@@ -12,7 +12,7 @@ extern "C" {
 
 /* The strict executable has its own magic and version; managed artifacts
  * must never be interpreted as strict programs. These limits precede allocation. */
-#define ZR_STRICT_PROGRAM_ABI 6u
+#define ZR_STRICT_PROGRAM_ABI 7u
 #define ZR_STRICT_MAX_SLOTS 4096u
 #define ZR_STRICT_MAX_INSTRUCTIONS 1048576u
 #define ZR_STRICT_MAX_LAYOUTS 1024u
@@ -74,7 +74,8 @@ typedef enum ZrStrictOp {
     ZR_STRICT_OP_BYTE_LENGTH,
     ZR_STRICT_OP_BYTE_READ,
     ZR_STRICT_OP_BYTE_WRITE,
-    ZR_STRICT_OP_BORROW_FIELD
+    ZR_STRICT_OP_BORROW_FIELD,
+    ZR_STRICT_OP_UNWRAP_SHARED
 } ZrStrictOp;
 
 typedef struct ZrStrictInstruction {

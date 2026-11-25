@@ -72,7 +72,13 @@ typedef struct StrictModule {
     uint8_t visit;
 } StrictModule;
 
+typedef struct NonNullScope {
+    const struct NonNullScope *outer;
+    uint32_t slot;
+} NonNullScope;
+
 typedef struct Lowerer {
+    const NonNullScope *nonNull;
     SZrState *state;
     ZrStrictProgram program;
     RecordModel *models;
@@ -446,9 +452,25 @@ done:
     return output;
 }
 
+static TZrBool check_nonnull(Lowerer *l, const SZrAstNode *node, uint32_t slot) {
+    if (l->program.kinds[slot] != ZR_STRICT_VALUE_MAYBE_SHARED) return ZR_TRUE;
+    for (const NonNullScope *proof = l->nonNull; proof; proof = proof->outer)
+        if (proof->slot == slot) return ZR_TRUE;
+    (void)refuse(l, node, "check the result of wake against null before using its shared payload");
+    return ZR_FALSE;
+}
+
+static uint32_t unwrap_shared(Lowerer *l, const SZrAstNode *node, uint32_t slot, uint8_t expected) {
+    if (expected != ZR_STRICT_VALUE_SHARED || l->program.kinds[slot] != ZR_STRICT_VALUE_MAYBE_SHARED) return slot;
+    if (!check_nonnull(l, node, slot)) return INVALID_SLOT;
+    uint32_t dst = new_slot(l, ZR_STRICT_VALUE_SHARED, l->program.slotLayouts[slot], node);
+    return dst != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_UNWRAP_SHARED, dst, slot, 0) ? dst : INVALID_SLOT;
+}
+
 static uint32_t ownership_expression(Lowerer *l, const SZrAstNode *node) {
     const SZrOwnershipIntrinsicExpression *expr = &node->data.ownershipIntrinsicExpression;
-    uint32_t input = lower_expression(l, expr->argument, 0), output, op;
+    uint8_t expected = expr->operation == ZR_OWNERSHIP_INTRINSIC_DEGRADE ? ZR_STRICT_VALUE_SHARED : 0;
+    uint32_t input = lower_expression(l, expr->argument, expected), output, op;
     uint8_t kind;
     if (input == INVALID_SLOT) return INVALID_SLOT;
     switch (expr->operation) {
@@ -505,6 +527,7 @@ static uint32_t resolve_field(Lowerer *l, const SZrAstNode *node, uint32_t *slot
     uint32_t type, index;
     if (!member_expression(node, &baseName, &field) || (*slot = lookup(l, baseName)) == INVALID_SLOT ||
         !(type = l->program.slotLayouts[*slot])) return refuse(l, node, "expected a statically resolved strict record field");
+    if (!check_nonnull(l, node, *slot)) return INVALID_SLOT;
     index = field_id(&l->models[type - 1], l->program.layouts[type - 1].fieldCount, field);
     if (index == INVALID_SLOT || (!(l->models[type - 1].publicMask & (1u << index)) &&
                                  (!l->call || l->call->target->layout != type)))
@@ -601,7 +624,7 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
         slot = lookup(l, name);
         if (slot == INVALID_SLOT)
             return refuse(l, node, "unknown strict binding");
-        return slot;
+        return unwrap_shared(l, node, slot, expected);
     }
     switch (node->type) {
         case ZR_AST_INTEGER_LITERAL: case ZR_AST_BOOLEAN_LITERAL: return literal(l, node);
@@ -625,7 +648,8 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
                             ? slot : INVALID_SLOT;
                 }
                 input = global ? global->slot : lookup(l, identifier(expr->target));
-                if (input == INVALID_SLOT || !l->live[input]) return refuse(l, node, "borrow requires a live owner");
+                if (input == INVALID_SLOT) return refuse(l, node, "borrow requires an owner");
+                if (!check_nonnull(l, node, input)) return INVALID_SLOT;
                 if (byte_view(expected) ? (l->program.kinds[input] != ZR_STRICT_VALUE_MANUAL_BLOCK &&
                                            !byte_view(l->program.kinds[input])) : !l->program.slotLayouts[input])
                     return refuse(l, node, "borrow target does not match the requested view");
@@ -807,8 +831,30 @@ static uint32_t lower_condition(Lowerer *l, const SZrAstNode *condition) {
     return release_slots(l, condition, first) ? slot : INVALID_SLOT;
 }
 
+/* A proof names a slot, so shadowing and a new binding cannot reuse it. */
+static uint32_t nonnull_slot(Lowerer *l, const SZrAstNode *condition, TZrBool whenTrue) {
+    if (condition->type != ZR_AST_BINARY_EXPRESSION) return INVALID_SLOT;
+    const SZrBinaryExpression *test = &condition->data.binaryExpression;
+    if (!same(test->op.op, whenTrue ? "!=" : "==")) return INVALID_SLOT;
+    const SZrAstNode *candidate = test->left->type == ZR_AST_NULL_LITERAL ? test->right :
+        test->right->type == ZR_AST_NULL_LITERAL ? test->left : NULL;
+    const char *name = candidate ? identifier(candidate) : NULL;
+    uint32_t slot = name ? lookup(l, name) : INVALID_SLOT;
+    return slot != INVALID_SLOT && l->program.kinds[slot] == ZR_STRICT_VALUE_MAYBE_SHARED ? slot : INVALID_SLOT;
+}
+
+static TZrBool lower_guarded_statement(Lowerer *l, const SZrAstNode *node, uint32_t slot) {
+    const NonNullScope proof = {l->nonNull, slot};
+    if (slot != INVALID_SLOT) l->nonNull = &proof;
+    TZrBool ok = lower_statement(l, node);
+    l->nonNull = proof.outer;
+    return ok;
+}
+
 static TZrBool lower_if(Lowerer *l, const SZrAstNode *node) {
     const SZrIfExpression *branch = &node->data.ifExpression;
+    uint32_t thenNonNull = nonnull_slot(l, branch->condition, ZR_TRUE);
+    uint32_t elseNonNull = nonnull_slot(l, branch->condition, ZR_FALSE);
     uint32_t condition = lower_condition(l, branch->condition);
     uint32_t jumpElse = l->program.instructionCount, jumpEnd = INVALID_SLOT;
     uint32_t owned = l->program.slotCount;
@@ -821,7 +867,7 @@ static TZrBool lower_if(Lowerer *l, const SZrAstNode *node) {
         return ZR_FALSE;
     }
     memcpy(state, l->live, owned);
-    if (!lower_statement(l, branch->thenExpr)) goto done;
+    if (!lower_guarded_statement(l, branch->thenExpr, thenNonNull)) goto done;
     thenReturns = l->terminated;
     if (branch->elseExpr) {
         if (!thenReturns) {
@@ -832,7 +878,7 @@ static TZrBool lower_if(Lowerer *l, const SZrAstNode *node) {
         memcpy(l->live, state, owned);
         l->terminated = ZR_FALSE;
         l->program.instructions[jumpElse].immediate = l->program.instructionCount;
-        if (!lower_statement(l, branch->elseExpr)) goto done;
+        if (!lower_guarded_statement(l, branch->elseExpr, elseNonNull)) goto done;
         if (!thenReturns) {
             if (l->terminated) memcpy(l->live, state + owned, owned);
             else if (memcmp(l->live, state + owned, owned)) goto disagree;
@@ -868,7 +914,7 @@ static TZrBool lower_while(Lowerer *l, const SZrAstNode *node) {
         return ZR_FALSE;
     }
     memcpy(state, l->live, owned);
-    if (!lower_statement(l, loop->block)) goto done;
+    if (!lower_guarded_statement(l, loop->block, nonnull_slot(l, loop->cond, ZR_TRUE))) goto done;
     if (!l->terminated) {
         if (memcmp(l->live, state, owned)) {
             (void)refuse(l, node, "each loop iteration must preserve the ownership state at its entry");
@@ -953,7 +999,6 @@ static const Callable *resolve_call(const Lowerer *l, const SZrAstNode *node, ui
     target = find_callable(l, type, member);
     if (!target || (target->receiver != 0) != (slot != INVALID_SLOT)) return NULL;
     if (!target->isPublic && (!l->call || l->call->target->layout != type)) return NULL;
-    if (slot != INVALID_SLOT && !l->live[slot]) return NULL;
     *receiver = slot;
     return target;
 }
@@ -994,6 +1039,7 @@ static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult
     }
     first = l->program.slotCount;
     if (receiver != INVALID_SLOT) {
+        if (!check_nonnull(l, node, receiver)) return ZR_FALSE;
         loan = new_slot(l, target->receiver, target->layout, node);
         if (loan == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_BORROW, loan, receiver, 0)) return ZR_FALSE;
     }
@@ -1114,7 +1160,7 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             }
             kind = l->program.kinds[input];
             dst = input;
-            if (identifier(decl->value)) {
+            if (identifier(decl->value) && input == lookup(l, identifier(decl->value))) {
                 uint32_t op = assignment_op(l, kind, l->program.slotLayouts[input]);
                 dst = new_slot(l, kind, l->program.slotLayouts[input], node);
                 if (dst == INVALID_SLOT || !emit(l, node, op, dst, input, 0)) return ZR_FALSE;
