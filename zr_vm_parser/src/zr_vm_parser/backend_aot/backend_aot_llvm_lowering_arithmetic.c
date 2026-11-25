@@ -561,6 +561,124 @@ static TZrBool backend_aot_llvm_lower_add_signed_mod_const_instruction(
     return ZR_TRUE;
 }
 
+/* 融合的“物化 + 有符号常量运算”三种形状；D=operandExtra，A/B/C=operand0[0..2]，k=operand1[1]。 */
+typedef enum EZrAotLlvmSignedLoadConstShape {
+    ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST = 0,
+    ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST = 1,
+    ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_LOAD_CONST = 2
+} EZrAotLlvmSignedLoadConstShape;
+
+/* 按解释器顺序复用 GET_CONSTANT / GET_STACK 降级物化 B（176 再物化 C），物化后才读取左操作数，
+ * 再调用与非融合 *_SIGNED_CONST 相同的受检 helper；加减按解释器规则恢复左操作数的窄整数标签。
+ * 算术错误沿 helper 的 RunError 终止到 ExecuteEntry（与其他 AOT 算术一致，不进入 zr catch）。 */
+static TZrBool backend_aot_llvm_lower_signed_load_const_instruction(const SZrAotLlvmLoweringContext *context,
+                                                                    const SZrAotLlvmInstructionContext *instruction,
+                                                                    EZrAotLlvmSignedLoadConstShape shape,
+                                                                    const TZrChar *helperName,
+                                                                    TZrBool keepLeftTag) {
+    const SZrFunction *function;
+    SZrAotLlvmInstructionContext materializeInstruction;
+    SZrAotLlvmInstructionContext arithmeticInstruction;
+    TZrUInt32 constantIndex;
+    TZrUInt32 leftSlot;
+    TZrUInt32 leftTypeTemp = 0;
+    TZrUInt32 labelSeed;
+    TZrChar constantLabel[96];
+    TZrChar arithmeticLabel[96];
+    TZrChar tagLabel[96];
+
+    if (context == ZR_NULL || instruction == ZR_NULL || helperName == ZR_NULL || context->entry == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = context->entry->function;
+    constantIndex = instruction->operandB1;
+    if (function == ZR_NULL || function->constantValueList == ZR_NULL ||
+        constantIndex >= function->constantValueLength ||
+        !ZR_VALUE_IS_TYPE_SIGNED_INT(function->constantValueList[constantIndex].type)) {
+        return ZR_FALSE;
+    }
+    if (shape == ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_LOAD_CONST &&
+        !ZR_INSTRUCTION_LOAD_STACK_LOAD_CONST_SLOT_FITS(instruction->operandU8C, constantIndex)) {
+        return ZR_FALSE;
+    }
+
+    labelSeed = backend_aot_llvm_next_temp(context->tempCounter);
+    snprintf(constantLabel, sizeof(constantLabel), "zr_aot_signed_load_const_c_%u", (unsigned)labelSeed);
+    snprintf(arithmeticLabel, sizeof(arithmeticLabel), "zr_aot_signed_load_const_op_%u", (unsigned)labelSeed);
+    snprintf(tagLabel, sizeof(tagLabel), "zr_aot_signed_load_const_tag_%u", (unsigned)labelSeed);
+    fprintf(context->file, "  ; zr_aot_llvm_signed_load_const op=%u\n", (unsigned)instruction->opcode);
+
+    materializeInstruction = *instruction;
+    materializeInstruction.destinationSlot = instruction->operandU8B;
+    if (shape == ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST) {
+        materializeInstruction.opcode = ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+        materializeInstruction.operandA2 = (TZrInt32)constantIndex;
+        materializeInstruction.nextLabel = arithmeticLabel;
+        if (!backend_aot_llvm_lower_constant_value_family(context, &materializeInstruction)) {
+            return ZR_FALSE;
+        }
+        leftSlot = instruction->operandU8A;
+    } else {
+        materializeInstruction.opcode = ZR_INSTRUCTION_ENUM(GET_STACK);
+        materializeInstruction.operandA2 = (TZrInt32)instruction->operandU8A;
+        materializeInstruction.nextLabel =
+                shape == ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_LOAD_CONST ? constantLabel : arithmeticLabel;
+        if (!backend_aot_llvm_lower_stack_slot_value_subfamily(context, &materializeInstruction)) {
+            return ZR_FALSE;
+        }
+        if (shape == ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_LOAD_CONST) {
+            fprintf(context->file, "%s:\n", constantLabel);
+            materializeInstruction = *instruction;
+            materializeInstruction.opcode = ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+            materializeInstruction.destinationSlot = instruction->operandU8C;
+            materializeInstruction.operandA2 = (TZrInt32)constantIndex;
+            materializeInstruction.nextLabel = arithmeticLabel;
+            if (!backend_aot_llvm_lower_constant_value_family(context, &materializeInstruction)) {
+                return ZR_FALSE;
+            }
+        }
+        leftSlot = instruction->operandU8B;
+    }
+
+    fprintf(context->file, "%s:\n", arithmeticLabel);
+    if (keepLeftTag) {
+        /* D 可能与左操作数同槽：helper 覆盖前先取左标签。 */
+        TZrUInt32 leftValueTemp =
+                backend_aot_llvm_emit_stack_value_pointer(context->file, context->tempCounter, leftSlot);
+        leftTypeTemp = backend_aot_llvm_emit_load_value_type(context->file, context->tempCounter, leftValueTemp);
+    }
+
+    arithmeticInstruction = *instruction;
+    arithmeticInstruction.operandA1 = leftSlot;
+    arithmeticInstruction.operandB1 = constantIndex;
+    arithmeticInstruction.nextLabel = keepLeftTag ? tagLabel : instruction->nextLabel;
+    if (!backend_aot_llvm_lower_binary_value_instruction(context, &arithmeticInstruction, helperName)) {
+        return ZR_FALSE;
+    }
+
+    if (keepLeftTag) {
+        TZrUInt32 destinationValueTemp;
+        TZrUInt32 destinationTypePointerTemp;
+
+        fprintf(context->file, "%s:\n", tagLabel);
+        destinationValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
+                                                                         context->tempCounter,
+                                                                         instruction->destinationSlot);
+        destinationTypePointerTemp = backend_aot_llvm_emit_value_field_pointer(context->file,
+                                                                               context->tempCounter,
+                                                                               destinationValueTemp,
+                                                                               0);
+        fprintf(context->file,
+                "  store i32 %%t%u, ptr %%t%u, align %u\n",
+                (unsigned)leftTypeTemp,
+                (unsigned)destinationTypePointerTemp,
+                (unsigned)backend_aot_llvm_value_field_alignment(0));
+        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_llvm_lower_add_unsigned_instruction(const SZrAotLlvmLoweringContext *context,
                                                                const SZrAotLlvmInstructionContext *instruction) {
     return backend_aot_llvm_lower_add_integer_family_instruction(context,
@@ -812,6 +930,50 @@ TZrBool backend_aot_llvm_lower_arithmetic_value_family(const SZrAotLlvmLoweringC
             return backend_aot_llvm_lower_add_signed_mod_const_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
             return backend_aot_llvm_lower_mul_signed_load_stack_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_AddSignedConst", ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST,
+                    "ZrLibrary_AotRuntime_AddSignedConst", ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_AddSignedConst", ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_SubSignedConst", ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST,
+                    "ZrLibrary_AotRuntime_SubSignedConst", ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_MulSignedConst", ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST,
+                    "ZrLibrary_AotRuntime_MulSignedConst", ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_DivSignedConst", ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST,
+                    "ZrLibrary_AotRuntime_DivSignedConst", ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_CONST,
+                    "ZrLibrary_AotRuntime_ModSignedConst", ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            return backend_aot_llvm_lower_signed_load_const_instruction(
+                    context, instruction, ZR_AOT_LLVM_SIGNED_LOAD_CONST_SHAPE_LOAD_STACK_CONST,
+                    "ZrLibrary_AotRuntime_ModSignedConst", ZR_FALSE);
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
             return backend_aot_llvm_lower_add_unsigned_instruction(context, instruction);
