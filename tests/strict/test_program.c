@@ -345,6 +345,46 @@ static void test_verified_destructor_faults_follow_final_release(void) {
     assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION);
 }
 
+static void test_parent_allocation_failure_keeps_staged_owned_field(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_UNIQUE};
+    uint32_t types[] = {1, 2};
+    uint8_t dropKinds[] = {ZR_STRICT_VALUE_RECORD, ZR_STRICT_VALUE_I64};
+    uint32_t dropTypes[] = {1, 0};
+    ZrStrictInstruction drop[] = {
+        {ZR_STRICT_OP_DIV, 1, 1, 1, 0},
+        {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
+    };
+    ZrStrictRecordLayout layouts[2] = {
+        {.name = "Child", .destructor = {dropKinds, dropTypes, drop, 2, 2}},
+        {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_UNIQUE}, .fieldLayouts = {1}, .name = "Parent"},
+    };
+    ZrStrictInstruction ops[] = {
+        {ZR_STRICT_OP_OWN_RECORD, 0, 0, 0, 0},
+        {ZR_STRICT_OP_OWN_RECORD, 1, 0, 0, 0},
+        {ZR_STRICT_OP_HALT, 0, 0, 0, 0},
+    };
+    ZrStrictProgram p = {.kinds = kinds, .slotCount = 2, .instructions = ops, .instructionCount = 3,
+                         .slotLayouts = types, .layouts = layouts, .layoutCount = 2};
+    ZrStrictFrame frame;
+    ZrStrictFrameSlot slots[2];
+    FaultAllocator injected = {0};
+    const ZrStrictAllocator allocator = {fail_second, fault_free, &injected};
+    assert(ZrStrictProgram_Verify(&p, NULL) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Open(&frame, &p, slots, 2, &allocator) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Apply(&frame, &ops[0]) == ZR_STRICT_PROGRAM_OK);
+    assert(ZrStrictFrame_Apply(&frame, &ops[1]) == ZR_STRICT_PROGRAM_OUT_OF_MEMORY);
+    /* This fault comes from the staged child's destructor, and the failed
+     * parent never moved that child into its uncommitted allocation. */
+    assert(ZrStrictFrame_Close(&frame) == ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT);
+    assert(injected.attempts == 2 && injected.frees == 1);
+
+    ZrStrictResult result;
+    uint32_t pc;
+    assert(ZrStrictProgram_Run(&p, &result, &pc) == ZR_STRICT_PROGRAM_DESTRUCTOR_FAULT && pc == 2);
+    layouts[1].fieldLayouts[0] = 2;
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 1);
+}
+
 int main(void) {
     test_verified_control_flow_round_trip();
     test_unverified_programs_fail_closed();
@@ -355,5 +395,6 @@ int main(void) {
     test_manual_byte_ownership_and_faults();
     test_strict_reborrow_keeps_parent_view_live();
     test_verified_destructor_faults_follow_final_release();
+    test_parent_allocation_failure_keeps_staged_owned_field();
     return 0;
 }

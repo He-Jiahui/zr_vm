@@ -73,6 +73,9 @@ static int emit_owned_body(FILE *file, const ZrStrictProgram *p, const unsigned 
         for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field)
             if (fprintf(file, "%u,", layout->fields[field]) < 0) return 0;
         if (fputs("},{", file) < 0) return 0;
+        for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field)
+            if (fprintf(file, "%" PRIu32 ",", layout->fieldLayouts[field]) < 0) return 0;
+        if (fputs("},{", file) < 0) return 0;
         for (uint32_t byte = 0; byte < ZR_STRICT_LAYOUT_NAME_SIZE; ++byte)
             if (fprintf(file, "(char)%u,", (unsigned)(unsigned char)layout->name[byte]) < 0) return 0;
         if (layout->destructor.instructionCount) {

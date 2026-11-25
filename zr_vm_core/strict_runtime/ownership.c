@@ -15,6 +15,7 @@ typedef enum ZrStrictLifetime {
 struct ZrStrictAllocation {
     ZrStrictRuntime *runtime;
     ZrStrictAllocation *next;
+    ZrStrictAllocation *dropNext;
     ZrStrictAllocation **previousLink;
     void *payload;
     ZrStrictLayout layout;
@@ -158,23 +159,37 @@ void *ZrStrict_UniqueData(const ZrStrictUnique *owner) {
 }
 
 static ZrStrictStatus release_strong(ZrStrictAllocation *record) {
-    ZrStrictStatus status = ZR_STRICT_OK;
-    if (--record->strong != 0) {
-        return status;
-    }
-    /* Disallow wake before destructor dispatch. A destructor can release a
-     * weak field pointing to itself, so defer free until the callback ends. */
+    if (--record->strong != 0) return ZR_STRICT_OK;
+    ZrStrictRuntime *runtime = record->runtime;
+    /* Disable wake immediately but retain the header until its callback runs.
+     * Nested releases enqueue their existing headers, so a deep chain can be
+     * destroyed without allocating a worklist or growing the C call stack. */
     record->lifetime = ZR_STRICT_DROPPING;
-    if (record->layout.drop) {
-        ++record->runtime->dropDepth;
-        status = record->layout.drop(record->payload, record->layout.dropContext);
-        --record->runtime->dropDepth;
+    record->dropNext = NULL;
+    if (runtime->dropDepth) {
+        *runtime->dropAppend = record;
+        runtime->dropAppend = &record->dropNext;
+        return ZR_STRICT_OK;
     }
-    record->lifetime = ZR_STRICT_DEAD;
-    if (!record->weak) {
-        free_record(record);
+    ZrStrictStatus first = ZR_STRICT_OK;
+    ZrStrictAllocation *ready = record;
+    ++runtime->dropDepth;
+    while (ready) {
+        ZrStrictAllocation *next = ready->dropNext;
+        ZrStrictAllocation *children = NULL;
+        runtime->dropAppend = &children;
+        if (ready->layout.drop) {
+            const ZrStrictStatus status = ready->layout.drop(ready->payload, ready->layout.dropContext);
+            if (first == ZR_STRICT_OK) first = status;
+        }
+        *runtime->dropAppend = next; /* descendants before siblings, in release order */
+        ready->lifetime = ZR_STRICT_DEAD;
+        if (!ready->weak) free_record(ready);
+        ready = children;
     }
-    return status;
+    runtime->dropAppend = NULL;
+    --runtime->dropDepth;
+    return first;
 }
 
 ZrStrictStatus ZrStrict_UniqueDrop(ZrStrictUnique *owner) {
@@ -296,11 +311,7 @@ ZrStrictStatus ZrStrict_ManualAlloc(ZrStrictRuntime *runtime, size_t size,
     status = ZrStrict_OwnBegin(runtime, &layout, site, &builder, &payload);
     if (status == ZR_STRICT_OK) {
         status = ZrStrict_OwnCommit(&builder, &out->owner);
-        if (status == ZR_STRICT_OK) {
-            out->size = size;
-        } else {
-            (void)ZrStrict_OwnAbort(&builder);
-        }
+        if (status != ZR_STRICT_OK) (void)ZrStrict_OwnAbort(&builder);
     }
     return status;
 }
@@ -308,19 +319,11 @@ ZrStrictStatus ZrStrict_ManualAlloc(ZrStrictRuntime *runtime, size_t size,
 void *ZrStrict_ManualData(const ZrStrictManualBlock *block, size_t *size) {
     void *data = block ? ZrStrict_UniqueData(&block->owner) : NULL;
     if (size) {
-        *size = data ? block->size : 0;
+        *size = data ? block->owner.record->layout.size : 0;
     }
     return data;
 }
 
 ZrStrictStatus ZrStrict_ManualFree(ZrStrictManualBlock *block) {
-    ZrStrictStatus status;
-    if (!block) {
-        return ZR_STRICT_INVALID_ARGUMENT;
-    }
-    status = ZrStrict_UniqueDrop(&block->owner);
-    if (status == ZR_STRICT_OK) {
-        block->size = 0;
-    }
-    return status;
+    return block ? ZrStrict_UniqueDrop(&block->owner) : ZR_STRICT_INVALID_ARGUMENT;
 }

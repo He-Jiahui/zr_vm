@@ -471,3 +471,103 @@ let bad = own Uninitialized();
 return 0;
 ]=])
 reject_strict_owner(constructor_uninitialized "${uninitialized_field}" "uninitialized record field")
+
+set(aggregate_decl [=[
+resource class Team {
+    pub var child: Unique<Child>;
+    pub @constructor(id: int) { this.child = own Child(id); }
+    pub @destructor() {
+        let member: ref readonly Child = ref this.child;
+        let check = 1 / member.id;
+    }
+}
+resource class Child {
+    pub var id: int;
+    pub @constructor(id: int) { this.id = id; }
+}
+]=])
+set(aggregate_borrow [=[
+let parent = own Team(31);
+if (true) {
+    let mutableChild: ref Child = ref parent.child;
+    mutableChild.id = mutableChild.id + 10;
+}
+parent.child = own Child(42);
+let child: ref readonly Child = ref parent.child;
+return child.id;
+]=])
+check_strict_owner(aggregate_borrow "${aggregate_decl}${aggregate_borrow}" 42 FALSE)
+set(aggregate_drop_borrow [=[
+let parent = own Team(42);
+let child: ref readonly Child = ref parent.child;
+drop(parent);
+return child.id;
+]=])
+reject_strict_owner(aggregate_drop_while_borrowed "${aggregate_decl}${aggregate_drop_borrow}" "conflicting borrow")
+set(aggregate_copy [=[
+let parent = own Team(42);
+let child = parent.child;
+return child.id;
+]=])
+reject_strict_owner(aggregate_copy_unique "${aggregate_decl}${aggregate_copy}" "borrow this unique field")
+
+set(aggregate_refs [=[
+struct Observers {
+    pub var strong: Shared<Child>;
+    pub var weak: Weak<Child>;
+    pub @constructor(strong: Shared<Child>, weak: Weak<Child>) {
+        this.strong = strong;
+        this.weak = weak;
+    }
+}
+let unique = own Child(42);
+let first = share(unique);
+let weak = degrade(first);
+let entry = init Observers(first, weak);
+let moved = entry;
+drop(first);
+let fromField = moved.strong;
+let observer = moved.weak;
+drop(moved);
+if (wake(observer) == null) { return false; }
+drop(fromField);
+return wake(observer) == null;
+]=])
+check_strict_owner(aggregate_shared_weak "${aggregate_decl}${aggregate_refs}" true FALSE)
+
+set(aggregate_fault [=[
+resource class FaultingParent {
+    pub var child: Unique<Child>;
+    pub var size: int;
+    pub @constructor(divisor: int) {
+        this.child = own Child(42);
+        this.size = 1 / divisor;
+    }
+    pub @destructor() { let ignore = 2 / 0; }
+}
+let parent = own FaultingParent(0);
+return parent.size;
+]=])
+check_strict_owner(aggregate_constructor_fault "${aggregate_decl}${aggregate_fault}" "" TRUE "arithmetic fault")
+
+set(aggregate_manual [=[
+struct BufferOwner {
+    pub var buffer: ManualBlock;
+    pub @constructor(buffer: ManualBlock) { this.buffer = buffer; }
+}
+let allocation = ManualBlock.tryAlloc(1);
+if (allocation == null) { return -1; }
+let owner = init BufferOwner(allocation);
+let bytes: ref ManualBlock = ref owner.buffer;
+bytes[0] = 42;
+return bytes[0];
+]=])
+check_strict_owner(aggregate_manual "${aggregate_manual}" 42 FALSE)
+
+set(aggregate_shared_receiver [=[
+let unique = own Team(42);
+let shared = share(unique);
+let forbidden: ref Child = ref shared.child;
+return forbidden.id;
+]=])
+reject_strict_owner(aggregate_shared_mutation "${aggregate_decl}${aggregate_shared_receiver}" "conflicting borrow")

@@ -192,10 +192,44 @@ static void test_manual_blocks_are_fallible_and_tracked(void) {
     finish(&fixture, NULL);
 }
 
+typedef struct DeepNode {
+    ZrStrictUnique child;
+    size_t ordinal;
+} DeepNode;
+
+static ZrStrictStatus drop_deep_node(void *storage, void *context) {
+    DeepNode *node = storage;
+    Fixture *fixture = context;
+    assert(node->ordinal == ++fixture->drops);
+    return node->child.record ? ZrStrict_UniqueDrop(&node->child) : ZR_STRICT_FAULT;
+}
+
+static void test_deep_release_is_iterative_and_preserves_child_fault(void) {
+    enum { count = 8192 };
+    Fixture fixture;
+    ZrStrictUnique root = {0};
+    start(&fixture);
+    const ZrStrictLayout layout = {sizeof(DeepNode), _Alignof(DeepNode), "DeepNode", drop_deep_node, &fixture};
+    for (size_t n = count; n > 0; --n) {
+        ZrStrictBuilder builder = {0};
+        void *raw = NULL;
+        assert(ZrStrict_OwnBegin(&fixture.runtime, &layout, site, &builder, &raw) == ZR_STRICT_OK);
+        DeepNode *payload = raw;
+        *payload = (DeepNode){root, n};
+        root = (ZrStrictUnique){0};
+        assert(ZrStrict_OwnCommit(&builder, &root) == ZR_STRICT_OK);
+    }
+    fixture.failAllocation = 1;
+    assert(ZrStrict_UniqueDrop(&root) == ZR_STRICT_FAULT);
+    assert(!root.record && fixture.drops == count && fixture.frees == count && fixture.allocations == count);
+    finish(&fixture, NULL);
+}
+
 int main(void) {
     test_last_strong_releases_payload_and_weak_delays_storage();
     test_failed_constructor_and_destructor();
     test_cycle_survives_until_shutdown();
     test_manual_blocks_are_fallible_and_tracked();
+    test_deep_release_is_iterative_and_preserves_child_fault();
     return 0;
 }

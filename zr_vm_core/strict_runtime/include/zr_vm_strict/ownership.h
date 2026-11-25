@@ -22,7 +22,7 @@ typedef struct ZrStrictBuilder { ZrStrictAllocation *record; } ZrStrictBuilder;
 typedef struct ZrStrictUnique { ZrStrictAllocation *record; } ZrStrictUnique;
 typedef struct ZrStrictShared { ZrStrictAllocation *record; } ZrStrictShared;
 typedef struct ZrStrictWeak { ZrStrictAllocation *record; } ZrStrictWeak;
-typedef struct ZrStrictManualBlock { ZrStrictUnique owner; size_t size; } ZrStrictManualBlock;
+typedef struct ZrStrictManualBlock { ZrStrictUnique owner; } ZrStrictManualBlock;
 
 typedef void *(*ZrStrictAllocate)(void *context, size_t size);
 typedef void (*ZrStrictFree)(void *context, void *address);
@@ -38,6 +38,7 @@ typedef struct ZrStrictRuntime {
     ZrStrictAllocator allocator;
     ZrStrictAllocation *allocations;
     size_t dropDepth;
+    ZrStrictAllocation **dropAppend;
     unsigned closing;
 } ZrStrictRuntime;
 

@@ -12,7 +12,7 @@ extern "C" {
 
 /* The strict executable has its own magic and version; managed artifacts
  * must never be interpreted as strict programs. These limits precede allocation. */
-#define ZR_STRICT_PROGRAM_ABI 5u
+#define ZR_STRICT_PROGRAM_ABI 6u
 #define ZR_STRICT_MAX_SLOTS 4096u
 #define ZR_STRICT_MAX_INSTRUCTIONS 1048576u
 #define ZR_STRICT_MAX_LAYOUTS 1024u
@@ -73,7 +73,8 @@ typedef enum ZrStrictOp {
     ZR_STRICT_OP_MANUAL_TRY_ALLOC,
     ZR_STRICT_OP_BYTE_LENGTH,
     ZR_STRICT_OP_BYTE_READ,
-    ZR_STRICT_OP_BYTE_WRITE
+    ZR_STRICT_OP_BYTE_WRITE,
+    ZR_STRICT_OP_BORROW_FIELD
 } ZrStrictOp;
 
 typedef struct ZrStrictInstruction {
@@ -98,6 +99,7 @@ typedef struct ZrStrictRecordLayout {
     uint32_t fieldCount;
     uint32_t readonlyMask;
     uint8_t fields[ZR_STRICT_MAX_FIELDS];
+    uint32_t fieldLayouts[ZR_STRICT_MAX_FIELDS];
     char name[ZR_STRICT_LAYOUT_NAME_SIZE];
     ZrStrictDestructor destructor;
 } ZrStrictRecordLayout;
@@ -145,15 +147,21 @@ ZrStrictProgramStatus ZrStrictProgram_Run(const ZrStrictProgram *program, ZrStri
 
 /* The interpreter and generated C supply automatic storage for typed slots.
  * The slot representation is private to the frame helpers. */
+typedef union ZrStrictCell {
+    int64_t scalar;
+    ZrStrictUnique unique;
+    ZrStrictShared shared;
+    ZrStrictWeak weak;
+    ZrStrictManualBlock manual;
+} ZrStrictCell;
+
 typedef struct ZrStrictFrameSlot {
     union {
-        int64_t scalar;
-        int64_t record[ZR_STRICT_MAX_FIELDS];
-        ZrStrictUnique unique;
-        ZrStrictShared shared;
-        ZrStrictWeak weak;
-        ZrStrictManualBlock manual;
-        uint32_t borrowedFrom;
+        ZrStrictCell cell;
+        ZrStrictCell record[ZR_STRICT_MAX_FIELDS];
+        const ZrStrictCell *recordView;
+        ZrStrictCell *writableRecord;
+        const ZrStrictManualBlock *byteView;
     } value;
     unsigned live;
 } ZrStrictFrameSlot;
@@ -161,7 +169,7 @@ typedef struct ZrStrictFrame {
     const ZrStrictProgram *program;
     ZrStrictFrameSlot *slots;
     /* A verified destructor receives a live external record in slot zero. */
-    int64_t *externalRecord;
+    ZrStrictCell *externalRecord;
     ZrStrictRuntime ownership;
 } ZrStrictFrame;
 /* Use verified instructions only. The caller keeps `program` and `slots`

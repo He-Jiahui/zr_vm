@@ -87,6 +87,15 @@ static const char *identifier(const SZrAstNode *node) {
 static size_t count(const SZrAstNodeArray *a) { return a ? a->count : 0; }
 static TZrBool same(const char *a, const char *b) { return a && b && !strcmp(a, b); }
 
+static TZrBool field_owner(uint8_t kind) {
+    return kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_SHARED ||
+           kind == ZR_STRICT_VALUE_WEAK || kind == ZR_STRICT_VALUE_MANUAL_BLOCK;
+}
+
+static TZrBool field_kind(uint8_t kind) {
+    return field_owner(kind) || kind == ZR_STRICT_VALUE_I64 || kind == ZR_STRICT_VALUE_BOOL;
+}
+
 static TZrBool byte_view(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_BYTE_VIEW || kind == ZR_STRICT_VALUE_READONLY_BYTE_VIEW;
 }
@@ -162,8 +171,14 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
     switch (op) {
         case ZR_STRICT_OP_INIT_RECORD: case ZR_STRICT_OP_OWN_RECORD: case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
         case ZR_STRICT_OP_TRANSFER: case ZR_STRICT_OP_CLONE: case ZR_STRICT_OP_SHARE:
-        case ZR_STRICT_OP_DEGRADE: case ZR_STRICT_OP_WAKE: case ZR_STRICT_OP_BORROW:
+        case ZR_STRICT_OP_DEGRADE: case ZR_STRICT_OP_WAKE: case ZR_STRICT_OP_BORROW: case ZR_STRICT_OP_BORROW_FIELD:
             l->live[dst] = 1;
+            break;
+        case ZR_STRICT_OP_FIELD_READ:
+            if (field_owner(l->program.kinds[dst])) l->live[dst] = 1;
+            break;
+        case ZR_STRICT_OP_FIELD_WRITE:
+            if (field_owner(l->program.kinds[lhs])) l->live[lhs] = 0;
             break;
         default: break;
     }
@@ -211,6 +226,10 @@ static uint32_t literal(Lowerer *l, const SZrAstNode *node) {
 static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t expected);
 static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult, uint32_t *result);
 static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first);
+static TZrBool release_range(Lowerer *l, const SZrAstNode *node, uint32_t first, uint32_t last);
+static uint8_t binding_type(Lowerer *l, const SZrType *type, uint32_t *layout);
+static uint32_t assignment_op(const Lowerer *l, uint8_t kind, uint32_t type);
+static uint32_t resolve_field(Lowerer *l, const SZrAstNode *node, uint32_t *slot);
 
 static const SZrFunctionCall *final_call(const SZrAstNode *node) {
     const SZrAstNode *last;
@@ -236,7 +255,7 @@ static TZrBool member_expression(const SZrAstNode *node, const char **base, cons
 
 static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *name,
                                 const SZrAstNodeArray *args, TZrBool owned) {
-    uint32_t type = layout_id(l, name), output, first, depth = 0;
+    uint32_t type = layout_id(l, name), output, first, depth = 0, firstLocal = l->program.slotCount;
     const RecordModel *model;
     const ZrStrictRecordLayout *layout;
     if (!type) return refuse(l, node, "unknown strict record layout");
@@ -248,18 +267,23 @@ static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *
      * capture caller locals or expose its uninitialized receiver to a method. */
     uint32_t values[ZR_STRICT_MAX_FIELDS];
     for (uint32_t index = 0; index < count(args); ++index) {
-        values[index] = lower_expression(l, args->nodes[index], 0);
-        if (values[index] == INVALID_SLOT) return INVALID_SLOT;
         const SZrParameter *parameter = &model->params->nodes[index]->data.parameter;
-        if (scalar_type(parameter->typeInfo) != l->program.kinds[values[index]])
-            return refuse(l, node, "constructor argument does not match the declared scalar type");
+        uint32_t paramLayout = 0;
+        uint8_t paramKind = binding_type(l, parameter->typeInfo, &paramLayout);
+        uint32_t value = lower_expression(l, args->nodes[index], paramKind);
+        if (value == INVALID_SLOT) return INVALID_SLOT;
+        if (paramKind != l->program.kinds[value] || paramLayout != l->program.slotLayouts[value])
+            return refuse(l, node, "constructor argument does not match the declared strict type");
+        values[index] = new_slot(l, paramKind, paramLayout, node);
+        if (values[index] == INVALID_SLOT || !emit(l, node, assignment_op(l, paramKind, paramLayout), values[index], value, 0))
+            return INVALID_SLOT;
     }
     for (const ConstructorScope *ancestor = l->constructing; ancestor; ancestor = ancestor->outer)
         if (ancestor->layout == type || ++depth >= 64)
             return refuse(l, node, "recursive strict constructor requires a separate execution frame");
 
     ConstructorScope scope = {.outer = l->constructing, .caller = l->call, .layout = type};
-    uint32_t savedBindings = l->bindingCount, savedFloor = l->bindingFloor, firstLocal = l->program.slotCount;
+    uint32_t savedBindings = l->bindingCount, savedFloor = l->bindingFloor;
     l->constructing = &scope;
     l->bindingFloor = savedBindings;
     ++l->depth;
@@ -280,27 +304,40 @@ static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, const char *
                 !member_expression(assign->data.assignmentExpression.left, &base, &member) || !same(base, "this")) goto fail;
             uint32_t field = field_id(model, layout->fieldCount, member);
             if (field == INVALID_SLOT || (scope.fields[field] != INVALID_SLOT && (layout->readonlyMask & (1u << field)))) goto fail;
-            uint32_t value = lower_expression(l, assign->data.assignmentExpression.right, layout->fields[field]);
-            if (value == INVALID_SLOT || l->program.kinds[value] != layout->fields[field]) goto fail;
+            uint8_t kind = layout->fields[field];
+            uint32_t fieldType = layout->fieldLayouts[field];
+            uint32_t value = lower_expression(l, assign->data.assignmentExpression.right, kind);
+            if (value == INVALID_SLOT || l->program.kinds[value] != kind || l->program.slotLayouts[value] != fieldType) goto fail;
+            if (field_owner(kind)) {
+                uint32_t staged = new_slot(l, kind, fieldType, assign);
+                if (staged == INVALID_SLOT || !emit(l, assign, assignment_op(l, kind, fieldType), staged, value, 0)) goto fail;
+                uint32_t previous = scope.fields[field];
+                if (previous != INVALID_SLOT && !emit(l, assign, ZR_STRICT_OP_DROP, 0, previous, 0)) goto fail;
+                value = staged;
+            }
             scope.fields[field] = value;
         }
     }
-    /* Stage scalar fields before publishing a record or allocating its
-     * ownership header. A fault here cannot invoke the new value's destructor. */
+    /* A partially constructed record never owns the staging slots. The frame
+     * drops them on arithmetic/allocation failure, without calling its destructor. */
     first = l->program.slotCount;
     for (uint32_t field = 0; field < layout->fieldCount; ++field) {
+        uint8_t kind = layout->fields[field];
         uint32_t slot;
         if (scope.fields[field] == INVALID_SLOT) goto fail;
-        slot = new_slot(l, layout->fields[field], 0, node);
-        if (slot == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_COPY, slot, scope.fields[field], 0)) goto fail;
+        slot = new_slot(l, kind, layout->fieldLayouts[field], node);
+        if (slot == INVALID_SLOT || !emit(l, node, field_owner(kind) ? ZR_STRICT_OP_TRANSFER : ZR_STRICT_OP_COPY,
+                                        slot, scope.fields[field], 0)) goto fail;
     }
-    if (!release_slots(l, node, firstLocal)) goto fail;
+    if (!release_range(l, node, firstLocal, first)) goto fail;
     output = new_slot(l, owned ? ZR_STRICT_VALUE_UNIQUE : ZR_STRICT_VALUE_RECORD, type, node);
     if (output == INVALID_SLOT || !emit(l, node, owned ? ZR_STRICT_OP_OWN_RECORD : ZR_STRICT_OP_INIT_RECORD,
             output, first, owned ? allocation_site(node) : 0)) goto fail;
+    for (uint32_t field = 0; field < layout->fieldCount; ++field)
+        if (field_owner(layout->fields[field])) l->live[first + field] = 0;
     goto done;
 fail:
-    output = refuse(l, node, "strict constructor must initialize every field with a matching scalar expression");
+    output = refuse(l, node, "strict constructor must initialize every field with a matching value or owner");
 done:
     --l->depth;
     l->bindingCount = savedBindings;
@@ -476,6 +513,15 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             if (!expr->isNew && expr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW) {
                 if (!is_borrow(expected))
                     return refuse(l, node, "declare a scoped ref or ref readonly binding for this borrow");
+                const char *base, *field;
+                if (member_expression(expr->target, &base, &field)) {
+                    uint32_t member = resolve_field(l, expr->target, &input);
+                    if (member == INVALID_SLOT) return INVALID_SLOT;
+                    const ZrStrictRecordLayout *layout = &l->program.layouts[l->program.slotLayouts[input] - 1];
+                    slot = new_slot(l, expected, layout->fieldLayouts[member], node);
+                    return slot != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_BORROW_FIELD, slot, input, member)
+                            ? slot : INVALID_SLOT;
+                }
                 input = lookup(l, identifier(expr->target));
                 if (input == INVALID_SLOT || !l->live[input]) return refuse(l, node, "borrow requires a live owner");
                 if (byte_view(expected) ? (l->program.kinds[input] != ZR_STRICT_VALUE_MANUAL_BLOCK &&
@@ -504,6 +550,9 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
                 index = field_id(&l->models[type - 1], l->program.layouts[type - 1].fieldCount, field);
                 if (index == INVALID_SLOT || constructor->fields[index] == INVALID_SLOT)
                     return refuse(l, node, "constructor read an uninitialized record field");
+                if (l->program.layouts[type - 1].fields[index] == ZR_STRICT_VALUE_UNIQUE ||
+                    l->program.layouts[type - 1].fields[index] == ZR_STRICT_VALUE_MANUAL_BLOCK)
+                    return refuse(l, node, "cannot copy a unique field while constructing a record");
                 return constructor->fields[index];
             }
             if (allocation) return lower_manual_try_alloc(l, node, allocation);
@@ -512,7 +561,11 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             if (member) return lower_byte_read(l, node, input, member);
             index = resolve_field(l, node, &input);
             if (index == INVALID_SLOT) return INVALID_SLOT;
-            slot = new_slot(l, l->program.layouts[l->program.slotLayouts[input] - 1].fields[index], 0, node);
+            const ZrStrictRecordLayout *layout = &l->program.layouts[l->program.slotLayouts[input] - 1];
+            uint8_t kind = layout->fields[index];
+            if (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK)
+                return refuse(l, node, "borrow this unique field instead of copying it");
+            slot = new_slot(l, kind, layout->fieldLayouts[index], node);
             return slot != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_FIELD_READ, slot, input, index) ? slot : INVALID_SLOT;
         }
         case ZR_AST_UNARY_EXPRESSION:
@@ -592,8 +645,8 @@ static uint8_t parameter_kind(Lowerer *l, const SZrParameter *param, uint32_t *l
 
 static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node);
 
-static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first) {
-    for (uint32_t slot = l->program.slotCount; slot > first;) {
+static TZrBool release_range(Lowerer *l, const SZrAstNode *node, uint32_t first, uint32_t last) {
+    for (uint32_t slot = last; slot > first;) {
         uint8_t kind = l->program.kinds[--slot];
         if (!l->live[slot]) continue;
         if (!l->terminated && !emit(l, node, is_borrow(kind) ? ZR_STRICT_OP_END_BORROW : ZR_STRICT_OP_DROP,
@@ -601,6 +654,10 @@ static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first)
         l->live[slot] = 0;
     }
     return ZR_TRUE;
+}
+
+static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first) {
+    return release_range(l, node, first, l->program.slotCount);
 }
 
 static TZrBool lower_block(Lowerer *l, const SZrAstNode *node) {
@@ -720,9 +777,14 @@ static TZrBool match_slot(const Lowerer *l, uint32_t slot, uint8_t kind, uint32_
     return slot != INVALID_SLOT && l->program.kinds[slot] == kind && l->program.slotLayouts[slot] == layout;
 }
 
-static uint32_t assignment_op(uint8_t kind) {
+static uint32_t assignment_op(const Lowerer *l, uint8_t kind, uint32_t type) {
     if (kind < ZR_STRICT_VALUE_RECORD) return ZR_STRICT_OP_COPY;
     if (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK) return ZR_STRICT_OP_TRANSFER;
+    if (kind == ZR_STRICT_VALUE_RECORD) {
+        const ZrStrictRecordLayout *layout = &l->program.layouts[type - 1];
+        for (uint32_t field = 0; field < layout->fieldCount; ++field)
+            if (field_owner(layout->fields[field])) return ZR_STRICT_OP_TRANSFER;
+    }
     return ZR_STRICT_OP_CLONE;
 }
 
@@ -815,7 +877,7 @@ static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult
             }
         } else if (match_slot(l, input, kind, layout)) {
             args[index] = new_slot(l, kind, layout, node);
-            if (args[index] == INVALID_SLOT || !emit(l, node, assignment_op(kind), args[index], input, 0)) return ZR_FALSE;
+            if (args[index] == INVALID_SLOT || !emit(l, node, assignment_op(l, kind, layout), args[index], input, 0)) return ZR_FALSE;
             continue;
         }
         error = "argument does not match the strict parameter type";
@@ -867,7 +929,7 @@ static TZrBool lower_call_return(Lowerer *l, const SZrAstNode *node) {
         uint32_t input = lower_expression(l, value, kind);
         if (input == INVALID_SLOT) return ZR_FALSE;
         if (!match_slot(l, input, kind, l->program.slotLayouts[out])) goto mismatch;
-        if (!emit(l, node, assignment_op(kind), out, input, 0)) return ZR_FALSE;
+        if (!emit(l, node, assignment_op(l, kind, l->program.slotLayouts[out]), out, input, 0)) return ZR_FALSE;
     } else if (out != INVALID_SLOT || value) {
         goto mismatch;
     }
@@ -902,7 +964,7 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             kind = l->program.kinds[input];
             dst = input;
             if (identifier(decl->value)) {
-                uint32_t op = assignment_op(kind);
+                uint32_t op = assignment_op(l, kind, l->program.slotLayouts[input]);
                 dst = new_slot(l, kind, l->program.slotLayouts[input], node);
                 if (dst == INVALID_SLOT || !emit(l, node, op, dst, input, 0)) return ZR_FALSE;
             }
@@ -941,8 +1003,21 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             if (member) return lower_byte_write(l, expr, dst, member);
             field = resolve_field(l, expr->data.assignmentExpression.left, &dst);
             if (field == INVALID_SLOT) return ZR_FALSE;
-            input = lower_expression(l, expr->data.assignmentExpression.right, 0);
-            return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_FIELD_WRITE, dst, input, field);
+            const ZrStrictRecordLayout *layout = &l->program.layouts[l->program.slotLayouts[dst] - 1];
+            uint8_t kind = layout->fields[field];
+            uint32_t fieldType = layout->fieldLayouts[field];
+            input = lower_expression(l, expr->data.assignmentExpression.right, kind);
+            if (input == INVALID_SLOT) return ZR_FALSE;
+            if (!match_slot(l, input, kind, fieldType)) {
+                (void)refuse(l, expr, "assigned value does not match the strict field type");
+                return ZR_FALSE;
+            }
+            if (kind == ZR_STRICT_VALUE_SHARED || kind == ZR_STRICT_VALUE_WEAK) {
+                uint32_t copy = new_slot(l, kind, fieldType, node);
+                if (copy == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_CLONE, copy, input, 0)) return ZR_FALSE;
+                input = copy;
+            }
+            return emit(l, node, ZR_STRICT_OP_FIELD_WRITE, dst, input, field);
         }
         default: break;
     }
@@ -1035,34 +1110,39 @@ static TZrBool check_callable_types(Lowerer *l, const Callable *call) {
     return ZR_TRUE;
 }
 
+static const char *record_name(const SZrAstNode *node) {
+    return name_of(node->type == ZR_AST_CLASS_DECLARATION ? node->data.classDeclaration.name
+                                                        : node->data.structDeclaration.name);
+}
+
+static TZrBool register_record(Lowerer *l, const SZrAstNode *node) {
+    const char *name = record_name(node);
+    if (!name || same(name, "ManualBlock") || strlen(name) >= ZR_STRICT_LAYOUT_NAME_SIZE || layout_id(l, name) ||
+        l->program.layoutCount == ZR_STRICT_MAX_LAYOUTS) {
+        (void)refuse(l, node, "invalid or duplicate strict record name");
+        return ZR_FALSE;
+    }
+    memcpy(l->program.layouts[l->program.layoutCount++].name, name, strlen(name) + 1);
+    return ZR_TRUE;
+}
+
 static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
     TZrBool resource = node->type == ZR_AST_CLASS_DECLARATION;
     const SZrAstNodeArray *members;
-    const char *name;
+    const uint32_t layoutIndex = layout_id(l, record_name(node));
     TZrBool readonly = ZR_FALSE;
-    ZrStrictRecordLayout *layout;
-    RecordModel *model;
+    ZrStrictRecordLayout *layout = &l->program.layouts[layoutIndex - 1];
+    RecordModel *model = &l->models[layoutIndex - 1];
     if (resource) {
         const SZrClassDeclaration *decl = &node->data.classDeclaration;
         if (!decl->isOwned || decl->generic || count(decl->inherits) || count(decl->decorators)) goto unsupported;
-        name = name_of(decl->name);
         members = decl->members;
     } else {
         const SZrStructDeclaration *decl = &node->data.structDeclaration;
         if (decl->isRefLike || decl->generic || count(decl->inherits) || count(decl->decorators)) goto unsupported;
-        name = name_of(decl->name);
         members = decl->members;
         readonly = decl->isReadonly;
     }
-    if (same(name, "ManualBlock")) {
-        (void)refuse(l, node, "ManualBlock is reserved for the strict byte buffer type");
-        return ZR_FALSE;
-    }
-    if (!name || strlen(name) >= ZR_STRICT_LAYOUT_NAME_SIZE || layout_id(l, name) ||
-        l->program.layoutCount == ZR_STRICT_MAX_LAYOUTS) goto unsupported;
-    layout = &l->program.layouts[l->program.layoutCount];
-    model = &l->models[l->program.layoutCount++];
-    memcpy(layout->name, name, strlen(name) + 1);
     model->resource = resource;
     for (size_t index = 0; index < count(members); ++index) {
         const SZrAstNode *member = members->nodes[index];
@@ -1088,7 +1168,7 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
             model->destructor = m->body;
             continue;
         } else if ((resource && member->type == ZR_AST_CLASS_METHOD) || (!resource && member->type == ZR_AST_STRUCT_METHOD)) {
-            if (!add_callable(l, member, l->program.layoutCount)) return ZR_FALSE;
+            if (!add_callable(l, member, layoutIndex)) return ZR_FALSE;
             continue;
         } else {
             const SZrAstNode *body;
@@ -1108,7 +1188,9 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
             if (!body || body->type != ZR_AST_BLOCK || count(params) > ZR_STRICT_MAX_FIELDS) goto unsupported;
             for (size_t param = 0; param < count(params); ++param) {
                 const SZrAstNode *arg = params->nodes[param];
-                if (!arg || arg->type != ZR_AST_PARAMETER || !scalar_type(arg->data.parameter.typeInfo) ||
+                uint32_t paramLayout = 0;
+                if (!arg || arg->type != ZR_AST_PARAMETER ||
+                    !field_kind(binding_type(l, arg->data.parameter.typeInfo, &paramLayout)) ||
                     arg->data.parameter.defaultValue || count(arg->data.parameter.decorators) ||
                     arg->data.parameter.passingMode != ZR_PARAMETER_PASSING_MODE_VALUE) goto unsupported;
                 for (size_t prior = 0; prior < param; ++prior) {
@@ -1120,8 +1202,9 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
             model->params = params;
             continue;
         }
-        kind = scalar_type(type);
-        if (!kind || !fieldName || layout->fieldCount == ZR_STRICT_MAX_FIELDS ||
+        uint32_t fieldType = 0;
+        kind = binding_type(l, type, &fieldType);
+        if (!field_kind(kind) || !fieldName || layout->fieldCount == ZR_STRICT_MAX_FIELDS ||
             field_id(model, layout->fieldCount, fieldName) != INVALID_SLOT ||
             (init && !((kind == ZR_STRICT_VALUE_I64 && init->type == ZR_AST_INTEGER_LITERAL) ||
                        (kind == ZR_STRICT_VALUE_BOOL && init->type == ZR_AST_BOOLEAN_LITERAL)))) goto unsupported;
@@ -1129,14 +1212,15 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
         model->fields[field] = fieldName;
         model->defaults[field] = init;
         layout->fields[field] = kind;
+        layout->fieldLayouts[field] = fieldType;
         if (isConst || readonly) layout->readonlyMask |= 1u << field;
         if (access == ZR_ACCESS_PUBLIC) model->publicMask |= 1u << field;
     }
     for (uint32_t field = 0; field < layout->fieldCount; ++field)
-        if (find_callable(l, l->program.layoutCount, model->fields[field])) goto unsupported;
+        if (find_callable(l, layoutIndex, model->fields[field])) goto unsupported;
     return ZR_TRUE;
 unsupported:
-    (void)refuse(l, node, "strict record requires a fixed scalar layout and a statically checked constructor");
+    (void)refuse(l, node, "strict record requires fixed scalar or owner fields and a statically checked constructor");
     return ZR_FALSE;
 }
 
@@ -1206,6 +1290,11 @@ TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const TZrChar *source, TZrS
     l.callables = calloc(ZR_STRICT_MAX_SLOTS, sizeof(*l.callables));
     if (!l.program.kinds || !l.program.slotLayouts || !l.program.layouts || !l.models || !l.bindings || !l.callables) goto done;
     statements = root->data.script.statements;
+    for (size_t index = 0; index < count(statements); ++index) {
+        const SZrAstNode *node = statements->nodes[index];
+        if ((node->type == ZR_AST_STRUCT_DECLARATION || node->type == ZR_AST_CLASS_DECLARATION) &&
+            !register_record(&l, node)) goto done;
+    }
     for (size_t index = 0; index < count(statements); ++index) {
         const SZrAstNode *node = statements->nodes[index];
         if ((node->type == ZR_AST_STRUCT_DECLARATION || node->type == ZR_AST_CLASS_DECLARATION) &&

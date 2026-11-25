@@ -7,6 +7,21 @@ static inline int zr_strict_is_scalar(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_I64 || kind == ZR_STRICT_VALUE_BOOL;
 }
 
+static inline int zr_strict_is_field_owner(uint8_t kind) {
+    return kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_SHARED ||
+           kind == ZR_STRICT_VALUE_WEAK || kind == ZR_STRICT_VALUE_MANUAL_BLOCK;
+}
+
+static inline int zr_strict_layout_has_owners(const ZrStrictRecordLayout *layout) {
+    for (uint32_t field = 0; field < layout->fieldCount; ++field)
+        if (zr_strict_is_field_owner(layout->fields[field])) return 1;
+    return 0;
+}
+
+static inline uint32_t zr_strict_slot_layout(const ZrStrictProgram *program, uint32_t slot) {
+    return program->slotLayouts ? program->slotLayouts[slot] : 0;
+}
+
 static inline int zr_strict_is_record_borrow(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_BORROW || kind == ZR_STRICT_VALUE_READONLY_BORROW;
 }

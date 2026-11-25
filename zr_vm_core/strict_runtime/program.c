@@ -63,7 +63,7 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc, int usesFra
         case ZR_STRICT_OP_HALT:
             return !i->dst && !i->lhs && !i->rhs && !i->immediate;
         default:
-            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_BYTE_WRITE;
+            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_BORROW_FIELD;
     }
 }
 
@@ -100,7 +100,7 @@ static ZrStrictProgramStatus verify_destructor(const ZrStrictProgram *owner, uin
         return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     for (uint32_t slot = 0; slot < body->slotCount; ++slot) {
         const uint8_t kind = body->kinds[slot];
-        if (!zr_strict_is_scalar(kind) && kind != ZR_STRICT_VALUE_RECORD && !zr_strict_is_record_borrow(kind))
+        if (!zr_strict_is_scalar(kind) && kind != ZR_STRICT_VALUE_RECORD && !zr_strict_is_borrow(kind))
             return ZR_STRICT_PROGRAM_BAD_LAYOUT;
     }
     for (uint32_t pc = 0; pc < body->instructionCount; ++pc) {
@@ -108,9 +108,11 @@ static ZrStrictProgramStatus verify_destructor(const ZrStrictProgram *owner, uin
         /* Reject effects regardless of reachability. The externally owned
          * receiver can be read, written, copied or borrowed, never consumed. */
         if (op->op <= ZR_STRICT_OP_HALT && op->op != ZR_STRICT_OP_RETURN) continue;
-        if (op->op == ZR_STRICT_OP_FIELD_READ || op->op == ZR_STRICT_OP_FIELD_WRITE || op->op == ZR_STRICT_OP_END_BORROW)
+        if (op->op == ZR_STRICT_OP_FIELD_READ || op->op == ZR_STRICT_OP_FIELD_WRITE || op->op == ZR_STRICT_OP_END_BORROW ||
+            op->op == ZR_STRICT_OP_BYTE_LENGTH || op->op == ZR_STRICT_OP_BYTE_READ || op->op == ZR_STRICT_OP_BYTE_WRITE)
             continue;
-        if ((op->op == ZR_STRICT_OP_INIT_RECORD || op->op == ZR_STRICT_OP_CLONE || op->op == ZR_STRICT_OP_BORROW) && op->dst)
+        if ((op->op == ZR_STRICT_OP_INIT_RECORD || op->op == ZR_STRICT_OP_CLONE ||
+             op->op == ZR_STRICT_OP_BORROW || op->op == ZR_STRICT_OP_BORROW_FIELD) && op->dst)
             continue;
         if (op->op == ZR_STRICT_OP_DROP && op->lhs) continue;
         return ZR_STRICT_PROGRAM_BAD_INSTRUCTION;
@@ -133,8 +135,15 @@ ZrStrictProgramStatus ZrStrictProgram_Verify(const ZrStrictProgram *p, uint32_t 
         if (layout->fieldCount > ZR_STRICT_MAX_FIELDS || layout->readonlyMask >> layout->fieldCount ||
             !layout->name[0] || !memchr(layout->name, '\0', sizeof(layout->name))) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
         for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field) {
-            if (field < layout->fieldCount ? !zr_strict_is_scalar(layout->fields[field]) : layout->fields[field] != 0)
+            const uint8_t kind = layout->fields[field];
+            const uint32_t target = layout->fieldLayouts[field];
+            if (field >= layout->fieldCount) {
+                if (kind || target) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+            } else if (zr_strict_is_scalar(kind) || kind == ZR_STRICT_VALUE_MANUAL_BLOCK) {
+                if (target) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+            } else if (!zr_strict_is_field_owner(kind) || !target || target > p->layoutCount) {
                 return ZR_STRICT_PROGRAM_BAD_LAYOUT;
+            }
         }
     }
     size_t destructorInstructions = 0;
@@ -316,8 +325,10 @@ ZrStrictProgramStatus ZrStrictProgram_Write(FILE *file, const ZrStrictProgram *p
             const ZrStrictRecordLayout *layout = &program->layouts[index];
             if (!write_uint(file, layout->fieldCount, 4) || !write_uint(file, layout->readonlyMask, 4) ||
                 fwrite(layout->fields, 1, sizeof(layout->fields), file) != sizeof(layout->fields) ||
-                fwrite(layout->name, 1, sizeof(layout->name), file) != sizeof(layout->name) ||
-                !write_destructor(file, &layout->destructor)) return ZR_STRICT_PROGRAM_IO_ERROR;
+                fwrite(layout->name, 1, sizeof(layout->name), file) != sizeof(layout->name)) return ZR_STRICT_PROGRAM_IO_ERROR;
+            for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field)
+                if (!write_uint(file, layout->fieldLayouts[field], 4)) return ZR_STRICT_PROGRAM_IO_ERROR;
+            if (!write_destructor(file, &layout->destructor)) return ZR_STRICT_PROGRAM_IO_ERROR;
         }
     }
     return write_instructions(file, program->instructions, program->instructionCount)
@@ -424,6 +435,11 @@ ZrStrictProgramStatus ZrStrictProgram_Read(FILE *file, ZrStrictProgram *out) {
                 fread(layout->name, 1, sizeof(layout->name), file) != sizeof(layout->name)) goto bad_format;
             layout->fieldCount = (uint32_t)fields;
             layout->readonlyMask = (uint32_t)readonly;
+            for (uint32_t field = 0; field < ZR_STRICT_MAX_FIELDS; ++field) {
+                uint64_t target;
+                if (!read_uint(file, &target, 4)) goto bad_format;
+                layout->fieldLayouts[field] = (uint32_t)target;
+            }
             status = read_destructor(file, &layout->destructor, &destructorBudget);
             if (status != ZR_STRICT_PROGRAM_OK) goto fail;
         }
