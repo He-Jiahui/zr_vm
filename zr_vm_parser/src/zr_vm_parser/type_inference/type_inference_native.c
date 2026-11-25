@@ -4525,6 +4525,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     type_inference_record_member_call_reference_fact(
                             cs,
                             memberNode,
+                            members->nodes[i + 1],
                             &currentType,
                             memberInfo,
                             &resolvedMemberSignature);

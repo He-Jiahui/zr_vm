@@ -248,6 +248,16 @@
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot
     )
     zr_vm_link_parser_core_plus_library(zr_vm_canonical_consumers_test)
+    if (TARGET zr_vm_lib_system_shared OR TARGET zr_vm_lib_system_static)
+        target_compile_definitions(zr_vm_canonical_consumers_test PRIVATE ZR_CANONICAL_CONSUMERS_HAVE_SYSTEM)
+        target_include_directories(zr_vm_canonical_consumers_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include)
+        if (TARGET zr_vm_lib_system_shared)
+            target_link_libraries(zr_vm_canonical_consumers_test PRIVATE zr_vm_lib_system_shared)
+        else ()
+            target_link_libraries(zr_vm_canonical_consumers_test PRIVATE zr_vm_lib_system_static)
+        endif ()
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_reference_syntax_contract_test
