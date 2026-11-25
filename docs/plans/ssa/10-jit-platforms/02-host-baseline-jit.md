@@ -22,6 +22,8 @@ status: planned
 
 > 执行时使用 `executing-plans` 逐项推进；本文件是重构计划，未勾选项不代表已实现。代码段是算法/接口草案；新增符号由本任务实现，现有接口必须复用实际声明。
 
+> **当前状态（2026-11-23 按 `18d902d6c` 核对）：已交付 contract-only 子集，里程碑未完成。** 已实现的部分有两块。一是 core C11 的 target/options/imports/publication 声明校验与 records/lease manager（`ssa_host_baseline_jit`）。二是默认关闭的可选 C++17 facade `zr_vm_jit`（`-DZR_VM_ENABLE_HOST_JIT=ON`，`ssa_host_jit_optional`）。target 检查要求 execution ABI 18。facade 的 `machineCodeAvailable` 固定为 false，compile 与 entry lookup 只返回 `BACKEND_UNAVAILABLE` 或 `FALLBACK_EXECBC`，不产生入口地址，也未链接 ORC/JITLink。见[模块说明](../../../core-runtime/host-baseline-jit.md)与[验收](../../../../tests/acceptance/ssa-host-baseline-jit.md)。下列复选框（含批次 1）仍按原含义保持未勾选；本说明不改变任何复选框的含义。front-matter 的整叶标签仍为 `planned`，与 [SSA 索引](../index.md)的整叶登记口径一致。
+
 **Goal：** 实现仅 x86-64/AArch64 host 的最小 JIT，以验证共享 ABI、GC、异常和代码生命周期。
 
 **Architecture：** 可选 LLVM ORC/JITLink 适配层消费 AOTIR；LLVM/C++ 依赖隔离为可选模块，core 维持 C11。首版优先完整安全边界，覆盖少量 typed 操作。

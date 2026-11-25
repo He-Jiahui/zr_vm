@@ -21,6 +21,8 @@ status: planned
 
 > 执行时使用 `executing-plans` 逐项推进；本文件是重构计划，未勾选项不代表已实现。代码段是算法/接口草案；新增符号由本任务实现，现有接口必须复用实际声明。
 
+> **当前状态（2026-11-23 按 `18d902d6c` 核对）：已交付 contract-only 子集，里程碑未完成。** core C ABI backend service 已实现，覆盖注册、不可变异步 compile job、generation 失效、解释器恢复、code/map 所有权与 lease 以及 shutdown。测试只有 `ssa_backend_service`（C-only mock backend）与 `ssa_backend_admission`（本地元数据回调，无机器码），见[模块说明](../../../core-runtime/execution-backend-service.md)与[验收](../../../../tests/acceptance/ssa-backend-service.md)。仓库中尚无具体 LLVM/JIT、ExecBC 或 AOT adapter 接入，测试与文档以外也没有生产调用方。下列复选框仍按原含义保持未勾选，完整门禁尚未满足；本说明不改变任何复选框的含义。front-matter 的整叶标签仍为 `planned`，与 [SSA 索引](../index.md)的整叶登记口径一致。
+
 **Goal：** 建立统一 execution backend 服务，管理异步编译、代码注册、失效与解释器恢复。
 
 **Architecture：** core 只依赖 C ABI 的 backend vtable；AOT/ExecBC/JIT 通过 owned code handle 和 immutable compile input 接入，编译不阻塞 frame thread。

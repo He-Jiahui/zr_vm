@@ -24,12 +24,23 @@ doc_type: milestone-detail
 
 # AOT、JIT 与主流运行时对齐计划
 
-> **当前状态（2026-08-30）：AOT Task 1 BLOCKED。** 主 CLI 仍只接受
-> `interp`/`binary`，benchmark registry 与 suite 没有 `zr_aot_c` 实现分支；现有
-> AOT C 只在 parser smoke harness 中生成并通过 `AotRuntime_ExecuteEntry` 执行，
-> 没有独立 benchmark runner，也没有运行时 `native_percent`/`deopt_count` 统计。
-> 在补齐 runner、measurement contract、checksum 和覆盖率 ABI 前，不将 AOT 加入默认
-> registry，也不宣称 AOT parity。
+> **当前状态（2026-11-23 按 `18d902d6c` 核对）：Task 1 未完成，AOT parity 仍未测量。**
+> 2026-08-30 版横幅中“registry 与 suite 没有 AOT 实现分支、没有独立 runner、没有
+> `native_percent`/`deopt_count` 统计”的阻塞描述已部分过期，当前事实如下：
+>
+> - `tests/benchmarks/registry.cmake:22` 在跨语言进程顺序之外单独声明 `aot_c`/`aot_llvm`
+>   （本文 Task 1 原写作 `zr_aot_c`）。两者的 runner target 为空、可用性默认 `FALSE`，
+>   消费者只有在解析到 runner target 后才会选入，不会把解释器或 `zr_binary` 行标成 AOT。
+>   `tests/cmake/run_performance_suite.cmake` 尚未执行 AOT 行。
+> - `tests/benchmarks/aot_runner/{main,aot_runner,aot_coverage}.c` 已提供独立 runner 与
+>   语义覆盖计数：native、native helper、interpreter fallback 与 deopt 分开计数，见
+>   [AOT runner 覆盖契约](../../../testing-and-validation/aot-runner-coverage.md)。仓库内没有
+>   生成的 entry：`zr_vm_aot_benchmark_runner` 只构建、不登记为通过的 CTest，
+>   `ssa_aot_runner_coverage` 只验证 runner 与覆盖契约。
+> - 主 CLI 的 `--execution-mode` 仍只接受 `interp`/`binary`。
+>
+> 在 runner 能消费真实生成产物并给出 checksum 与覆盖率之前，不宣称 AOT parity。
+> Task 4 JIT 决策门至少缺少第 2 项所需的 AOT native coverage 测量；本状态说明不开启该门禁。
 
 > **Goal:** 建立一个经过语义 guard/deopt 验证的优化执行层，在稳态代表集上接近 Lua/QuickJS，并把与 CoreCLR 的差距压到 1.5 倍以内。
 >
