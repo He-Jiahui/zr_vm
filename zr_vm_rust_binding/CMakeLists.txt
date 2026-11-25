@@ -1,4 +1,5 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
+include(${CMAKE_SOURCE_DIR}/zr_vm_cli/compiler_sources.cmake)
 set(zr_curr_module_name "zr_vm_rust_binding")
 
 zr_declare_module(${zr_curr_module_name} ON)
@@ -38,9 +39,6 @@ endif ()
 # Rust ABI 的项目编译/执行复用 CLI 原有管线；native callback 也进入相同模块目标，避免宿主行为分叉。
 set(zr_vm_rust_binding_cli_support_sources
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
-        ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-        ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-        ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
         ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_rust_binding/native.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_rust_binding/native_argument_view.c
@@ -48,6 +46,7 @@ set(zr_vm_rust_binding_cli_support_sources
 
 function(zr_vm_rust_binding_configure_target target_name)
     target_sources(${target_name} PRIVATE ${zr_vm_rust_binding_cli_support_sources})
+    zr_vm_target_add_cli_compiler(${target_name})
     target_include_directories(${target_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli

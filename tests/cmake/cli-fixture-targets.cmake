@@ -92,27 +92,18 @@ if (TARGET zr_vm_cli_executable AND
     zr_vm_add_unity_test_target(
             zr_vm_cli_project_incremental_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_project_incremental.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
     zr_vm_add_unity_test_target(
             zr_vm_cli_aot_writer_options_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_aot_writer_options.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
     zr_vm_add_unity_test_target(
             zr_vm_cli_aot_compacted_metadata_sidecar_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_aot_compacted_metadata_sidecar.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -120,9 +111,6 @@ if (TARGET zr_vm_cli_executable AND
             zr_vm_cli_import_basic_fixture_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_import_basic_fixture.c
             ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -130,12 +118,14 @@ if (TARGET zr_vm_cli_executable AND
             zr_vm_cli_zrm_fixture_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_zrm_fixture.c
             ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
+    include("${CMAKE_SOURCE_DIR}/zr_vm_cli/compiler_sources.cmake")
+    foreach(compiler_fixture IN ITEMS zr_vm_cli_project_incremental_test zr_vm_cli_aot_writer_options_test
+            zr_vm_cli_aot_compacted_metadata_sidecar_test zr_vm_cli_import_basic_fixture_test zr_vm_cli_zrm_fixture_test)
+        zr_vm_target_add_cli_compiler(${compiler_fixture})
+    endforeach()
     target_include_directories(zr_vm_cli_import_basic_fixture_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
