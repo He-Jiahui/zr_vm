@@ -904,6 +904,18 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         return ZR_TRUE;
     }
 
+    /* 无名称、无签名的 CLOSURE 是 native 描述符 "function" 的擦除可调用顶类型
+     * （如 math.invokeCallback 的 callback），接受任意签名的闭包/函数值；
+     * 不放宽可空性，反向收窄仍由下方同名规则拒绝。 */
+    if (toType->baseType == ZR_VALUE_TYPE_CLOSURE &&
+        toType->typeName == ZR_NULL &&
+        toType->elementTypes.length == 0 &&
+        (fromType->baseType == ZR_VALUE_TYPE_CLOSURE ||
+         fromType->baseType == ZR_VALUE_TYPE_FUNCTION) &&
+        (!fromType->isNullable || toType->isNullable)) {
+        return ZR_TRUE;
+    }
+
     if (fromType->baseType == toType->baseType &&
         inferred_type_same_base_name_matches(fromType, toType)) {
         if (!inferred_type_element_types_are_compatible(fromType, toType)) {
