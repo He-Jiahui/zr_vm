@@ -54,6 +54,8 @@ doc_type: module-detail
 
 Rust 端不直接绑定 `SZrState`、`SZrTypeValue`、CLI 子进程或其他内部结构。长期契约是 `ZrRustBinding_*` 前缀的 ABI。
 
+宿主嵌入时可依赖与尚未提供的能力清单（内存、GC、线程、错误传播、模块身份）见 [Embedding host contract](../bindings/embedding-host-contract.md)。
+
 v1 覆盖：
 
 - runtime / project scaffold / open / compile / run / module export call
