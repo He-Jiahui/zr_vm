@@ -15,6 +15,7 @@
 #include "zr_vm_language_server.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "lsp_query_result_cleanup.h"
 
 extern SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(
         SZrState *state, SZrLspContext *context, SZrString *uri);
@@ -280,7 +281,9 @@ static TZrBool check_native_hover(SZrState *state, SZrLspContext *context,
     passed = hover != ZR_NULL && typeLine != ZR_NULL && native_type_equals(typeLine + 6, test->type) &&
              hover->range.start.line == test->position.line && hover->range.start.character == test->start &&
              hover->range.end.line == test->position.line && hover->range.end.character == test->end &&
-             test->start <= test->position.character && test->position.character < test->end;
+             ((test->start <= test->position.character && test->position.character < test->end) ||
+              /* D2: no canonical reference → documented zero-width request range. */
+              (test->start == test->end && test->start == test->position.character));
 
     ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
     if (test->referenceKind != ZR_SEMANTIC_REFERENCE_UNKNOWN) {
@@ -331,7 +334,9 @@ static TZrBool test_native_computed_hover_token_boundaries(SZrState *state) {
         "}\r\n";
     /* Columns are independent UTF-16 expectations, not derived with the server codec. */
     const SZrNativeHoverCase cases[] = {
-        {{5, 38}, 37, 43, "int", ZR_SEMANTIC_REFERENCE_UNKNOWN},
+        /* D2 (t727u): the loop-condition member has no canonical reference until #54 lands;
+         * with the AST/spelling fallback removed the range is the request position. */
+        {{5, 38}, 38, 38, "int", ZR_SEMANTIC_REFERENCE_UNKNOWN},
         {{6, 19}, 13, 26, "string", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
         {{6, 25}, 13, 26, "string", ZR_SEMANTIC_REFERENCE_MEMBER_WRITE},
         {{6, 22}, 20, 25, "int", ZR_SEMANTIC_REFERENCE_READ},
@@ -410,6 +415,85 @@ static TZrBool test_missing_computed_key_is_not_the_element(SZrState *state) {
 }
 
 /* CMake 的 computed_member_hover 测试目标入口：单次构建全局状态并把该回归结果交给 CTest。 */
+/* D1 (t727u, option i): caret requests keep the closed shared matcher, so a caret
+ * right after a token (`foo|(`, `foo|.`, `foo|;`, end of file) still targets that token. */
+static TZrBool caret_location_starts_at(const SZrArray *locations, TZrInt32 line, TZrInt32 character) {
+    for (TZrSize i = 0; locations->isValid && i < locations->length; i++) {
+        const SZrLspLocation *location = *(SZrLspLocation **)ZrCore_Array_Get((SZrArray *)locations, i);
+        if (location != ZR_NULL && location->range.start.line == line &&
+            location->range.start.character == character) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool caret_request_hits_left_token(SZrState *state, SZrLspContext *context, SZrString *uri,
+                                             const TZrChar *content, const TZrChar *token,
+                                             TZrSize occurrence, SZrLspPosition declaration,
+                                             TZrSize expectedReferences) {
+    SZrLspPosition position;
+    SZrArray definitions = {0};
+    SZrArray references = {0};
+    SZrArray renamed = {0};
+    TZrBool passed = find_position_for_substring(content, token, occurrence, &position);
+
+    if (passed) {
+        position.character += (TZrInt32)strlen(token);
+        passed = ZrLanguageServer_Lsp_GetDefinition(state, context, uri, position, &definitions) &&
+                 caret_location_starts_at(&definitions, declaration.line, declaration.character);
+        passed = ZrLanguageServer_Lsp_FindReferences(state, context, uri, position, ZR_TRUE, &references) &&
+                 references.length == expectedReferences &&
+                 caret_location_starts_at(&references, declaration.line, declaration.character) && passed;
+        passed = ZrLanguageServer_Lsp_Rename(state, context, uri, position,
+                                             ZrCore_String_CreateFromNative(state, "renamedToken"), &renamed) &&
+                 renamed.length == expectedReferences && passed;
+    }
+    if (!passed) {
+        printf("FAIL: caret after '%s' #%u: definitions=%u references=%u renamed=%u\n", token,
+               (unsigned)occurrence, (unsigned)definitions.length, (unsigned)references.length,
+               (unsigned)renamed.length);
+    }
+    free_local_reference_projection_results(state, &definitions, ZR_NULL);
+    free_local_reference_projection_results(state, &references, ZR_NULL);
+    free_local_reference_projection_results(state, &renamed, ZR_NULL);
+    return passed;
+}
+
+static TZrBool test_caret_requests_keep_left_token_at_token_end(SZrState *state) {
+    const TZrChar *content =
+        "let container = import(\"zr.container\");\n"
+        "fn helper(value: int): int { return value; }\n"
+        "fn measure(): int {\n"
+        "    let values = new container.Array<int>();\n"
+        "    let total = helper(values.length);\n"
+        "    return total;\n"
+        "}\n"
+        "let last = measure();\n"
+        "last";
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
+    SZrString *uri = ZrCore_String_CreateFromNative(state, "file:///caret_token_end.zr");
+    SZrLspPosition helperDeclaration = {1, 3};
+    SZrLspPosition valuesDeclaration = {3, 8};
+    SZrLspPosition totalDeclaration = {4, 8};
+    SZrLspPosition lastDeclaration = {7, 4};
+    TZrBool passed = context != ZR_NULL && uri != ZR_NULL &&
+            ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1);
+
+    if (passed) {
+        /* foo|( */
+        passed = caret_request_hits_left_token(state, context, uri, content, "helper", 1, helperDeclaration, 2) && passed;
+        /* foo|. */
+        passed = caret_request_hits_left_token(state, context, uri, content, "values", 1, valuesDeclaration, 2) && passed;
+        /* foo|; */
+        passed = caret_request_hits_left_token(state, context, uri, content, "total", 1, totalDeclaration, 2) && passed;
+        /* end of file */
+        passed = caret_request_hits_left_token(state, context, uri, content, "last", 1, lastDeclaration, 2) && passed;
+    }
+    if (context != ZR_NULL) ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -417,6 +501,7 @@ int main(void) {
     TZrBool computedMemberHoverPassed;
     TZrBool tokenBoundariesPassed;
     TZrBool missingKeyPassed;
+    TZrBool caretTokenEndPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -440,6 +525,11 @@ int main(void) {
     printf("%s: Missing Computed Key Remains Unresolved\n",
            missingKeyPassed ? "PASS" : "FAIL");
 
+    caretTokenEndPassed = test_caret_requests_keep_left_token_at_token_end(state);
+    printf("%s: Caret Requests Keep The Left Token At Token End\n",
+           caretTokenEndPassed ? "PASS" : "FAIL");
+
     ZrCore_GlobalState_Free(global);
-    return computedMemberHoverPassed && tokenBoundariesPassed && missingKeyPassed ? 0 : 1;
+    return computedMemberHoverPassed && tokenBoundariesPassed && missingKeyPassed &&
+           caretTokenEndPassed ? 0 : 1;
 }

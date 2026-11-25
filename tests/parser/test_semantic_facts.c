@@ -292,6 +292,53 @@ static void test_reference_position_prefers_segment_start_at_shared_boundary(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* D1 (t727u, re-decided): zero-width caret positions keep the closed rule, so `values|[`
+ * still targets `values`; a one-character cell (hover) matches half-open, so the same
+ * offset targets the indexing that covers the `[` character. Zero-width facts keep anchors. */
+static void test_reference_position_caret_is_closed_and_cell_is_half_open(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode receiverNode;
+    SZrAstNode indexNode;
+    SZrAstNode accessNode;
+    SZrAstNode anchorNode;
+    const SZrSemanticReferenceFact *found;
+
+    TEST_ASSERT_NOT_NULL(context);
+    init_identifier_node(&receiverNode, 13, 19); /* values */
+    init_identifier_node(&indexNode, 20, 25);    /* index */
+    init_identifier_node(&accessNode, 13, 26);   /* values[index] */
+    init_identifier_node(&anchorNode, 30, 30);   /* zero-width anchor */
+    append_reference_fact(context, &receiverNode, ZR_SEMANTIC_REFERENCE_READ, 51, receiverNode.location);
+    append_reference_fact(context, &indexNode, ZR_SEMANTIC_REFERENCE_READ, 52, indexNode.location);
+    append_reference_fact(context, &accessNode, ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS, 53, accessNode.location);
+    append_reference_fact(context, &anchorNode, ZR_SEMANTIC_REFERENCE_READ, 54, anchorNode.location);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(19, 19));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(51, found->symbolId);
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(19, 20));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(53, found->symbolId);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(25, 25));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(52, found->symbolId);
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(25, 26));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(53, found->symbolId);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(26, 26));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(53, found->symbolId);
+    TEST_ASSERT_NULL(ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(26, 27)));
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(context, test_range(30, 31));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT32(54, found->symbolId);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_logical_fact_roundtrip_by_node_and_position(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode fakeNode;
@@ -1173,6 +1220,7 @@ int main(void) {
     RUN_TEST(test_semantic_expression_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_expression_fact_republish_replaces_same_node);
     RUN_TEST(test_reference_position_prefers_segment_start_at_shared_boundary);
+    RUN_TEST(test_reference_position_caret_is_closed_and_cell_is_half_open);
     RUN_TEST(test_semantic_logical_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_numeric_fact_by_node_prefers_segmented_range);
     RUN_TEST(test_semantic_reachability_position_prefers_direct_exit_cause);
