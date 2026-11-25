@@ -352,3 +352,62 @@ let moved = memory;
 return bytes.length;
 ]=])
 reject_strict_owner(manual_move_while_borrowed "${moved_byte_program}" "conflicting borrow")
+
+set(call_program [=[
+resource class Counter {
+    var value: int;
+    pub @constructor(value: int) { this.value = value; }
+    pub static fn create(value: int): Unique<Counter> { return own Counter(value); }
+    pub fn add(delta: int): void { this.value = this.value + delta; }
+    pub const fn read(): int { return this.value; }
+}
+struct Offset {
+    var value: int = 2;
+    pub const fn readOffset(): int { return this.value; }
+}
+fn MakeCounter(value: int): Unique<Counter> {
+    if (value < 0) { return Counter.create(0); }
+    return Counter.create(value);
+}
+fn ReadCounter(view: ref readonly Counter): int { return view.read(); }
+let counter = MakeCounter(40);
+let offset = init Offset();
+counter.add(offset.readOffset());
+let negative = MakeCounter(-1);
+let shared = share(counter);
+return ReadCounter(ref shared) + negative.read();
+]=])
+check_strict_owner(call_ownership "${call_program}" 42 FALSE)
+
+set(scalar_call_program [=[
+fn PlusOne(value: int): int { return value + 1; }
+return PlusOne(41);
+]=])
+check_strict_owner(call_scalar "${scalar_call_program}" 42 FALSE)
+
+set(call_alias_program [=[
+fn Touch(a: ref Student, b: ref Student): void {
+    a.id = 1;
+    b.id = 2;
+}
+let student = own Student(0);
+let view: ref Student = ref student;
+Touch(view, view);
+return view.id;
+]=])
+reject_strict_owner(call_alias "${call_alias_program}" "conflicting borrow")
+
+set(call_escape_program [=[
+fn Leak(view: ref Student): ref Student { return ref view; }
+return 0;
+]=])
+reject_strict_owner(call_borrow_escape "${call_escape_program}" "scoped view cannot escape")
+
+set(call_hidden_program [=[
+fn Unused(): int {
+    let value = [1, 2, 3];
+    return 0;
+}
+return 1;
+]=])
+reject_strict_owner(call_hidden "${call_hidden_program}" "managed or unsupported value form")

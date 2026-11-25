@@ -71,7 +71,8 @@ ZrStrictProgramStatus ZrStrictFrame_Close(ZrStrictFrame *frame) {
 }
 
 static uint32_t base_slot(const ZrStrictFrame *frame, uint32_t index) {
-    return zr_strict_is_borrow(frame->program->kinds[index]) ? frame->slots[index].value.borrowedFrom : index;
+    while (zr_strict_is_borrow(frame->program->kinds[index])) index = frame->slots[index].value.borrowedFrom;
+    return index;
 }
 
 static const int64_t *record_read(const ZrStrictFrame *frame, uint32_t index) {

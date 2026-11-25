@@ -22,10 +22,29 @@ typedef struct Binding {
     uint32_t depth;
 } Binding;
 
+typedef struct Callable {
+    const char *name;
+    const SZrAstNodeArray *params;
+    const SZrType *output;
+    SZrAstNode *body;
+    uint32_t layout;
+    uint8_t receiver;
+    TZrBool isPublic;
+} Callable;
+
+typedef struct CallScope {
+    struct CallScope *outer;
+    const Callable *target;
+    uint32_t result, firstLocal, exits;
+} CallScope;
+
 typedef struct Lowerer {
     ZrStrictProgram program;
     RecordModel *models;
     Binding *bindings;
+    Callable *callables;
+    CallScope *call;
+    uint32_t callableCount, bindingFloor;
     SZrFileRange *locations;
     uint8_t live[ZR_STRICT_MAX_SLOTS];
     uint32_t depth, bindingCount, capacity;
@@ -122,18 +141,22 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
     l->program.instructionCount++;
     if (op == ZR_STRICT_OP_TRANSFER || op == ZR_STRICT_OP_SHARE || op == ZR_STRICT_OP_DROP ||
         op == ZR_STRICT_OP_END_BORROW) l->live[lhs] = 0;
-    if (dst < l->program.slotCount && l->program.kinds[dst] >= ZR_STRICT_VALUE_RECORD &&
-        op != ZR_STRICT_OP_DROP && op != ZR_STRICT_OP_END_BORROW && op != ZR_STRICT_OP_FIELD_WRITE &&
-        op != ZR_STRICT_OP_BYTE_WRITE &&
-        op != ZR_STRICT_OP_RETURN && op != ZR_STRICT_OP_HALT) l->live[dst] = 1;
+    switch (op) {
+        case ZR_STRICT_OP_INIT_RECORD: case ZR_STRICT_OP_OWN_RECORD: case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
+        case ZR_STRICT_OP_TRANSFER: case ZR_STRICT_OP_CLONE: case ZR_STRICT_OP_SHARE:
+        case ZR_STRICT_OP_DEGRADE: case ZR_STRICT_OP_WAKE: case ZR_STRICT_OP_BORROW:
+            l->live[dst] = 1;
+            break;
+        default: break;
+    }
     return ZR_TRUE;
 oom:
     (void)refuse(l, node, "could not grow strict instruction storage");
     return ZR_FALSE;
 }
 
-static uint32_t lookup(Lowerer *l, const char *name) {
-    for (uint32_t index = l->bindingCount; index > 0; --index)
+static uint32_t lookup(const Lowerer *l, const char *name) {
+    for (uint32_t index = l->bindingCount; index > l->bindingFloor; --index)
         if (same(name, l->bindings[index - 1].name)) return l->bindings[index - 1].slot;
     return INVALID_SLOT;
 }
@@ -141,7 +164,7 @@ static uint32_t lookup(Lowerer *l, const char *name) {
 static TZrBool bind(Lowerer *l, const SZrAstNode *node, const char *name, uint32_t slot) {
     if (name && l->bindingCount < ZR_STRICT_MAX_SLOTS) {
         uint32_t index = l->bindingCount;
-        while (index && l->bindings[index - 1].depth == l->depth) {
+        while (index > l->bindingFloor && l->bindings[index - 1].depth == l->depth) {
             if (same(name, l->bindings[--index].name)) {
                 (void)refuse(l, node, "duplicate strict binding");
                 return ZR_FALSE;
@@ -168,6 +191,17 @@ static uint32_t literal(Lowerer *l, const SZrAstNode *node) {
 }
 
 static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t expected);
+static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult, uint32_t *result);
+
+static const SZrFunctionCall *final_call(const SZrAstNode *node) {
+    const SZrAstNode *last;
+    const SZrAstNodeArray *members;
+    if (node->type != ZR_AST_PRIMARY_EXPRESSION) return NULL;
+    members = node->data.primaryExpression.members;
+    if (!count(members)) return NULL;
+    last = members->nodes[members->count - 1];
+    return last->type == ZR_AST_FUNCTION_CALL ? &last->data.functionCall : NULL;
+}
 
 static TZrBool member_expression(const SZrAstNode *node, const char **base, const char **field) {
     const SZrAstNode *part;
@@ -304,7 +338,8 @@ static uint32_t resolve_field(Lowerer *l, const SZrAstNode *node, uint32_t *slot
     if (!member_expression(node, &baseName, &field) || (*slot = lookup(l, baseName)) == INVALID_SLOT ||
         !(type = l->program.slotLayouts[*slot])) return refuse(l, node, "expected a statically resolved strict record field");
     index = field_id(&l->models[type - 1], l->program.layouts[type - 1].fieldCount, field);
-    if (index == INVALID_SLOT || !(l->models[type - 1].publicMask & (1u << index)))
+    if (index == INVALID_SLOT || (!(l->models[type - 1].publicMask & (1u << index)) &&
+                                 (!l->call || l->call->target->layout != type)))
         return refuse(l, node, "unknown or private strict record field");
     return index;
 }
@@ -412,8 +447,8 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
                     return refuse(l, node, "declare a scoped ref or ref readonly binding for this borrow");
                 input = lookup(l, identifier(expr->target));
                 if (input == INVALID_SLOT || !l->live[input]) return refuse(l, node, "borrow requires a live owner");
-                if (byte_view(expected) ? l->program.kinds[input] != ZR_STRICT_VALUE_MANUAL_BLOCK
-                                        : !l->program.slotLayouts[input])
+                if (byte_view(expected) ? (l->program.kinds[input] != ZR_STRICT_VALUE_MANUAL_BLOCK &&
+                                           !byte_view(l->program.kinds[input])) : !l->program.slotLayouts[input])
                     return refuse(l, node, "borrow target does not match the requested view");
                 slot = new_slot(l, expected, l->program.slotLayouts[input], node);
                 return slot != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_BORROW, slot, input, 0) ? slot : INVALID_SLOT;
@@ -432,6 +467,7 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             const SZrFunctionCall *allocation = manual_try_alloc_call(node);
             const SZrMemberExpression *member;
             if (allocation) return lower_manual_try_alloc(l, node, allocation);
+            if (final_call(node)) return lower_call(l, node, ZR_TRUE, &slot) ? slot : INVALID_SLOT;
             member = manual_view_member(l, node, &input);
             if (member) return lower_byte_read(l, node, input, member);
             index = resolve_field(l, node, &input);
@@ -489,6 +525,29 @@ static uint8_t binding_type(Lowerer *l, const SZrType *type, uint32_t *layout) {
     if (type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) return ZR_STRICT_VALUE_READONLY_BORROW;
     if (type->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) return ZR_STRICT_VALUE_BORROW;
     return ZR_STRICT_VALUE_RECORD;
+}
+
+static uint8_t parameter_kind(Lowerer *l, const SZrParameter *param, uint32_t *layout) {
+    SZrType type;
+    if (!param->typeInfo) return 0;
+    type = *param->typeInfo;
+    /* The parser separates the callable passing form from the parameter's
+     * type, while local ref declarations carry it on the type itself. */
+    if (param->passingMode == ZR_PARAMETER_PASSING_MODE_REF) {
+        if (type.referenceAccess != ZR_REFERENCE_ACCESS_NONE) return 0;
+        switch (param->sourcePassingForm) {
+            case ZR_PARAMETER_SOURCE_REF:
+            case ZR_PARAMETER_SOURCE_SCOPED_REF:
+                type.referenceAccess = ZR_REFERENCE_ACCESS_WRITABLE;
+                break;
+            case ZR_PARAMETER_SOURCE_REF_READONLY:
+            case ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY:
+                type.referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
+                break;
+            default: return 0;
+        }
+    } else if (param->passingMode != ZR_PARAMETER_PASSING_MODE_VALUE) return 0;
+    return binding_type(l, &type, layout);
 }
 
 static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node);
@@ -604,6 +663,184 @@ done:
     return ok;
 }
 
+static const Callable *find_callable(const Lowerer *l, uint32_t layout, const char *name) {
+    for (uint32_t index = 0; index < l->callableCount; ++index) {
+        const Callable *candidate = &l->callables[index];
+        if (candidate->layout == layout && same(candidate->name, name)) return candidate;
+    }
+    return NULL;
+}
+
+static TZrBool void_result(const SZrType *type) {
+    return !type || (same(identifier(type->name), "void") && !type->referenceAccess && !type->dimensions &&
+                     !type->subType && !type->ownershipQualifier && !type->isReadonlyView && !type->isDecoratorPseudoType);
+}
+
+static TZrBool match_slot(const Lowerer *l, uint32_t slot, uint8_t kind, uint32_t layout) {
+    return slot != INVALID_SLOT && l->program.kinds[slot] == kind && l->program.slotLayouts[slot] == layout;
+}
+
+static uint32_t assignment_op(uint8_t kind) {
+    if (kind < ZR_STRICT_VALUE_RECORD) return ZR_STRICT_OP_COPY;
+    if (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK) return ZR_STRICT_OP_TRANSFER;
+    return ZR_STRICT_OP_CLONE;
+}
+
+static const Callable *resolve_call(const Lowerer *l, const SZrAstNode *node, uint32_t *receiver) {
+    const SZrPrimaryExpression *primary = &node->data.primaryExpression;
+    const char *base = identifier(primary->property);
+    const SZrAstNode *member;
+    const Callable *target;
+    uint32_t type, slot;
+    if (!base) return NULL;
+    slot = lookup(l, base);
+    if (count(primary->members) == 1 && slot == INVALID_SLOT) return find_callable(l, 0, base);
+    if (count(primary->members) != 2) return NULL;
+    member = primary->members->nodes[0];
+    if (member->type != ZR_AST_MEMBER_EXPRESSION || member->data.memberExpression.computed ||
+        member->data.memberExpression.accessMode != ZR_POSTFIX_ACCESS_DIRECT) return NULL;
+    type = slot == INVALID_SLOT ? layout_id(l, base) : l->program.slotLayouts[slot];
+    if (!type) return NULL;
+    target = find_callable(l, type, identifier(member->data.memberExpression.property));
+    if (!target || (target->receiver != 0) != (slot != INVALID_SLOT)) return NULL;
+    if (!target->isPublic && (!l->call || l->call->target->layout != type)) return NULL;
+    if (slot != INVALID_SLOT && !l->live[slot]) return NULL;
+    *receiver = slot;
+    return target;
+}
+
+/* Inline a statically resolved body. The only artifact edges are typed jumps;
+ * the callee sees arguments and its receiver, with no access to caller locals. */
+static TZrBool lower_call(Lowerer *l, const SZrAstNode *node, TZrBool needResult, uint32_t *result) {
+    const SZrFunctionCall *invocation = final_call(node);
+    uint32_t receiver = INVALID_SLOT, loan = INVALID_SLOT, output = INVALID_SLOT, type = 0;
+    const Callable *target = resolve_call(l, node, &receiver);
+    uint32_t depth = 0, first, savedBindings = l->bindingCount, savedFloor = l->bindingFloor;
+    uint32_t args[ZR_STRICT_MAX_FIELDS];
+    uint8_t kind = 0;
+    TZrBool savedTermination = l->terminated, ok = ZR_FALSE;
+    const char *error = "call target is not a statically resolved StrictNoGC function or method";
+    if (!target || !invocation || invocation->accessMode != ZR_POSTFIX_ACCESS_DIRECT) goto fail;
+    if (invocation->hasNamedArgs || count(invocation->genericArguments) || count(invocation->args) != count(target->params)) {
+        error = "strict calls require matching positional arguments";
+        goto fail;
+    }
+    for (const CallScope *outer = l->call; outer; outer = outer->outer) {
+        if (outer->target == target || ++depth >= 64) {
+            error = "recursive or deeply nested strict calls require a separate executable frame";
+            goto fail;
+        }
+    }
+    if (!void_result(target->output)) {
+        kind = binding_type(l, target->output, &type);
+        if (!kind || is_borrow(kind)) {
+            error = "strict calls must return a fixed value or owner; a scoped view cannot escape";
+            goto fail;
+        }
+        output = new_slot(l, kind, type, node);
+        if (output == INVALID_SLOT) return ZR_FALSE;
+    } else if (needResult) {
+        error = "void strict call has no value";
+        goto fail;
+    }
+    first = l->program.slotCount;
+    if (receiver != INVALID_SLOT) {
+        loan = new_slot(l, target->receiver, target->layout, node);
+        if (loan == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_BORROW, loan, receiver, 0)) return ZR_FALSE;
+    }
+    for (size_t index = 0; index < count(target->params); ++index) {
+        const SZrParameter *parameter = &target->params->nodes[index]->data.parameter;
+        const SZrCallArgumentSyntax *marker = invocation->argumentMarkers && index < invocation->argumentMarkers->length
+                                             ? ZrCore_Array_Get(invocation->argumentMarkers, index) : NULL;
+        uint32_t layout = 0, input;
+        kind = parameter_kind(l, parameter, &layout);
+        if (!kind || (marker && (marker->marker == ZR_CALL_ARGUMENT_MARKER_OUT ||
+                                 (!is_borrow(kind) && marker->marker != ZR_CALL_ARGUMENT_MARKER_NONE)))) {
+            error = "unsupported strict argument or parameter type";
+            goto fail;
+        }
+        input = lower_expression(l, invocation->args->nodes[index], kind);
+        if (input == INVALID_SLOT) return ZR_FALSE;
+        if (is_borrow(kind)) {
+            uint8_t inferred = l->program.kinds[input];
+            TZrBool marked = marker && marker->marker == ZR_CALL_ARGUMENT_MARKER_REF;
+            TZrBool owner = byte_view(kind) ? inferred == ZR_STRICT_VALUE_MANUAL_BLOCK :
+                (inferred == ZR_STRICT_VALUE_RECORD || inferred == ZR_STRICT_VALUE_UNIQUE || inferred == ZR_STRICT_VALUE_SHARED);
+            if (l->program.slotLayouts[input] == layout && (inferred == kind || (marked && owner) ||
+                (kind == ZR_STRICT_VALUE_READONLY_BORROW && inferred == ZR_STRICT_VALUE_BORROW) ||
+                (kind == ZR_STRICT_VALUE_READONLY_BYTE_VIEW && inferred == ZR_STRICT_VALUE_BYTE_VIEW))) {
+                args[index] = new_slot(l, kind, layout, node);
+                if (args[index] == INVALID_SLOT || !emit(l, node, ZR_STRICT_OP_BORROW, args[index], input, 0)) return ZR_FALSE;
+                continue;
+            }
+        } else if (match_slot(l, input, kind, layout)) {
+            args[index] = new_slot(l, kind, layout, node);
+            if (args[index] == INVALID_SLOT || !emit(l, node, assignment_op(kind), args[index], input, 0)) return ZR_FALSE;
+            continue;
+        }
+        error = "argument does not match the strict parameter type";
+        goto fail;
+    }
+
+    CallScope scope = {l->call, target, output, first, 0};
+    l->call = &scope;
+    l->bindingFloor = savedBindings;
+    l->terminated = ZR_FALSE;
+    ++l->depth;
+    if (loan != INVALID_SLOT && !bind(l, node, "this", loan)) goto done;
+    for (size_t index = 0; index < count(target->params); ++index) {
+        if (!bind(l, node, name_of(target->params->nodes[index]->data.parameter.name), args[index])) goto done;
+    }
+    if (!lower_block(l, target->body)) goto done;
+    if (!l->terminated) {
+        if (output != INVALID_SLOT) {
+            (void)refuse(l, node, "every continuing path through a strict call must return its declared value");
+            goto done;
+        }
+        if (!release_slots(l, node, first)) goto done;
+    }
+    while (scope.exits) {
+        ZrStrictInstruction *jump = &l->program.instructions[scope.exits - 1];
+        scope.exits = (uint32_t)jump->immediate;
+        jump->immediate = l->program.instructionCount;
+    }
+    if (output != INVALID_SLOT && l->program.kinds[output] >= ZR_STRICT_VALUE_RECORD) l->live[output] = 1;
+    *result = output;
+    ok = ZR_TRUE;
+done:
+    --l->depth;
+    l->call = scope.outer;
+    l->bindingFloor = savedFloor;
+    l->bindingCount = savedBindings;
+    l->terminated = savedTermination;
+    return ok;
+fail:
+    (void)refuse(l, node, error);
+    return ZR_FALSE;
+}
+
+static TZrBool lower_call_return(Lowerer *l, const SZrAstNode *node) {
+    uint32_t out = l->call->result;
+    const SZrAstNode *value = node->data.returnStatement.expr;
+    if (out != INVALID_SLOT && value) {
+        uint8_t kind = l->program.kinds[out];
+        uint32_t input = lower_expression(l, value, kind);
+        if (input == INVALID_SLOT) return ZR_FALSE;
+        if (!match_slot(l, input, kind, l->program.slotLayouts[out])) goto mismatch;
+        if (!emit(l, node, assignment_op(kind), out, input, 0)) return ZR_FALSE;
+    } else if (out != INVALID_SLOT || value) {
+        goto mismatch;
+    }
+    if (!release_slots(l, node, l->call->firstLocal) ||
+        !emit(l, node, ZR_STRICT_OP_JUMP, 0, 0, l->call->exits)) return ZR_FALSE;
+    l->call->exits = l->program.instructionCount;
+    l->terminated = ZR_TRUE;
+    return ZR_TRUE;
+mismatch:
+    (void)refuse(l, node, "return does not match the strict callable signature");
+    return ZR_FALSE;
+}
+
 static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
     uint32_t input, dst, type = 0, field;
     const SZrAstNode *expr = node->type == ZR_AST_EXPRESSION_STATEMENT ? node->data.expressionStatement.expr : node;
@@ -625,9 +862,7 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             kind = l->program.kinds[input];
             dst = input;
             if (identifier(decl->value)) {
-                uint32_t op = kind < ZR_STRICT_VALUE_RECORD ? ZR_STRICT_OP_COPY :
-                    (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK)
-                    ? ZR_STRICT_OP_TRANSFER : ZR_STRICT_OP_CLONE;
+                uint32_t op = assignment_op(kind);
                 dst = new_slot(l, kind, l->program.slotLayouts[input], node);
                 if (dst == INVALID_SLOT || !emit(l, node, op, dst, input, 0)) return ZR_FALSE;
             }
@@ -642,10 +877,16 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             break;
         case ZR_AST_RETURN_STATEMENT:
             if (expr->data.returnStatement.isReferenceReturn) break;
+            if (l->call) return lower_call_return(l, expr);
             l->terminated = ZR_TRUE;
             if (!expr->data.returnStatement.expr) return emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
             input = lower_expression(l, expr->data.returnStatement.expr, 0);
             return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);
+        case ZR_AST_PRIMARY_EXPRESSION: {
+            uint32_t first = l->program.slotCount;
+            if (!final_call(expr)) break;
+            return lower_call(l, expr, ZR_FALSE, &input) && release_slots(l, node, first);
+        }
         case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
             if (expr->data.ownershipIntrinsicExpression.operation != ZR_OWNERSHIP_INTRINSIC_DROP) break;
             input = lower_expression(l, expr->data.ownershipIntrinsicExpression.argument, 0);
@@ -664,6 +905,91 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
     }
     (void)refuse(l, expr, "statement has no verified StrictNoGC lowering");
     return ZR_FALSE;
+}
+
+static TZrBool add_callable(Lowerer *l, const SZrAstNode *node, uint32_t layout) {
+    Callable call = {.layout = layout};
+    EZrMethodReceiverModifier receiver = ZR_METHOD_RECEIVER_DEFAULT;
+    TZrBool isStatic = ZR_TRUE, implicitReadonly = ZR_FALSE;
+    if (node->type == ZR_AST_FUNCTION_DECLARATION && !layout) {
+        const SZrFunctionDeclaration *f = &node->data.functionDeclaration;
+        if (f->generic || f->args || f->isAsync || count(f->decorators)) goto unsupported;
+        call = (Callable){name_of(f->name), f->params, f->returnType, f->body, 0, 0, ZR_TRUE};
+    } else if (node->type == ZR_AST_CLASS_METHOD && layout) {
+        const SZrClassMethod *m = &node->data.classMethod;
+        if (m->generic || m->args || m->isAsync || m->receiverQualifier || count(m->decorators) ||
+            (m->modifierFlags & ~((TZrUInt32)ZR_DECLARATION_MODIFIER_FINAL))) goto unsupported;
+        call = (Callable){name_of(m->name), m->params, m->returnType, m->body, layout, 0, m->access == ZR_ACCESS_PUBLIC};
+        isStatic = m->isStatic;
+        receiver = m->receiverModifier;
+    } else if (node->type == ZR_AST_STRUCT_METHOD && layout) {
+        const SZrStructMethod *m = &node->data.structMethod;
+        if (m->generic || m->args || m->isAsync || m->receiverQualifier || count(m->decorators)) goto unsupported;
+        call = (Callable){name_of(m->name), m->params, m->returnType, m->body, layout, 0, m->access == ZR_ACCESS_PUBLIC};
+        isStatic = m->isStatic;
+        receiver = m->receiverModifier;
+        implicitReadonly = m->isImplicitReadonlyReceiver;
+    } else goto unsupported;
+
+    if (!isStatic) call.receiver = implicitReadonly || receiver == ZR_METHOD_RECEIVER_CONST
+                                      ? ZR_STRICT_VALUE_READONLY_BORROW : ZR_STRICT_VALUE_BORROW;
+    if (!call.name || !call.body || call.body->type != ZR_AST_BLOCK || count(call.params) > ZR_STRICT_MAX_FIELDS ||
+        l->callableCount == ZR_STRICT_MAX_SLOTS || find_callable(l, layout, call.name)) goto unsupported;
+    for (size_t index = 0; index < count(call.params); ++index) {
+        const SZrAstNode *arg = call.params->nodes[index];
+        const SZrParameter *param;
+        const char *name;
+        if (!arg || arg->type != ZR_AST_PARAMETER) goto unsupported;
+        param = &arg->data.parameter;
+        name = name_of(param->name);
+        if (!name || same(name, "this") || !param->typeInfo || param->defaultValue || count(param->decorators) ||
+            (param->passingMode != ZR_PARAMETER_PASSING_MODE_VALUE && param->passingMode != ZR_PARAMETER_PASSING_MODE_REF))
+            goto unsupported;
+        for (size_t prior = 0; prior < index; ++prior)
+            if (same(name, name_of(call.params->nodes[prior]->data.parameter.name))) goto unsupported;
+    }
+    l->callables[l->callableCount++] = call;
+    return ZR_TRUE;
+unsupported:
+    (void)refuse(l, node, "strict call declarations require a unique, statically resolved signature");
+    return ZR_FALSE;
+}
+
+/* Call bodies that are never referenced do not reach executable lowering.
+ * Still reject explicit managed value forms there, before discarding the body. */
+static TZrBool check_callable_value_form(const SZrAstNode *node, void *context) {
+    switch (node->type) {
+        case ZR_AST_STRING_LITERAL: case ZR_AST_TEMPLATE_STRING_LITERAL:
+        case ZR_AST_ARRAY_LITERAL: case ZR_AST_OBJECT_LITERAL: case ZR_AST_LAMBDA_EXPRESSION:
+        case ZR_AST_TYPE_QUERY_EXPRESSION: case ZR_AST_GENERATOR_EXPRESSION:
+        case ZR_AST_YIELD_STATEMENT: case ZR_AST_AWAIT_EXPRESSION:
+            (void)refuse(context, node, "strict callable contains a managed or unsupported value form");
+            return ZR_FALSE;
+        default: return ZR_TRUE;
+    }
+}
+
+static TZrBool check_callable_types(Lowerer *l, const Callable *call) {
+    uint32_t layout = 0;
+    if (!void_result(call->output)) {
+        uint8_t kind = binding_type(l, call->output, &layout);
+        if (!kind || is_borrow(kind)) {
+            (void)refuse(l, call->body, "strict calls must return a fixed value or owner; a scoped view cannot escape");
+            return ZR_FALSE;
+        }
+    }
+    for (size_t index = 0; index < count(call->params); ++index) {
+        const SZrAstNode *param = call->params->nodes[index];
+        if (!parameter_kind(l, &param->data.parameter, &layout)) {
+            (void)refuse(l, param, "unsupported strict parameter type");
+            return ZR_FALSE;
+        }
+    }
+    if (!ZrParser_Ast_Visit(call->body, check_callable_value_form, l)) {
+        (void)refuse(l, call->body, "could not verify strict call body");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
@@ -711,6 +1037,9 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
             const SZrStructField *f = &member->data.structField;
             if (f->isStatic || count(f->decorators) || f->reservedRemovedUsingManaged) goto unsupported;
             type = f->typeInfo; init = f->init; fieldName = name_of(f->name); isConst = f->isConst; access = f->access;
+        } else if ((resource && member->type == ZR_AST_CLASS_METHOD) || (!resource && member->type == ZR_AST_STRUCT_METHOD)) {
+            if (!add_callable(l, member, l->program.layoutCount)) return ZR_FALSE;
+            continue;
         } else {
             const SZrAstNode *body;
             const SZrAstNodeArray *params;
@@ -753,6 +1082,8 @@ static TZrBool add_record(Lowerer *l, const SZrAstNode *node) {
         if (isConst || readonly) layout->readonlyMask |= 1u << field;
         if (access == ZR_ACCESS_PUBLIC) model->publicMask |= 1u << field;
     }
+    for (uint32_t field = 0; field < layout->fieldCount; ++field)
+        if (find_callable(l, l->program.layoutCount, model->fields[field])) goto unsupported;
     return ZR_TRUE;
 unsupported:
     (void)refuse(l, node, "strict record requires a fixed scalar layout and a statically checked constructor");
@@ -781,17 +1112,21 @@ TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const TZrChar *source, TZrS
     l.program.layouts = calloc(ZR_STRICT_MAX_LAYOUTS, sizeof(*l.program.layouts));
     l.models = calloc(ZR_STRICT_MAX_LAYOUTS, sizeof(*l.models));
     l.bindings = calloc(ZR_STRICT_MAX_SLOTS, sizeof(*l.bindings));
-    if (!l.program.kinds || !l.program.slotLayouts || !l.program.layouts || !l.models || !l.bindings) goto done;
+    l.callables = calloc(ZR_STRICT_MAX_SLOTS, sizeof(*l.callables));
+    if (!l.program.kinds || !l.program.slotLayouts || !l.program.layouts || !l.models || !l.bindings || !l.callables) goto done;
     statements = root->data.script.statements;
     for (size_t index = 0; index < count(statements); ++index) {
         const SZrAstNode *node = statements->nodes[index];
         if ((node->type == ZR_AST_STRUCT_DECLARATION || node->type == ZR_AST_CLASS_DECLARATION) &&
             !add_record(&l, node)) goto done;
+        if (node->type == ZR_AST_FUNCTION_DECLARATION && !add_callable(&l, node, 0)) goto done;
     }
+    for (uint32_t index = 0; index < l.callableCount; ++index)
+        if (!check_callable_types(&l, &l.callables[index])) goto done;
     for (size_t index = 0; index < count(statements); ++index) {
         const SZrAstNode *node = statements->nodes[index];
         if (node->type == ZR_AST_STRUCT_DECLARATION || node->type == ZR_AST_CLASS_DECLARATION ||
-            node->type == ZR_AST_MODULE_DECLARATION) continue;
+            node->type == ZR_AST_MODULE_DECLARATION || node->type == ZR_AST_FUNCTION_DECLARATION) continue;
         if (!lower_statement(&l, node)) goto done;
     }
     if (!emit(&l, root, ZR_STRICT_OP_HALT, 0, 0, 0)) goto done;
@@ -807,6 +1142,7 @@ done:
     if (!success && !error[0]) (void)refuse(&l, root, "could not build the strict record program");
     free(l.models);
     free(l.bindings);
+    free(l.callables);
     free(l.locations);
     ZrStrictProgram_Free(&l.program);
     ZrParser_Ast_Free(state, root);

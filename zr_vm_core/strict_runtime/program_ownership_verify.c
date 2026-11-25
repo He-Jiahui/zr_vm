@@ -79,9 +79,13 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
         case ZR_STRICT_OP_DROP:
             return !dst && source >= ZR_STRICT_VALUE_RECORD && !zr_strict_is_borrow(source) && !i->immediate;
         case ZR_STRICT_OP_BORROW:
-            if (zr_strict_is_byte_view(destination)) return source == ZR_STRICT_VALUE_MANUAL_BLOCK && !i->immediate;
-            return zr_strict_is_record_borrow(destination) && record_data_kind(source) && !zr_strict_is_borrow(source) &&
-                   !(destination == ZR_STRICT_VALUE_BORROW && source == ZR_STRICT_VALUE_SHARED) &&
+            if (zr_strict_is_byte_view(destination)) {
+                return !i->immediate && (source == ZR_STRICT_VALUE_MANUAL_BLOCK || source == ZR_STRICT_VALUE_BYTE_VIEW ||
+                    (destination == ZR_STRICT_VALUE_READONLY_BYTE_VIEW && source == ZR_STRICT_VALUE_READONLY_BYTE_VIEW));
+            }
+            return zr_strict_is_record_borrow(destination) && record_data_kind(source) &&
+                   !(destination == ZR_STRICT_VALUE_BORROW &&
+                     (source == ZR_STRICT_VALUE_SHARED || source == ZR_STRICT_VALUE_READONLY_BORROW)) &&
                    !i->immediate && p->slotLayouts[dst] == p->slotLayouts[src];
         case ZR_STRICT_OP_END_BORROW:
             return !dst && zr_strict_is_borrow(source) && !i->immediate;
@@ -136,7 +140,7 @@ static int apply_owner_flow(const ZrStrictProgram *p, const ZrStrictInstruction 
             facts[dst].base = (uint16_t)(src + 1);
             break;
         case ZR_STRICT_OP_END_BORROW:
-            if (!facts[src].available) return 0;
+            if (!can_consume(&facts[src])) return 0;
             if (zr_strict_borrow_is_writable(p->kinds[src])) facts[facts[src].base - 1].writer = 0;
             else --facts[facts[src].base - 1].readers;
             memset(&facts[src], 0, sizeof(facts[src]));

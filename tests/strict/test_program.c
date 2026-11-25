@@ -257,6 +257,30 @@ static void test_manual_byte_ownership_and_faults(void) {
     assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 8);
 }
 
+static void test_strict_reborrow_keeps_parent_view_live(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_UNIQUE, ZR_STRICT_VALUE_BORROW, ZR_STRICT_VALUE_READONLY_BORROW};
+    uint32_t types[] = {0, 1, 1, 1};
+    ZrStrictRecordLayout layout = {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_I64}, .name = "Counter"};
+    ZrStrictInstruction instructions[] = {
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 42},
+        {ZR_STRICT_OP_OWN_RECORD, 1, 0, 0, 0},
+        {ZR_STRICT_OP_BORROW, 2, 1, 0, 0},
+        {ZR_STRICT_OP_BORROW, 3, 2, 0, 0},
+        {ZR_STRICT_OP_FIELD_READ, 0, 3, 0, 0},
+        {ZR_STRICT_OP_END_BORROW, 0, 3, 0, 0},
+        {ZR_STRICT_OP_END_BORROW, 0, 2, 0, 0},
+        {ZR_STRICT_OP_DROP, 0, 1, 0, 0},
+        {ZR_STRICT_OP_RETURN, 0, 0, 0, 0},
+    };
+    ZrStrictProgram p = {.kinds = kinds, .slotCount = 4, .instructions = instructions, .instructionCount = 9,
+                         .slotLayouts = types, .layouts = &layout, .layoutCount = 1};
+    ZrStrictResult result;
+    uint32_t pc;
+    assert(ZrStrictProgram_Run(&p, &result, &pc) == ZR_STRICT_PROGRAM_OK && result.scalar == 42);
+    instructions[4] = (ZrStrictInstruction){ZR_STRICT_OP_END_BORROW, 0, 2, 0, 0};
+    assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 4);
+}
+
 int main(void) {
     test_verified_control_flow_round_trip();
     test_unverified_programs_fail_closed();
@@ -265,5 +289,6 @@ int main(void) {
     test_ownership_joins_validate_all_incoming_paths();
     test_owned_frame_unwinds_allocation_failure();
     test_manual_byte_ownership_and_faults();
+    test_strict_reborrow_keeps_parent_view_live();
     return 0;
 }
