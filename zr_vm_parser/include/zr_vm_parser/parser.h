@@ -101,6 +101,11 @@ ZR_PARSER_API SZrAstNode *ZrParser_ParseTokenStream(
         const SZrTokenStream *stream,
         SZrString *sourceName);
 
+/* Preorder over owning AST edges. A missing visitor, unknown node shape, or
+ * callback refusal terminates the traversal and returns false. */
+typedef TZrBool (*TZrParserAstVisitor)(const SZrAstNode *node, void *context);
+ZR_PARSER_API TZrBool ZrParser_Ast_Visit(SZrAstNode *root, TZrParserAstVisitor visitor, void *context);
+
 /** @brief 递归释放解析器构造的 AST 子树及节点数组，不释放 VM 字符串。 */
 ZR_PARSER_API void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node);
 

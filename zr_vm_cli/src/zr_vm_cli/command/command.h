@@ -68,6 +68,7 @@ typedef struct SZrCliCommand {
     TZrBool emitZrm;
     TZrBool emitAotC;
     TZrBool incremental;
+    TZrBool requireStrictNoGc;
     TZrBool emitExecutedVia;
     TZrBool debugEnabled;
     TZrBool debugWait;

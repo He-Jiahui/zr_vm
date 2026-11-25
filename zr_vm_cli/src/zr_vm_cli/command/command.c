@@ -74,6 +74,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->emitZrm = ZR_FALSE;
     command->emitAotC = ZR_FALSE;
     command->incremental = ZR_FALSE;
+    command->requireStrictNoGc = ZR_FALSE;
     command->emitExecutedVia = ZR_FALSE;
     command->debugEnabled = ZR_FALSE;
     command->debugWait = ZR_FALSE;
@@ -194,6 +195,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
             "  --emit-aot-c                     Emit AOT C sources under the project binary directory.\n"
             "  --incremental                    Use manifest-based incremental compilation.\n"
+            "  --require-strict-no-gc           Require StrictNoGC in the project manifest.\n"
             "  --run                            Run the compiled project after a successful compile.\n"
             "\n"
             "Passthrough:\n"
@@ -285,6 +287,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
              "  --emit-aot-c                     Emit AOT C sources under the project binary directory.\n"
              "  --incremental                    Use manifest-based incremental compilation.\n"
+            "  --require-strict-no-gc           Require StrictNoGC in the project manifest.\n"
              "  --run                            Run the compiled project after a successful compile.\n"
              "\n"
              "Passthrough:\n"
@@ -749,6 +752,11 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "--require-strict-no-gc") == 0) {
+            outCommand->requireStrictNoGc = ZR_TRUE;
+            continue;
+        }
+
         if (strcmp(argument, "--incremental") == 0) {
             outCommand->incremental = ZR_TRUE;
             continue;
@@ -881,6 +889,13 @@ TZrBool ZrCli_Command_Parse(int argc,
 
         positionalSeen = ZR_TRUE;
         positionalPath = argument;
+    }
+
+    if (outCommand->requireStrictNoGc && primaryMode != ZR_CLI_PRIMARY_MODE_COMPILE &&
+        primaryMode != ZR_CLI_PRIMARY_MODE_PROJECT && primaryMode != ZR_CLI_PRIMARY_MODE_POSITIONAL_PROJECT) {
+        zr_cli_write_error(errorBuffer, errorBufferSize,
+                           "--require-strict-no-gc requires a project run or compile command");
+        return ZR_FALSE;
     }
 
     if (!outCommand->debugEnabled &&

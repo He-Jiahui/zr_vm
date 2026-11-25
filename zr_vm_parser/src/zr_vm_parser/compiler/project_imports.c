@@ -88,7 +88,7 @@ static TZrBool project_imports_is_build_dependency(
         const TZrChar *rawSpecifier) {
     SZrLibrary_ModuleSpecifier specifier;
 
-    if (project == ZR_NULL || project->manifestVersion != 2U ||
+    if (project == ZR_NULL || project->manifestVersion < 2U ||
         rawSpecifier == ZR_NULL ||
         !ZrLibrary_ModuleSpecifier_Parse(
                 rawSpecifier, &specifier, ZR_NULL, 0U) ||

@@ -113,6 +113,13 @@ function(zr_vm_add_support_target target_name)
     zr_vm_apply_common_test_settings(${target_name})
 endfunction()
 
+add_executable(zr_vm_test_strict_ownership strict/test_ownership.c)
+target_link_libraries(zr_vm_test_strict_ownership PRIVATE zr_vm_strict_runtime)
+add_test(NAME test_strict_ownership COMMAND zr_vm_test_strict_ownership)
+add_executable(zr_vm_test_strict_program strict/test_program.c)
+target_link_libraries(zr_vm_test_strict_program PRIVATE zr_vm_strict_runtime)
+add_test(NAME test_strict_program COMMAND zr_vm_test_strict_program)
+
 add_executable(
         zr_vm_test_log_failure_probe
         ${CMAKE_SOURCE_DIR}/tests/harness/test_zr_test_log_failure_probe.c
@@ -867,6 +874,17 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-call-binding-status-tests.cmak
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-compiler-boundary-tests.cmake")
 
 if(TARGET zr_vm_cli_executable)
+    add_test(NAME strict_manifest_runtime_boundary
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/strict_manifest_runtime_boundary"
+            "-DC_COMPILER=${CMAKE_C_COMPILER}" "-DMSVC=${MSVC}" "-DEXE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}"
+            "-DMSVC_CRT=$<IF:$<CONFIG:Debug>,/MDd,/MD>"
+            "-DSTRICT_INCLUDE=${CMAKE_SOURCE_DIR}/zr_vm_core/strict_runtime/include"
+            "-DSTRICT_ARCHIVE=$<TARGET_FILE:zr_vm_strict_runtime>"
+            "-DSTRICT_SYMBOL_TOOL=${CMAKE_NM}"
+            "-DSTRICT_DEBUG=$<IF:$<CONFIG:Debug>,ON,OFF>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/strict_manifest_runtime_boundary.cmake")
     foreach(case IN ITEMS writeback field_write nested_init)
         foreach(mode IN ITEMS interp binary)
             add_test(NAME struct_array_${case}_${mode}

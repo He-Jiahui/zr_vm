@@ -1,6 +1,7 @@
 #include "type_inference/dataflow/semantic_da_ast.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_parser/parser.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,6 +17,8 @@ typedef struct SZrSemanticDaAstBuilder {
     SZrSemanticDaAstEntry *entries;
     TZrSize capacity;
     TZrSize count;
+    TZrParserAstVisitor visitor;
+    void *visitorContext;
 } SZrSemanticDaAstBuilder;
 
 static TZrBool semantic_da_ast_walk(SZrSemanticDaAstBuilder *builder,
@@ -395,6 +398,9 @@ static TZrBool semantic_da_ast_walk_children(SZrSemanticDaAstBuilder *builder,
             CHILD(assignmentExpression.left);
             CHILD(assignmentExpression.right);
             break;
+        case ZR_AST_UNPACK_LITERAL:
+            CHILD(unpackLiteral.element);
+            break;
         case ZR_AST_KEY_VALUE_PAIR:
             CHILD(keyValuePair.key);
             CHILD(keyValuePair.value);
@@ -481,8 +487,18 @@ static TZrBool semantic_da_ast_walk_children(SZrSemanticDaAstBuilder *builder,
         case ZR_AST_TUPLE_TYPE:
             ARRAY(tupleType.elements);
             break;
-        default:
+        case ZR_AST_ACCESS_MODIFIER:
+        case ZR_AST_BOOLEAN_LITERAL:
+        case ZR_AST_CHAR_LITERAL:
+        case ZR_AST_FLOAT_LITERAL:
+        case ZR_AST_IDENTIFIER_LITERAL:
+        case ZR_AST_INTEGER_LITERAL:
+        case ZR_AST_META_IDENTIFIER:
+        case ZR_AST_NULL_LITERAL:
+        case ZR_AST_STRING_LITERAL:
             break;
+        default:
+            return builder->visitor == ZR_NULL;
     }
 #undef CHILD
 #undef ARRAY
@@ -505,6 +521,9 @@ static TZrBool semantic_da_ast_walk(SZrSemanticDaAstBuilder *builder,
         (builder->entries != ZR_NULL && builder->count >= builder->capacity)) {
         return ZR_FALSE;
     }
+    if (builder->visitor != ZR_NULL && !builder->visitor(node, builder->visitorContext)) {
+        return ZR_FALSE;
+    }
     begin = builder->count++;
     if (builder->entries != ZR_NULL) {
         builder->entries[begin].node = node;
@@ -519,6 +538,11 @@ static TZrBool semantic_da_ast_walk(SZrSemanticDaAstBuilder *builder,
         builder->entries[begin].end = builder->count;
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_Ast_Visit(SZrAstNode *root, TZrParserAstVisitor visitor, void *context) {
+    SZrSemanticDaAstBuilder builder = {.visitor = visitor, .visitorContext = context};
+    return root != ZR_NULL && visitor != ZR_NULL && semantic_da_ast_walk(&builder, root, ZR_NULL);
 }
 
 static int semantic_da_ast_compare_address(const void *left, const void *right) {
@@ -559,7 +583,7 @@ void ZrParser_SemanticDaAst_Free(SZrSemanticDaAstIndex *index) {
 TZrBool ZrParser_SemanticDaAst_Build(SZrState *state,
                                    SZrAstNode *root,
                                    SZrSemanticDaAstIndex *index) {
-    SZrSemanticDaAstBuilder builder = { ZR_NULL, 0, 0 };
+    SZrSemanticDaAstBuilder builder = {0};
     TZrSize position;
 
     if (state == ZR_NULL || state->global == ZR_NULL || root == ZR_NULL || index == ZR_NULL ||

@@ -155,6 +155,7 @@ typedef struct SZrCompilerState {
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
     SZrArray functionRoots;             // temporary SZrGcRootLease owners until assembly/cleanup
     TZrBool emitTestManifest;
+    TZrBool preserveSourceLiteralPool;  // Retained IR checks the exact source constant pool.
     SZrArray testManifestEntries;       // SZrParserTestEntry
     
     // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）

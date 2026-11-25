@@ -59,6 +59,11 @@ jobs:
           -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
       - name: Build all default targets
         run: cmake --build "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}" --parallel 2
+      - name: Test StrictNoGC interpreter and native C
+        run: >-
+          ctest --test-dir "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
+          --output-on-failure --no-tests=error
+          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|language_server_stdio_strict_no_gc_diagnostics)$'
       - name: Validate required CTest registrations
         env:
           BUILD_DIR: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}
@@ -175,6 +180,9 @@ jobs:
         run: |
           git rev-parse HEAD
           git rev-parse 'HEAD^{tree}'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
       - name: Configure Debug
         run: >-
           cmake -S . -B "D:/cargo-targets/zr-ci"
@@ -187,6 +195,7 @@ jobs:
         run: >-
           cmake --build "D:/cargo-targets/zr-ci" --config Debug --parallel 2
           --target zr_vm_cli_executable zr_vm_language_server_stdio
+          zr_vm_test_strict_ownership zr_vm_test_strict_program
           zr_vm_language_server_stdio_document_close_test
           zr_vm_language_server_inlay_semantic_facts_test
           zr_vm_language_server_lsp_project_features_test
@@ -197,6 +206,11 @@ jobs:
           zr_vm_fused_add_operand_packing_test
           zr_vm_function_instruction_verification_test
           zr_vm_project_import_resolver_test
+      - name: Test StrictNoGC interpreter and native C
+        run: >-
+          ctest --test-dir "D:/cargo-targets/zr-ci"
+          -C Debug --output-on-failure --no-tests=error
+          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|language_server_stdio_strict_no_gc_diagnostics)$'
       - name: Validate required Windows CTest registrations
         env:
           BUILD_DIR: D:/cargo-targets/zr-ci

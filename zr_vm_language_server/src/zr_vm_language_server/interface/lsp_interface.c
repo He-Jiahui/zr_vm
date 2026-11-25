@@ -8,6 +8,7 @@
 #include "metadata/lsp_native_declaration_projection.h"
 #include "metadata/lsp_virtual_document_identity.h"
 #include "project/lsp_project_internal.h"
+#include "zr_vm_parser/strict_no_gc.h"
 #include "project/lsp_workspace.h"
 #include "semantic/query/lsp_local_semantic_query.h"
 #include "semantic/query/lsp_semantic_reference_query.h"
@@ -1811,6 +1812,29 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(
     return ZrLanguageServer_LspSemanticCacheLru_GetInfo(context, outInfo);
 }
 
+typedef struct SZrLspStrictDiagnosticContext {
+    SZrState *state;
+    SZrLspContext *lsp;
+    SZrString *uri;
+    SZrArray *result;
+} SZrLspStrictDiagnosticContext;
+
+static void append_strict_source_diagnostic(void *context, const SZrFileRange *range,
+                                            const TZrChar *code, const TZrChar *message) {
+    SZrLspStrictDiagnosticContext *target = context;
+    SZrFileRange location = *range;
+    SZrDiagnostic *diagnostic;
+    if (location.source == ZR_NULL) {
+        location.source = target->uri;
+    }
+    diagnostic = ZrLanguageServer_Diagnostic_New(target->state, ZR_DIAGNOSTIC_ERROR, location, message, code);
+    if (diagnostic != ZR_NULL) {
+        ZrLanguageServer_Lsp_AppendDiagnosticForDocument(target->state, target->lsp, target->uri,
+                                                         target->result, diagnostic);
+        ZrLanguageServer_Diagnostic_Free(target->state, diagnostic);
+    }
+}
+
 /**
  * @brief 汇总当前文档的解析、语义与导入诊断供发布器和代码动作消费。
  * @details 虚拟声明页无诊断；回退 AST 时只发布当前解析错误，避免把旧语义问题投影到新文本。
@@ -1858,6 +1882,19 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
 
     if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst) {
         return ZR_TRUE;
+    }
+
+    if (fileVersion->ast != ZR_NULL && !fileVersion->usesFallbackAst && projectIndex != ZR_NULL &&
+        projectIndex->project != ZR_NULL &&
+        projectIndex->project->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
+        SZrLspStrictDiagnosticContext target = {state, context, uri, result};
+        if (ZrParser_StrictNoGc_CheckSource(fileVersion->ast, append_strict_source_diagnostic, &target) ==
+            ZR_STRICT_NO_GC_SOURCE_UNSUPPORTED_AST) {
+            SZrFilePosition start = ZrParser_FilePosition_Create(0, 1, 1);
+            SZrFileRange position = ZrParser_FileRange_Create(start, start, uri);
+            append_strict_source_diagnostic(&target, &position, "strict_no_gc_source_unverifiable",
+                                           "StrictNoGC could not verify this source tree.");
+        }
     }
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);

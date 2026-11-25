@@ -28,6 +28,8 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
 TZrBool ZrCli_Compiler_ApplyProjectAotWriterOptions(const SZrCliProjectContext *project,
                                                     SZrAotWriterOptions *options);
 /** @brief 将编译成败转换为进程退出码的 app 入口。 */
+/* Selects only the strict compiler and runtime. No managed fallback. */
+int ZrCli_Compiler_DispatchStrict(const SZrCliCommand *command);
 int ZrCli_Compiler_CompileProject(const SZrCliCommand *command);
 
 #endif

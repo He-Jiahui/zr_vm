@@ -77,7 +77,7 @@ static void test_project_manifest_v2_rejects_incomplete_or_unsupported_base_enve
             "{\"manifestVersion\":2.5,\"name\":\"physics\",\"version\":\"1.0.0\","
             "\"kind\":\"library\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\"}";
     static const TZrChar futureVersion[] =
-            "{\"manifestVersion\":3,\"name\":\"physics\",\"version\":\"1.0.0\","
+            "{\"manifestVersion\":4,\"name\":\"physics\",\"version\":\"1.0.0\","
             "\"kind\":\"library\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\"}";
 
     TEST_ASSERT_NOT_NULL(state);
@@ -653,10 +653,54 @@ static void test_project_manifest_v2_writes_dependency_lock_separately(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_project_manifest_v3_selects_memory_policy_without_a_vm(void) {
+#define V3_PREFIX "{\"manifestVersion\":3,\"name\":\"fixture\",\"version\":\"1.0.0\"," \
+                  "\"kind\":\"library\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\""
+    const TZrChar *managed = V3_PREFIX ",\"StrictNoGC\":false}";
+    const TZrChar *strict = V3_PREFIX ",\"StrictNoGC\":true}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *project;
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
+                          ZrLibrary_Project_InspectMemoryPolicy("{}"));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
+                          ZrLibrary_Project_InspectMemoryPolicy(V3_PREFIX "}"));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
+                          ZrLibrary_Project_InspectMemoryPolicy(managed));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC,
+                          ZrLibrary_Project_InspectMemoryPolicy(strict));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID,
+                          ZrLibrary_Project_InspectMemoryPolicy("{\"StrictNoGC\":true}"));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID,
+                          ZrLibrary_Project_InspectMemoryPolicy(V3_PREFIX ",\"StrictNoGC\":\"true\"}"));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID,
+                          ZrLibrary_Project_InspectMemoryPolicy(V3_PREFIX ",\"StrictNoGC\":false,\"StrictNoGC\":true}"));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID,
+                          ZrLibrary_Project_InspectMemoryPolicy(V3_PREFIX ",\"manifestVersion\":2}"));
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(new_project(state, strict)); /* Managed API must fail closed. */
+    project = ZrLibrary_Project_NewForAnalysis(state, (TZrNativeString)strict, "E:/repo/manifest-v3/test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC, project->memoryPolicy);
+    {
+        TZrChar roundTrip[2048];
+        TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_Write(project, roundTrip, sizeof(roundTrip)));
+        TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC,
+                              ZrLibrary_Project_InspectMemoryPolicy(roundTrip));
+    }
+    ZrLibrary_Project_Free(state, project);
+    project = new_project(state, managed);
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_UINT32(3u, project->manifestVersion);
+    ZrLibrary_Project_Free(state, project);
+    ZrTests_Runtime_State_Destroy(state);
+#undef V3_PREFIX
+}
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_project_manifest_v2_reads_required_base_envelope);
+    RUN_TEST(test_project_manifest_v3_selects_memory_policy_without_a_vm);
     RUN_TEST(test_project_manifest_v2_rejects_incomplete_or_unsupported_base_envelopes);
     RUN_TEST(test_project_manifest_v1_remains_an_explicit_migration_input);
     RUN_TEST(test_project_manifest_v2_reads_structured_alias_package_and_dependency_declarations);
