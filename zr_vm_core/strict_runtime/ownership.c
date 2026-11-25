@@ -97,6 +97,9 @@ ZrStrictStatus ZrStrict_OwnBegin(ZrStrictRuntime *runtime, const ZrStrictLayout 
         return ZR_STRICT_INVALID_ARGUMENT;
     }
     *payload = NULL;
+    if (runtime->dropDepth) {
+        return ZR_STRICT_BUSY;
+    }
     alignmentMask = layout->alignment - 1;
     storageSize = layout->size ? layout->size : 1;
     if (storageSize > SIZE_MAX - sizeof(*record) ||

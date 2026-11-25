@@ -51,7 +51,10 @@ static void finish(Fixture *fixture, ZrStrictReportSurvivor report) {
 static ZrStrictStatus drop_payload(void *storage, void *context) {
     Payload *payload = storage;
     Fixture *fixture = context;
+    ZrStrictManualBlock forbidden = {0};
     ++fixture->drops;
+    assert(ZrStrict_ManualAlloc(&fixture->runtime, 4, site, &forbidden) == ZR_STRICT_BUSY);
+    assert(!forbidden.owner.record);
     if (payload->self.record) {
         ZrStrictShared revived = {0};
         assert(ZrStrict_Wake(&payload->self, &revived) == ZR_STRICT_EXPIRED);
