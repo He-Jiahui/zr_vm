@@ -344,6 +344,29 @@
         target_link_libraries(zr_vm_aot_llvm_specialized_cast_fusion_test PRIVATE dl)
     endif ()
 
+    # C-U1：融合有符号 load/const 运算的 LLVM 降级、故障 PC 步进标志与 DivSignedConst 溢出契约。
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_llvm_signed_load_const_lowering_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_llvm_signed_load_const_lowering.c
+    )
+    target_include_directories(zr_vm_aot_llvm_signed_load_const_lowering_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_llvm_signed_load_const_lowering_test PRIVATE
+            ZR_VM_TESTS_LLVM_COMPILER="clang"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_llvm_signed_load_const_lowering_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_llvm_signed_load_const_lowering_test PRIVATE dl)
+    endif ()
+    add_test(NAME aot_llvm_signed_load_const_lowering COMMAND zr_vm_aot_llvm_signed_load_const_lowering_test)
+    set_tests_properties(aot_llvm_signed_load_const_lowering PROPERTIES TIMEOUT 300)
+
     zr_vm_add_unity_test_target(
             zr_vm_aot_c_type_layout_contracts_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_type_layout_contracts.c
