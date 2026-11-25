@@ -335,6 +335,8 @@ static void test_llvm_lowers_fused_signed_load_const_family_in_interpreter_order
 }
 
 
+static const TZrChar *current_error_message(SZrState *state);
+
 static const EZrInstructionCode kFusedOpcodes[] = {
         ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST),
         ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST),
@@ -373,29 +375,20 @@ static const SZrCU1SourceCase kSourceCases[] = {
         {"f07", "fn addFour(value: int): int { return value + 4; }\n"
                 "fn apply(cb, x: int) { var a = cb(x * 1); var b = cb(3); return b; }\n"
                 "return apply(addFour, 2);\n"},
-        {"arith_mix",
-         "fn mix(seed: int): int {\n"
-         "    var acc: int = seed;\n"
-         "    var i: int = 0;\n"
-         "    while (i < 40) {\n"
-         "        acc = (acc * 13 + i + 7) % 10007;\n"
-         "        acc = acc - 3;\n"
-         "        acc = acc / 2 + i * 5;\n"
-         "        i = i + 1;\n"
-         "    }\n"
-         "    return acc;\n"
-         "}\n"
-         "return mix(11);\n"},
-        {"param_consts",
-         "fn f(a: int, b: int): int {\n"
-         "    var x: int = a + 7;\n"
-         "    var y: int = b - 9;\n"
-         "    var z: int = a * 11;\n"
-         "    var w: int = b / 3;\n"
-         "    var v: int = a % 5;\n"
-         "    return x + y + z + w + v + a + b;\n"
-         "}\n"
-         "return f(29, -41);\n"},
+        {"stack_forms",
+         "fn s(v: int): int { return v - 4; }\n"
+         "fn m(v: int): int { return v * 4; }\n"
+         "fn d(v: int): int { return v / 4; }\n"
+         "fn r(v: int): int { return v % 4; }\n"
+         "return s(50) + m(3) + d(41) + r(43);\n"},
+        {"const_forms",
+         "fn id(value: int): int { return value; }\n"
+         "fn apply(cb, x: int) { var a = cb(x - 1); var b = cb(x / 2); var c = cb(x % 3); var e = cb(x * 5); return a + b + c + e; }\n"
+         "return apply(id, 17);\n"},
+        {"nested_args",
+         "fn addFour(value: int): int { return value + 4; }\n"
+         "fn apply(cb, x: int) { var y: int = x + 1; return cb(y + 4) + y; }\n"
+         "return apply(addFour, 2);\n"},
 };
 
 #define ZR_C_U1_SOURCE_COUNT ((TZrUInt32)(sizeof(kSourceCases) / sizeof(kSourceCases[0])))
@@ -486,6 +479,10 @@ static void test_llvm_source_cases_emit_and_lower_fused_ops(void) {
         ZrTests_Runtime_State_Destroy(state);
     }
     printf("C-U1 source coverage mask 0x%03x\n", (unsigned)coverage);
+    /* 源码覆盖 10 个融合指令；ADD_SIGNED_LOAD_STACK_LOAD_CONST（下标 2）只在常量槽之后仍活跃时保留，
+     * 普通源码会被反物化（见 test_compiler_w2_performance_quickening 的 dispatch_loops 断言），
+     * 因此只由手写指令行覆盖。 */
+    TEST_ASSERT_EQUAL_HEX32(((1u << ZR_C_U1_FUSED_COUNT) - 1u) & ~(1u << 2u), coverage);
 }
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -520,7 +517,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
 }
 
 /* 解释器为准：值与标签都必须与 LLVM 共享库执行结果一致，且确实经由 LLVM 执行。 */
-static void execute_case_via_llvm(const SZrCU1SourceCase *sourceCase) {
+static void execute_case_via_llvm(const SZrCU1SourceCase *sourceCase, const char *expectedError) {
     const char *projectJson = "{\"name\":\"aot-llvm-c-u1\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\"}";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -545,8 +542,17 @@ static void execute_case_via_llvm(const SZrCU1SourceCase *sourceCase) {
     function = compile_case(state, sourceCase);
     TEST_ASSERT_NOT_NULL_MESSAGE(function, sourceCase->name);
     ZrCore_Value_ResetAsNull(&interpreted);
-    TEST_ASSERT_TRUE_MESSAGE(ZrTests_Runtime_Function_Execute(state, function, &interpreted), sourceCase->name);
-    TEST_ASSERT_TRUE_MESSAGE(ZR_VALUE_IS_TYPE_INT(interpreted.type), sourceCase->name);
+    if (expectedError != ZR_NULL) {
+        /* 解释器先给出同一条运行时错误，作为 LLVM 终止性失败消息的参照。 */
+        TEST_ASSERT_FALSE_MESSAGE(ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &interpreted),
+                                  sourceCase->name);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(expectedError, current_error_message(state), sourceCase->name);
+        state->hasCurrentException = ZR_FALSE;
+        state->threadStatus = ZR_THREAD_STATUS_FINE;
+    } else {
+        TEST_ASSERT_TRUE_MESSAGE(ZrTests_Runtime_Function_Execute(state, function, &interpreted), sourceCase->name);
+        TEST_ASSERT_TRUE_MESSAGE(ZR_VALUE_IS_TYPE_INT(interpreted.type), sourceCase->name);
+    }
 
     snprintf(caseDir, sizeof(caseDir), "project_%s", sourceCase->name);
 #define ZR_C_U1_ARTIFACT(SUBDIR, STEM, EXT, OUT)                                                                       \
@@ -603,6 +609,18 @@ static void execute_case_via_llvm(const SZrCU1SourceCase *sourceCase) {
                                                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
                                                           ZR_TRUE));
     ZrCore_Value_ResetAsNull(&result);
+    if (expectedError != ZR_NULL) {
+        /* R2：AOT 算术错误目前是终止性的，ExecuteEntry 返回失败并保留解释器的消息。 */
+        TEST_ASSERT_FALSE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_LLVM, &result),
+                                  sourceCase->name);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_THREAD_STATUS_RUNTIME_ERROR, state->threadStatus, sourceCase->name);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(expectedError, current_error_message(state), sourceCase->name);
+        state->global->userData = ZR_NULL;
+        ZrLibrary_Project_Free(state, project);
+        free(embeddedBlob);
+        ZrTests_Runtime_State_Destroy(state);
+        return;
+    }
     TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_LLVM, &result),
                              ZrLibrary_AotRuntime_GetLastError(state->global));
     TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
@@ -623,7 +641,28 @@ static void test_llvm_source_cases_execute_like_interpreter(void) {
     TZrUInt32 caseIndex;
 
     for (caseIndex = 0; caseIndex < ZR_C_U1_SOURCE_COUNT; caseIndex++) {
-        execute_case_via_llvm(&kSourceCases[caseIndex]);
+        execute_case_via_llvm(&kSourceCases[caseIndex], ZR_NULL);
+    }
+}
+
+/* 融合指令上的溢出：值来自参数，避免常量折叠；LLVM 与解释器报同一消息。 */
+static const SZrCU1SourceCase kFaultCases[] = {
+        {"fault_mul_stack", "fn m(v: int): int { return v * 4; }\nreturn m(4611686018427387904);\n"},
+        {"fault_sub_stack", "fn s(v: int): int { return v - 4; }\nreturn s(-9223372036854775807);\n"},
+        {"fault_add_stack", "fn addFour(value: int): int { return value + 4; }\nreturn addFour(9223372036854775807);\n"},
+};
+
+static const char *const kFaultMessages[] = {
+        "signed integer multiplication overflow",
+        "signed integer subtraction overflow",
+        "signed integer addition overflow",
+};
+
+static void test_llvm_fused_faults_are_terminal_with_interpreter_message(void) {
+    TZrUInt32 caseIndex;
+
+    for (caseIndex = 0; caseIndex < (TZrUInt32)(sizeof(kFaultCases) / sizeof(kFaultCases[0])); caseIndex++) {
+        execute_case_via_llvm(&kFaultCases[caseIndex], kFaultMessages[caseIndex]);
     }
 }
 #endif
@@ -764,6 +803,7 @@ int main(void) {
     RUN_TEST(test_llvm_source_cases_emit_and_lower_fused_ops);
 #if defined(ZR_PLATFORM_UNIX)
     RUN_TEST(test_llvm_source_cases_execute_like_interpreter);
+    RUN_TEST(test_llvm_fused_faults_are_terminal_with_interpreter_message);
 #endif
     return UNITY_END();
 }
