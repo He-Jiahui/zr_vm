@@ -113,6 +113,10 @@ function(zr_vm_add_support_target target_name)
     zr_vm_apply_common_test_settings(${target_name})
 endfunction()
 
+add_executable(zr_vm_test_strict_ownership strict/test_ownership.c)
+target_link_libraries(zr_vm_test_strict_ownership PRIVATE zr_vm_strict_runtime)
+add_test(NAME test_strict_ownership COMMAND zr_vm_test_strict_ownership)
+
 add_executable(
         zr_vm_test_log_failure_probe
         ${CMAKE_SOURCE_DIR}/tests/harness/test_zr_test_log_failure_probe.c

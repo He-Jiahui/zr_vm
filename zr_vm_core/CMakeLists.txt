@@ -27,3 +27,6 @@ if (NOT WIN32)
     zr_link_internal_for_module(${zr_curr_module_name} m)
 endif ()
 zr_install_module(${zr_curr_module_name}) # 安装启用的变体，并向本构建图的链接使用者传播模块名定义。
+
+# Keep strict ownership independently linkable from the managed runtime.
+add_subdirectory(strict_runtime)
