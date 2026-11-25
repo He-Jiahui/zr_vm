@@ -1771,7 +1771,7 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
 
     memcpy(jsonBuffer, content, contentLength);
     jsonBuffer[contentLength] = '\0';
-    project = ZrLibrary_Project_New(state, jsonBuffer, projectPath);
+    project = ZrLibrary_Project_NewForAnalysis(state, jsonBuffer, projectPath);
     free(jsonBuffer);
     if (project == ZR_NULL) {
         return ZR_NULL;

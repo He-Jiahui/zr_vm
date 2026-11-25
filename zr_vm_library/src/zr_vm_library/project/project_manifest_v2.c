@@ -1549,6 +1549,10 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Projec
         cJSON_AddStringToObject(manifestJson, "entry", library_project_manifest_v2_string_text(project->entry)) == ZR_NULL) {
         goto cleanup;
     }
+    if (project->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC &&
+        (project->manifestVersion != 3u || cJSON_AddBoolToObject(manifestJson, "StrictNoGC", 1) == ZR_NULL)) {
+        goto cleanup;
+    }
     if (project->manifestAliasCount > 0u) {
         aliasesJson = library_project_manifest_v2_build_aliases(project);
         if (aliasesJson == ZR_NULL || !cJSON_AddItemToObject(manifestJson, "aliases", aliasesJson)) {

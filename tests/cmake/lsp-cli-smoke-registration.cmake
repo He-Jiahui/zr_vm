@@ -13,6 +13,11 @@ endif ()
 
 if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
     find_program(ZR_VM_CTEST_EXECUTABLE NAMES ctest REQUIRED)
+    add_test(NAME language_server_stdio_strict_no_gc_diagnostics
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_strict_no_gc_diagnostics.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+                    ${CMAKE_CURRENT_BINARY_DIR})
     if (TARGET zr_vm_cli_executable)
         add_test(
                 NAME language_server_stdio_smoke

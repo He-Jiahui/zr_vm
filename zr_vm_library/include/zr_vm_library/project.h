@@ -230,6 +230,12 @@ typedef struct SZrLibrary_ProjectExportDeclaration {
     SZrString *target;
 } SZrLibrary_ProjectExportDeclaration;
 
+typedef enum EZrLibrary_ProjectMemoryPolicy {
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID = 0,
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
+    ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC
+} EZrLibrary_ProjectMemoryPolicy;
+
 /** @brief 一个项目 manifest 的运行期视图；GC 字符串归 VM 管理，原始数组和归档由 Free 回收。 */
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
@@ -294,15 +300,10 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrSize dependencyRefCount;
     TZrSize dependencyRefCapacity;
     TZrBool supportMultithread;
+    EZrLibrary_ProjectMemoryPolicy memoryPolicy;
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;
-
-typedef enum EZrLibrary_ProjectMemoryPolicy {
-    ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID = 0,
-    ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED,
-    ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC
-} EZrLibrary_ProjectMemoryPolicy;
 
 /** Read the manifest envelope without creating a VM. StrictNoGC requires v3. */
 ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectMemoryPolicy(const TZrChar *manifest);
@@ -311,6 +312,10 @@ ZR_LIBRARY_API EZrLibrary_ProjectMemoryPolicy ZrLibrary_Project_InspectFileMemor
  * @pre state、state->global、raw 与 file 为有效输入。
  * @return 失败时返回空指针；成功结果必须由 Project_Free 释放原始数组和归档。 */
 ZR_LIBRARY_API SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file);
+/* Compiler and LSP metadata only. A StrictNoGC project opened here cannot be
+ * run by the managed project runner. */
+ZR_LIBRARY_API SZrLibrary_Project *ZrLibrary_Project_NewForAnalysis(
+        SZrState *state, TZrNativeString raw, TZrNativeString file);
 
 /** @brief 释放 New 建立的项目资源；调用后不得再使用项目中借出的归档和字符串视图。
  * @pre project 非空时 state 与 state->global 必须仍然有效。 */

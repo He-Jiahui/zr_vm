@@ -678,6 +678,16 @@ static void test_project_manifest_v3_selects_memory_policy_without_a_vm(void) {
                           ZrLibrary_Project_InspectMemoryPolicy(V3_PREFIX ",\"manifestVersion\":2}"));
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NULL(new_project(state, strict)); /* Managed API must fail closed. */
+    project = ZrLibrary_Project_NewForAnalysis(state, (TZrNativeString)strict, "E:/repo/manifest-v3/test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC, project->memoryPolicy);
+    {
+        TZrChar roundTrip[2048];
+        TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_Write(project, roundTrip, sizeof(roundTrip)));
+        TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC,
+                              ZrLibrary_Project_InspectMemoryPolicy(roundTrip));
+    }
+    ZrLibrary_Project_Free(state, project);
     project = new_project(state, managed);
     TEST_ASSERT_NOT_NULL(project);
     TEST_ASSERT_EQUAL_UINT32(3u, project->manifestVersion);

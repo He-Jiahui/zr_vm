@@ -10,6 +10,7 @@
 #include "runtime/runtime.h"
 #include "zr_vm_cli/conf.h"
 #include "zr_vm_core/log.h"
+#include "zr_vm_library/project.h"
 
 #include <stdio.h>
 
@@ -31,6 +32,23 @@ int ZrCli_App_Run(int argc, char **argv) {
         ZrCore_Log_Error(ZR_NULL, "%s\n", error);
         ZrCli_Command_LogHelp(ZR_NULL, ZR_TRUE, argc > 0 ? argv[0] : "zr_vm_cli");
         return 1;
+    }
+
+    if (command.mode == ZR_CLI_MODE_COMPILE_PROJECT || command.mode == ZR_CLI_MODE_RUN_PROJECT ||
+        command.mode == ZR_CLI_MODE_RUN_PROJECT_MODULE) {
+        EZrLibrary_ProjectMemoryPolicy policy = ZrLibrary_Project_InspectFileMemoryPolicy(
+                (TZrNativeString)command.projectPath);
+        if (command.requireStrictNoGc && policy != ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
+            fprintf(stderr, "--require-strict-no-gc requires StrictNoGC: true in a version 3 project: %s\n",
+                    command.projectPath);
+            return 1;
+        }
+        if (policy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
+            if (ZrCli_Compiler_CheckStrictSources(&command)) {
+                fprintf(stderr, "StrictNoGC project requires the strict runtime: %s\n", command.projectPath);
+            }
+            return 1;
+        }
     }
 
     switch (command.mode) {

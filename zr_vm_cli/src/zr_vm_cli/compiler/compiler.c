@@ -25,6 +25,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/comptime_cache.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/strict_no_gc.h"
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/writer.h"
 
@@ -699,6 +700,26 @@ static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringLis
     }
 }
 
+static void report_strict_source_diagnostic(void *context, const SZrFileRange *location,
+                                            const TZrChar *code, const TZrChar *message) {
+    fprintf(stderr, "%s:%d:%d: error %s: %s\n", (const TZrChar *)context,
+            location->start.line, location->start.column, code, message);
+}
+
+static TZrBool collect_strict_import(const SZrAstNode *node, void *context) {
+    const SZrAstNode *path;
+    TZrChar normalized[ZR_LIBRARY_MAX_PATH_LENGTH];
+    if (node->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_TRUE;
+    }
+    path = node->data.importExpression.modulePath;
+    return path != ZR_NULL && path->type == ZR_AST_STRING_LITERAL &&
+           path->data.stringLiteral.value != ZR_NULL &&
+           ZrCli_Project_NormalizeModuleName(ZrCore_String_GetNativeString(path->data.stringLiteral.value),
+                                             normalized, sizeof(normalized)) &&
+           ZrCli_Project_StringList_AppendUnique(context, normalized);
+}
+
 /* 从入口建立一次性模块闭包；先登记节点以终止循环导入，再解析静态依赖。 */
 static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *project,
                                                SZrState *state,
@@ -719,6 +740,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     TZrSize recordIndex;
     TZrBool sourceExists;
     TZrBool binaryExists;
+    TZrBool strict;
 
     if (project == ZR_NULL || state == ZR_NULL || collection == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
@@ -732,6 +754,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     if (zr_cli_find_module(collection, normalizedModule) != ZR_NULL) {
         return ZR_TRUE;
     }
+    strict = project->libraryProject != ZR_NULL &&
+             project->libraryProject->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC;
 
     memset(&record, 0, sizeof(record));
     ZrCli_Project_StringList_Init(&record.imports);
@@ -745,7 +769,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     ZrCli_Project_ResolveIntermediatePath(project, record.moduleName, record.zriPath, sizeof(record.zriPath));
     ZrCli_Project_ResolveAotCPath(project, record.moduleName, record.aotCPath, sizeof(record.aotCPath));
     sourceExists = ZrLibrary_File_Exist(record.sourcePath) == ZR_LIBRARY_FILE_IS_FILE;
-    binaryExists = ZrLibrary_File_Exist(record.zroPath) == ZR_LIBRARY_FILE_IS_FILE;
+    binaryExists = !strict && ZrLibrary_File_Exist(record.zroPath) == ZR_LIBRARY_FILE_IS_FILE;
     if (!sourceExists && (!includeBinaryModules || !binaryExists)) {
         snprintf(errorBuffer, errorBufferSize, "missing source module: %s", record.moduleName);
         ZrCli_Project_StringList_Free(&record.imports);
@@ -778,10 +802,27 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
         }
 
         sourceName = ZrCore_String_CreateFromNative(state, recordSlot->sourcePath);
-        ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+        if (strict) {
+            SZrParserState parser;
+            ZrParser_State_Init(&parser, state, source, sourceLength, sourceName);
+            ast = ZrParser_ParseWithState(&parser);
+            if (parser.hasError) {
+                ZrParser_Ast_Free(state, ast);
+                ast = ZR_NULL;
+            }
+            ZrParser_State_Free(&parser);
+        } else {
+            ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+        }
         free(source);
         if (ast == ZR_NULL) {
             snprintf(errorBuffer, errorBufferSize, "failed to parse source: %s", recordSlot->sourcePath);
+            return ZR_FALSE;
+        }
+        if (strict && ZrParser_StrictNoGc_CheckSource(ast, report_strict_source_diagnostic, recordSlot->sourcePath) !=
+                      ZR_STRICT_NO_GC_SOURCE_OK) {
+            ZrParser_Ast_Free(state, ast);
+            snprintf(errorBuffer, errorBufferSize, "StrictNoGC rejected source: %s", recordSlot->sourcePath);
             return ZR_FALSE;
         }
         if (!ZrParser_ProjectImports_CanonicalizeAst(state,
@@ -799,7 +840,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
             return ZR_FALSE;
         }
 
-        if (!zr_cli_collect_imports_from_ast(ast, &recordSlot->imports)) {
+        if (!(strict ? ZrParser_Ast_Visit(ast, collect_strict_import, &recordSlot->imports)
+                      : zr_cli_collect_imports_from_ast(ast, &recordSlot->imports))) {
             ZrParser_Ast_Free(state, ast);
             snprintf(errorBuffer, errorBufferSize, "failed to collect imports for: %s", recordSlot->moduleName);
             return ZR_FALSE;
@@ -824,6 +866,12 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
                 importHasBinary = ZrLibrary_File_Exist(resolvedBinaryPath) == ZR_LIBRARY_FILE_IS_FILE;
             }
             if (!importHasSource && !importHasBinary) {
+                if (strict) {
+                    snprintf(errorBuffer, errorBufferSize,
+                             "StrictNoGC requires verifiable source for import %s from %s",
+                             importName, collection->records[recordIndex].moduleName);
+                    return ZR_FALSE;
+                }
                 continue;
             }
 
@@ -834,6 +882,9 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
                                                  includeBinaryModules,
                                                  errorBuffer,
                                                  errorBufferSize)) {
+                if (strict) {
+                    fprintf(stderr, "  imported %s from %s\n", importName, collection->records[recordIndex].moduleName);
+                }
                 return ZR_FALSE;
             }
         }
@@ -845,6 +896,52 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     }
 
     return ZR_TRUE;
+}
+
+TZrBool ZrCli_Compiler_CheckStrictSources(const SZrCliCommand *command) {
+    SZrGlobalState *compiler;
+    SZrLibrary_Project *metadata;
+    SZrCliProjectContext project;
+    SZrCliModuleCollection modules;
+    TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH] = {0};
+    TZrChar *manifest = ZR_NULL;
+    TZrSize manifestLength = 0;
+    TZrBool ok = ZR_FALSE;
+    if (command == ZR_NULL || command->projectPath == ZR_NULL ||
+        !ZrCli_Project_ReadTextFile(command->projectPath, &manifest, &manifestLength) ||
+        memchr(manifest, '\0', manifestLength) != ZR_NULL ||
+        ZrLibrary_Project_InspectMemoryPolicy(manifest) != ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
+        fprintf(stderr, "Could not read a StrictNoGC project manifest.\n");
+        free(manifest);
+        return ZR_FALSE;
+    }
+    compiler = ZrCli_Project_CreateBareGlobal();
+    if (compiler == ZR_NULL) {
+        fprintf(stderr, "Could not initialize the StrictNoGC compiler.\n");
+        free(manifest);
+        return ZR_FALSE;
+    }
+    metadata = ZrLibrary_Project_NewForAnalysis(compiler->mainThreadState, manifest,
+                                                (TZrNativeString)command->projectPath);
+    free(manifest);
+    compiler->userData = metadata;
+    zr_cli_module_collection_init(&modules);
+    if (ZrCli_ProjectContext_FromGlobal(&project, compiler, command->projectPath)) {
+        ok = zr_cli_collect_module_recursive(&project, compiler->mainThreadState, &modules, project.entryModule,
+                                              ZR_FALSE, error, sizeof(error));
+        if (ok && command->moduleName != ZR_NULL) {
+            ok = zr_cli_collect_module_recursive(&project, compiler->mainThreadState, &modules, command->moduleName,
+                                                  ZR_FALSE, error, sizeof(error));
+        }
+    }
+    if (!ok) {
+        fprintf(stderr, "%s\n", error[0] != '\0' ? error : "Could not resolve the StrictNoGC project sources.");
+    }
+    zr_cli_module_collection_free(&modules);
+    compiler->userData = ZR_NULL;
+    ZrLibrary_Project_Free(compiler->mainThreadState, metadata);
+    ZrCore_GlobalState_Free(compiler);
+    return ok;
 }
 
 /* 每个脏模块使用独立项目全局态编译，避免模块间的编译期状态相互污染；

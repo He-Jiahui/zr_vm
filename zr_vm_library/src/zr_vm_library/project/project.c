@@ -2108,7 +2108,8 @@ static TZrBool library_project_parse_references(SZrState *state,
 
 /* 公共项目构造入口把 v1 依赖图与 v2 声明、AOT 选项及资源统一装入运行时视图；失败回收原生数组。
  * BUG: project->file 和 directory 的 GC 字符串创建结果未检查，短暂分配失败后仍可能交付项目；CLI runtime 会读取 file，import 解析会读取 directory。用字符串分配故障注入验证。 */
-SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
+static SZrLibrary_Project *library_project_new(SZrState *state, TZrNativeString raw,
+                                                TZrNativeString file, TZrBool analysis) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project =
             ZrCore_Memory_RawMallocWithType(global, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
@@ -2119,8 +2120,9 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
     project->signature = ZR_LIBRARY_PROJECT_SIGNATURE;
 
     cJSON *projectJson = cJSON_ParseWithOpts(raw, ZR_NULL, 1);
-    if (library_project_manifest_memory_policy(projectJson, &project->manifestVersion) !=
-        ZR_LIBRARY_PROJECT_MEMORY_POLICY_MANAGED) {
+    project->memoryPolicy = library_project_manifest_memory_policy(projectJson, &project->manifestVersion);
+    if (project->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_INVALID ||
+        (!analysis && project->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC)) {
         cJSON_Delete(projectJson);
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
@@ -2359,6 +2361,14 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
     owner->super.traceGcFunction = library_project_trace;
     project->gcOwner = owner;
     return project;
+}
+
+SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
+    return library_project_new(state, raw, file, ZR_FALSE);
+}
+
+SZrLibrary_Project *ZrLibrary_Project_NewForAnalysis(SZrState *state, TZrNativeString raw, TZrNativeString file) {
+    return library_project_new(state, raw, file, ZR_TRUE);
 }
 
 /* 由全局状态析构调用；先清 AOT 状态与归档，再释放项目原生数组，GC 字符串不逐个释放。 */
@@ -2623,7 +2633,8 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     const SZrLibrary_Project *project = ZrLibrary_Project_GetFromGlobal(global);
     ZrCore_Value_ResetAsNull(result);
 
-    if (project == ZR_NULL || project->entry == ZR_NULL || global->compileSource == ZR_NULL) {
+    if (project == ZR_NULL || project->memoryPolicy == ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC ||
+        project->entry == ZR_NULL || global->compileSource == ZR_NULL) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
