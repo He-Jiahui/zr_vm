@@ -298,14 +298,30 @@ let owner = share(student);
 drop(student);
 return owner.id;
 ]=])
-reject_strict_owner(use_after_move "${moved_program}" "use after move or drop")
+reject_strict_owner(use_after_move "${moved_program}" "ownership analysis: use after move or drop")
 set(borrowed_program [=[
 let student: Unique<Student> = own Student(42);
 let view: ref Student = ref student;
 drop(student);
 return view.id;
 ]=])
-reject_strict_owner(drop_while_borrowed "${borrowed_program}" "conflicting borrow")
+reject_strict_owner(drop_while_borrowed "${borrowed_program}" "ownership analysis: conflicting borrow")
+set(unused_borrow [=[
+let student = own Student(42);
+let view: ref readonly Student = ref student;
+drop(student);
+return 42;
+]=])
+reject_strict_owner(early_exit_loan "${unused_borrow}" "ownership analysis: conflicting borrow")
+set(early_return_borrow [=[
+let student = own Student(42);
+if (student.id > 0) {
+    let view: ref readonly Student = ref student;
+    return view.id;
+}
+return 0;
+]=])
+check_strict_owner(early_return_borrow "${student_decl}${early_return_borrow}" 42 FALSE)
 set(branch_move_program [=[
 let student: Unique<Student> = own Student(42);
 if (student.id != 0) { drop(student); }
@@ -657,7 +673,7 @@ set(module_borrow_error [=[
 let { Broken } = import(".factory");
 return Broken();
 ]=])
-reject_strict_owner(module_borrow_error "${module_borrow_error}" "factory\\.zr:[0-9]+:[0-9]+: StrictNoGC:.*conflicting borrow")
+reject_strict_owner(module_borrow_error "${module_borrow_error}" "factory\\.zr:[0-9]+:[0-9]+: StrictNoGC: ownership analysis: conflicting borrow")
 unset(strict_dependencies)
 
 set(strict_dependencies startup)

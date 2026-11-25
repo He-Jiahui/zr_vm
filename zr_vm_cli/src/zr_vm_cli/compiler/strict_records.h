@@ -10,6 +10,6 @@ typedef struct SZrCliStrictModuleInput {
     SZrAstNode *root; /* borrowed, with imports already canonicalized */
 } SZrCliStrictModuleInput;
 
-TZrBool ZrCli_StrictRecords_Compile(const SZrCliStrictModuleInput *modules, TZrSize moduleCount,
+TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const SZrCliStrictModuleInput *modules, TZrSize moduleCount,
                                     ZrStrictProgram *out, TZrChar *error, TZrSize errorSize);
 #endif

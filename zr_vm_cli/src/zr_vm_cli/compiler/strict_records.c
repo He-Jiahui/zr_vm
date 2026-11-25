@@ -1,4 +1,5 @@
 #include "compiler/strict_records.h"
+#include "compiler/strict_semantic_flow.h"
 #include "project/project.h"
 
 #include <stdlib.h>
@@ -71,12 +72,8 @@ typedef struct StrictModule {
     uint8_t visit;
 } StrictModule;
 
-typedef struct StrictLocation {
-    SZrFileRange range;
-    uint32_t module;
-} StrictLocation;
-
 typedef struct Lowerer {
+    SZrState *state;
     ZrStrictProgram program;
     RecordModel *models;
     Binding *bindings;
@@ -87,7 +84,7 @@ typedef struct Lowerer {
     const SZrCliStrictModuleInput *inputs;
     StrictModule *modules;
     uint32_t moduleCount, module;
-    StrictLocation *locations;
+    SZrCliStrictLocation *locations;
     uint8_t live[ZR_STRICT_MAX_SLOTS];
     uint32_t depth, bindingCount, capacity;
     TZrBool terminated, inDestructor;
@@ -221,7 +218,7 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
     if (ix == l->capacity) {
         uint32_t next = l->capacity ? l->capacity * 2 : 64;
         ZrStrictInstruction *instructions;
-        StrictLocation *locations;
+        SZrCliStrictLocation *locations;
         if (next > ZR_STRICT_MAX_INSTRUCTIONS) goto oom;
         instructions = realloc(l->program.instructions, next * sizeof(*instructions));
         if (!instructions) goto oom;
@@ -232,7 +229,7 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
         l->capacity = next;
     }
     l->program.instructions[ix] = (ZrStrictInstruction){op, dst, lhs, 0, immediate};
-    l->locations[ix] = (StrictLocation){node->location, l->module};
+    l->locations[ix] = (SZrCliStrictLocation){node->location, l->module};
     l->program.instructionCount++;
     if (op == ZR_STRICT_OP_TRANSFER || op == ZR_STRICT_OP_SHARE || op == ZR_STRICT_OP_DROP ||
         op == ZR_STRICT_OP_END_BORROW) l->live[lhs] = 0;
@@ -602,8 +599,8 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
     if (!node) return refuse(l, node, "expected a strict expression");
     if (name) {
         slot = lookup(l, name);
-        if (slot == INVALID_SLOT || (l->program.kinds[slot] >= ZR_STRICT_VALUE_RECORD && !l->live[slot]))
-            return refuse(l, node, "unknown binding or use after move or drop");
+        if (slot == INVALID_SLOT)
+            return refuse(l, node, "unknown strict binding");
         return slot;
     }
     switch (node->type) {
@@ -776,6 +773,17 @@ static TZrBool release_range(Lowerer *l, const SZrAstNode *node, uint32_t first,
 
 static TZrBool release_slots(Lowerer *l, const SZrAstNode *node, uint32_t first) {
     return release_range(l, node, first, l->program.slotCount);
+}
+
+/* Keep the scope boundary visible to both ownership analyzers on every exit.
+ * Frame teardown still handles owners and faults in reverse acquisition order. */
+static TZrBool end_frame_loans(Lowerer *l, const SZrAstNode *node) {
+    for (uint32_t slot = l->program.slotCount; slot > 0;) {
+        --slot;
+        if (l->live[slot] && is_borrow(l->program.kinds[slot]) &&
+            !emit(l, node, ZR_STRICT_OP_END_BORROW, 0, slot, 0)) return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool lower_block(Lowerer *l, const SZrAstNode *node) {
@@ -1125,11 +1133,11 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             if (l->call) return lower_call_return(l, expr);
             if (!expr->data.returnStatement.expr) {
                 l->terminated = ZR_TRUE;
-                return emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
+                return end_frame_loans(l, node) && emit(l, node, ZR_STRICT_OP_HALT, 0, 0, 0);
             }
             input = lower_expression(l, expr->data.returnStatement.expr, 0);
             l->terminated = ZR_TRUE;
-            return input != INVALID_SLOT && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);
+            return input != INVALID_SLOT && end_frame_loans(l, node) && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);
         case ZR_AST_PRIMARY_EXPRESSION: {
             uint32_t first = l->program.slotCount;
             if (!final_call(expr)) break;
@@ -1374,10 +1382,24 @@ unsupported:
     return ZR_FALSE;
 }
 
+static TZrBool check_ownership(Lowerer *l, const SZrAstNode *fallback, TZrBool receiverIsLive) {
+    uint32_t badPc;
+    const char *message;
+    if (ZrCli_StrictSemanticFlow_Check(l->state, &l->program, l->locations, receiverIsLive, &badPc, &message))
+        return ZR_TRUE;
+    SZrAstNode at = {.location = fallback->location};
+    if (badPc < l->program.instructionCount) {
+        at.location = l->locations[badPc].range;
+        select_module(l, l->locations[badPc].module);
+    }
+    (void)refuse(l, &at, message);
+    return ZR_FALSE;
+}
+
 static TZrBool lower_destructor(Lowerer *program, uint32_t layout) {
     SZrAstNode *body = program->models[layout - 1].destructor;
     if (!body) return ZR_TRUE;
-    Lowerer l = {.models = program->models, .bindings = program->bindings, .callables = program->callables,
+    Lowerer l = {.state = program->state, .models = program->models, .bindings = program->bindings, .callables = program->callables,
                  .callableCount = program->callableCount, .inputs = program->inputs, .modules = program->modules,
                  .moduleCount = program->moduleCount, .inDestructor = ZR_TRUE,
                  .error = program->error, .errorSize = program->errorSize};
@@ -1403,7 +1425,7 @@ static TZrBool lower_destructor(Lowerer *program, uint32_t layout) {
         scope.exits = (uint32_t)exit->immediate;
         exit->immediate = l.program.instructionCount;
     }
-    if (!emit(&l, body, ZR_STRICT_OP_HALT, 0, 0, 0)) goto done;
+    if (!emit(&l, body, ZR_STRICT_OP_HALT, 0, 0, 0) || !check_ownership(&l, body, ZR_TRUE)) goto done;
     program->program.layouts[layout - 1].destructor = (ZrStrictDestructor){l.program.kinds, l.program.slotLayouts,
         l.program.instructions, l.program.slotCount, l.program.instructionCount};
     ok = ZR_TRUE;
@@ -1547,9 +1569,9 @@ static TZrBool lower_dependency_init(Lowerer *l, uint32_t module) {
     return ZR_TRUE;
 }
 
-TZrBool ZrCli_StrictRecords_Compile(const SZrCliStrictModuleInput *modules, TZrSize moduleCount,
+TZrBool ZrCli_StrictRecords_Compile(SZrState *state, const SZrCliStrictModuleInput *modules, TZrSize moduleCount,
                                     ZrStrictProgram *out, TZrChar *error, TZrSize errorSize) {
-    Lowerer l = {.inputs = modules, .error = error, .errorSize = errorSize, .path = "<project>"};
+    Lowerer l = {.state = state, .inputs = modules, .error = error, .errorSize = errorSize, .path = "<project>"};
     const SZrAstNode *root = NULL;
     uint32_t badPc;
     TZrBool success = ZR_FALSE;
@@ -1628,7 +1650,8 @@ TZrBool ZrCli_StrictRecords_Compile(const SZrCliStrictModuleInput *modules, TZrS
             node->type == ZR_AST_FUNCTION_DECLARATION || static_import(node)) continue;
         if (!lower_statement(&l, node)) goto done;
     }
-    if (!emit(&l, root, ZR_STRICT_OP_HALT, 0, 0, 0)) goto done;
+    if ((!l.terminated && !end_frame_loans(&l, root)) || !emit(&l, root, ZR_STRICT_OP_HALT, 0, 0, 0) ||
+        !check_ownership(&l, root, ZR_FALSE)) goto done;
     if (ZrStrictProgram_Verify(&l.program, &badPc) != ZR_STRICT_PROGRAM_OK) {
         SZrAstNode at = {.location = root->location};
         if (badPc < l.program.instructionCount) {

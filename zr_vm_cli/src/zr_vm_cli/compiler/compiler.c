@@ -962,7 +962,7 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
                     const SZrCliModuleRecord *module = &modules.records[index];
                     inputs[index] = (SZrCliStrictModuleInput){module->moduleName, module->sourcePath, module->strictAst};
                 }
-                ok = ZrCli_StrictRecords_Compile(inputs, modules.count, program, error, sizeof(error));
+                ok = ZrCli_StrictRecords_Compile(compiler->mainThreadState, inputs, modules.count, program, error, sizeof(error));
                 free(inputs);
             }
         } else {
