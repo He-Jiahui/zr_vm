@@ -7135,10 +7135,9 @@ TZrBool ZrLibrary_AotRuntime_DivSignedConst(SZrState *state,
     }
 
     if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
-        if (rightInt == 0) {
-            ZrCore_Debug_RunError(state, "divide by zero");
-        }
-        ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), leftInt / rightInt);
+        /* 与解释器 DIV_SIGNED_CONST 同源：除零与 INT64_MIN / -1 都报错，且失败时不写目标槽。 */
+        TZrInt64 quotient = ZrCore_Integer_Divide(state, leftInt, rightInt);
+        ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), quotient);
         return ZR_TRUE;
     }
 
