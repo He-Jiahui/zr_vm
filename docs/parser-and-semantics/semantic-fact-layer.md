@@ -1984,7 +1984,7 @@ Suggestion: ...
 
 追加入口只承诺各自实现显式检查的失败；Array_Init、Copy 与 Push 没有统一的失败传播或回滚保证，bool 成功不证明完整 OOM 安全。查询返回当前数组内的借用记录或 `ZR_NULL`；增长、Reset/Free 和对应载荷替换会结束有效期。事实存在性不额外证明 resolved、已知值、所有权安全或完整类型关联。
 
-位置查询只用 query.start，采用同源闭区间。事实 range 与 query 各自至少一端有非零 offset 时用 offset；否则用行列，但跨度评分始终只读 offset 差。Expression 和 Logical 选择最窄候选、同宽采用后项；普通 Reference 先比较起点命中，再比较宽度和 kind。NumericByNode 只选择一条已有事实、不汇总其它候选的风险；mayOverflow 仅在其它信息评分相同时作为最后偏好，完全平局保留前项。各入口的完整限制见 [Semantic Context 与 Facts 的调用契约](semantic-context-and-facts-contracts.md)。
+位置查询只用 query.start，采用同源闭区间。hover 例外：hover 询问指针所在字符，以字符格位置（end 恰比 start 多一个字符）查询，按半开范围命中覆盖该字符的事实并保留零宽锚点（`values|[` 命中索引表达式而非 `values`）；零宽 caret 位置（definition、references、rename 等）保持闭区间，光标紧随 token 末尾（`foo|`）仍命中该 token。hover 结果范围另见 `docs/cli-and-tooling/lsp-hover-capability-boundary.md` 的 Canonical Projection。事实 range 与 query 各自至少一端有非零 offset 时用 offset；否则用行列，但跨度评分始终只读 offset 差。Expression 和 Logical 选择最窄候选、同宽采用后项；普通 Reference 先比较起点命中，再比较宽度和 kind。NumericByNode 只选择一条已有事实、不汇总其它候选的风险；mayOverflow 仅在其它信息评分相同时作为最后偏好，完全平局保留前项。各入口的完整限制见 [Semantic Context 与 Facts 的调用契约](semantic-context-and-facts-contracts.md)。
 
 ## LSP Local Semantic Query
 

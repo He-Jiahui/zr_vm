@@ -83,7 +83,7 @@ Facts 初始化 expression、reference、numeric、reachability、logical、owne
 
 生产者决定事实分类、已知值、resolved 状态和各类 presence 位。Find 入口通常仅定位已经发布的记录；返回非空不额外认证类型身份、可达状态、所有权安全或 lowering 能力。没有命中时，上层按各自查询契约处理缺失证据。
 
-- 位置查询只匹配 position.start，采用同源闭区间。事实 range 与 query 各自至少一端有非零 offset 时用 offset；否则用行列。候选宽度始终用 offset 差，行列回退不会自动获得可靠的跨度顺序（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:51`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:106`）。
+- 位置查询只匹配 position.start，采用同源闭区间。hover 例外：hover 询问指针所在字符，以字符格位置（end 恰比 start 多一个字符）查询，按半开范围命中覆盖该字符的事实并保留零宽锚点（`values|[` 命中索引表达式而非 `values`）；零宽 caret 位置（definition、references、rename 等）保持闭区间，光标紧随 token 末尾（`foo|`）仍命中该 token。hover 结果范围另见 `docs/cli-and-tooling/lsp-hover-capability-boundary.md` 的 Canonical Projection。事实 range 与 query 各自至少一端有非零 offset 时用 offset；否则用行列。候选宽度始终用 offset 差，行列回退不会自动获得可靠的跨度顺序（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:51`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:106`）。
 - 普通 ReferenceAtPosition 先偏好起点命中，再比较跨度和 kind。更宽的起点命中可以胜过更窄的内部命中；不能把所有 reference finder 概括为全局选择最窄范围。按 kind 查询的入口只在所需 kind 内选择（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:894`）。
 - Expression、Logical 的位置查询在同宽时采用后项；Ownership 的 violation 仅在同宽时优先；Reachability 先按原因评分。这些偏好服务不同 consumer，不能互换（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:869`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1070`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1126`、`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1170`）。
 - NumericByNode 返回一条已有事实，按 exactness、分段信息、signed 范围及宽度、unsigned 范围存在性选取；这些信息相同时才偏好 mayOverflow=true，完全平局保留前项。它不合并所有候选的范围或风险，返回 mayOverflow=false 不能证明其它候选也安全（`zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c:1007`）。

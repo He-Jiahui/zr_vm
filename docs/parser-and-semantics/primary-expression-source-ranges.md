@@ -108,6 +108,13 @@ Normal parser ranges are half-open: start included, end excluded. The source
 field borrows a VM string; assigning a range does not acquire ownership of it.
 Placeholder ranges can be empty and are not made valid merely by their type.
 
+Half-open storage does not by itself define position matching. For a zero-width
+(caret) position the parser position matcher also accepts a cursor equal to
+`end`, so a caret immediately after a token still matches it. Only hover queries
+use a one-character cell position, which matches `start <= cursor < end`. See
+`## 发布与查询的证据含义` in
+[Semantic Context 与 Facts 的调用契约](semantic-context-and-facts-contracts.md).
+
 [ZrParser_FileRange_Merge](../../zr_vm_parser/src/zr_vm_parser/syntax/location.c)
 has a narrower contract than validation or source mapping:
 

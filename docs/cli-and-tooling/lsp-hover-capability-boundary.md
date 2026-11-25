@@ -1,7 +1,7 @@
 ---
 related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
@@ -35,7 +35,18 @@ result.
 Native receiver, external callable, imported metadata, local symbol, and local
 expression hover paths are handled by their structured query providers. A
 canonical hover copies the parser symbol identity, signature or canonical type
-display, documentation fact, and request range into LSP-owned output.
+display, and documentation fact into LSP-owned output. Its result range is the
+canonical reference range of the queried occurrence when that range is in the
+requested document and contains the cursor (`start <= cursor < end`); otherwise
+a declaration range resolved in the requested document is used under the same
+rule, and otherwise it is the request range. A declaration range in another
+document, such as a native or virtual metadata declaration, is never returned as
+the hover range. The request position (`queryRange`) is never overwritten by a
+resolved declaration range.
+Hover resolves facts with a one-character cell position (the character under
+the pointer), so `values|[index]` hovers the indexing expression; caret
+requests such as definition and rename keep a zero-width position and still
+target the token that ends at the caret.
 
 A declaration can be resolved even when its exact type is unavailable. Such a
 canonical symbol has a valid identity and invalid type identity; hover then
