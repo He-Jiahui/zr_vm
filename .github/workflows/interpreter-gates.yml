@@ -36,7 +36,7 @@ jobs:
       - name: Test GC and interpreter boundaries
         run: >-
           ctest --test-dir build-gc-sanitizers --no-tests=error --output-on-failure
-          -R 'interpreter_gc|gc|execution_budget|execution_integer_boundaries|typed_opcode|container'
+          -R 'interpreter_gc|gc|test_strict_(ownership|program)|execution_budget|execution_integer_boundaries|typed_opcode|container'
       - name: Run allocation and interpreter smoke probes
         run: >-
           python3 tests/benchmarks/run_interpreter_probes.py
