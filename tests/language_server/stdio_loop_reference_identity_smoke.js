@@ -59,7 +59,10 @@ function applyEdits(text, edits) {
 async function main() {
     assert(process.argv[2], 'expected a real native stdio server');
     const document = { uri };
-    let text = fs.readFileSync(path.join(__dirname, 'fixtures/loop_reference_identity.zr'), 'utf8');
+    // D6 (t727u): normalize line endings so positions, applyEdits' split('\n') and the
+    // includes() checks hold however the fixture was checked out (core.autocrlf, archives).
+    let text = fs.readFileSync(path.join(__dirname, 'fixtures/loop_reference_identity.zr'), 'utf8')
+        .replace(/\r\n/g, '\n');
     const client = new StdioProtocolClient(process.argv[2]);
     const request = (method, params) => client.requestWithId(method, params, 15000).promise;
     const cleanDiagnostics = async () => {
