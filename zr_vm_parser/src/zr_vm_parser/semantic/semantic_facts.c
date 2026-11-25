@@ -46,7 +46,7 @@ static TZrBool semantic_facts_same_range(
                      left->end.column == right->end.column);
 }
 
-/** @brief 为位置查询统一以 position.start 作为光标，检查同源闭边界命中。
+/** @brief 为位置查询统一以 position.start 作为光标，检查同源半开范围；零宽事实保留锚点命中。
  * @note position.end 仅参与 offset 坐标模式的资格判断，不扩大查询区域；双方具备 offset 信息时使用 offset，否则回退到行列。
  */
 static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
@@ -65,7 +65,9 @@ static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
         (semantic_facts_has_offset(&position->start) ||
          semantic_facts_has_offset(&position->end))) {
         queryOffset = position->start.offset;
-        return queryOffset >= range->start.offset && queryOffset <= range->end.offset;
+        return queryOffset >= range->start.offset &&
+               (queryOffset < range->end.offset ||
+                (range->start.offset == range->end.offset && queryOffset == range->end.offset));
     }
 
     queryLine = position->start.line;
@@ -76,8 +78,9 @@ static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
     if (queryLine == range->start.line && queryColumn < range->start.column) {
         return ZR_FALSE;
     }
-    if (queryLine == range->end.line && queryColumn > range->end.column) {
-        return ZR_FALSE;
+    if (queryLine == range->end.line && queryColumn >= range->end.column) {
+        return range->start.line == range->end.line &&
+               range->start.column == range->end.column && queryColumn == range->end.column;
     }
     return ZR_TRUE;
 }
