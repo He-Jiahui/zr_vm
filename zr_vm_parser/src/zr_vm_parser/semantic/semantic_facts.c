@@ -46,28 +46,46 @@ static TZrBool semantic_facts_same_range(
                      left->end.column == right->end.column);
 }
 
-/** @brief 为位置查询统一以 position.start 作为光标，检查同源半开范围；零宽事实保留锚点命中。
- * @note position.end 仅参与 offset 坐标模式的资格判断，不扩大查询区域；双方具备 offset 信息时使用 offset，否则回退到行列。
+/** @brief 字符格查询：position.end 恰为 start 后一个字符（offset 模式比 start 多 1，行列模式同行列数多 1）。
+ * @note hover 询问指针所在字符，因此用字符格；caret 型请求（definition/references/rename 等）用零宽位置。 */
+static TZrBool semantic_facts_position_is_cell(const SZrFileRange *position) {
+    if (semantic_facts_has_offset(&position->start)) {
+        return position->end.offset == position->start.offset + 1U &&
+               position->end.line == position->start.line;
+    }
+    return !semantic_facts_has_offset(&position->end) &&
+           position->end.line == position->start.line &&
+           position->end.column == position->start.column + 1;
+}
+
+/** @brief 为位置查询统一以 position.start 作为光标，检查同源命中：零宽（caret）位置用闭边界，字符格位置用半开范围。
+ * @note 闭边界使光标紧随 token 末尾（`foo|`）仍命中该 token；字符格只命中覆盖该字符的事实，零宽事实保留锚点命中。
+ *       position.end 只用于 offset 坐标模式资格与字符格识别，不扩大查询区域；双方具备 offset 信息时使用 offset，否则回退到行列。
  */
 static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
                                                       const SZrFileRange *position) {
     TZrSize queryOffset;
     TZrInt32 queryLine;
     TZrInt32 queryColumn;
+    TZrBool isCell;
 
     if (range == ZR_NULL || position == ZR_NULL ||
         !semantic_facts_same_source(range->source, position->source)) {
         return ZR_FALSE;
     }
+    isCell = semantic_facts_position_is_cell(position);
 
     if ((semantic_facts_has_offset(&range->start) ||
          semantic_facts_has_offset(&range->end)) &&
         (semantic_facts_has_offset(&position->start) ||
          semantic_facts_has_offset(&position->end))) {
         queryOffset = position->start.offset;
-        return queryOffset >= range->start.offset &&
-               (queryOffset < range->end.offset ||
-                (range->start.offset == range->end.offset && queryOffset == range->end.offset));
+        if (isCell) {
+            return queryOffset >= range->start.offset &&
+                   (queryOffset < range->end.offset ||
+                    (range->start.offset == range->end.offset && queryOffset == range->end.offset));
+        }
+        return queryOffset >= range->start.offset && queryOffset <= range->end.offset;
     }
 
     queryLine = position->start.line;
@@ -78,8 +96,9 @@ static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
     if (queryLine == range->start.line && queryColumn < range->start.column) {
         return ZR_FALSE;
     }
-    if (queryLine == range->end.line && queryColumn >= range->end.column) {
-        return range->start.line == range->end.line &&
+    if (queryLine == range->end.line &&
+        (isCell ? queryColumn >= range->end.column : queryColumn > range->end.column)) {
+        return isCell && range->start.line == range->end.line &&
                range->start.column == range->end.column && queryColumn == range->end.column;
     }
     return ZR_TRUE;

@@ -29,6 +29,8 @@ snapshot content; FFI metadata and leading comments are appended as separate
 sections. If no markdown content can be built, the existing descriptor-based
 member formatting remains the final fallback.
 
+The hover result range is the range the caller supplies for the queried occurrence. The resolved declaration range locates the snapshot and the declaration symbol only; it is not returned as the hover range, because it can belong to another document.
+
 ## No Analyzer Hover Fallback
 
 `CreateImportedMemberHover` no longer calls

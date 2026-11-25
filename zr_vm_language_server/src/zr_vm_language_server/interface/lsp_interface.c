@@ -2008,7 +2008,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         SZrLspSemanticQuery semanticQuery;
 
         ZrLanguageServer_LspSemanticQuery_Init(&semanticQuery);
-        if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery)) {
+        if (ZrLanguageServer_LspSemanticQuery_ResolveHoverAtPosition(state, context, uri, position, &semanticQuery)) {
             if (ZrLanguageServer_LspSemanticQuery_BuildHover(state, context, &semanticQuery, result)) {
                 if (result != ZR_NULL && *result != ZR_NULL) {
                     hasLocalQuery = lsp_refresh_local_hover_query(state, context, uri, position, &localQuery);

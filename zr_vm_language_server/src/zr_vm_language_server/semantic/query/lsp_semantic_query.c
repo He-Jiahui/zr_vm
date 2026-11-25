@@ -1967,9 +1967,11 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
     query->resolvedMember.declarationUri = externalDeclaration.declarationUri;
     query->resolvedMember.declarationRange = externalDeclaration.declarationRange;
     query->resolvedMember.hasDeclaration = externalDeclaration.hasDeclaration;
-    /* This resolver matched a declaration in the requested document itself. */
+    /* This resolver matched a declaration in the requested document itself; keep it as a
+     * hover-range candidate without overwriting the request position (queryRange). */
     if (ZrLanguageServer_Lsp_StringsEqual(externalDeclaration.declarationRange.source, uri)) {
-        query->queryRange = externalDeclaration.declarationRange;
+        query->hoverDeclarationRange = externalDeclaration.declarationRange;
+        query->hasHoverDeclarationRange = ZR_TRUE;
     }
     preciseMemberDeclarationUri = externalDeclaration.declarationUri;
     preciseMemberDeclarationRange = externalDeclaration.declarationRange;
@@ -2094,7 +2096,10 @@ static TZrBool semantic_query_resolve_external_metadata_type_member_declaration_
         return ZR_FALSE;
     }
 
-    query->queryRange = query->resolvedMember.declarationRange;
+    /* The virtual declaration document is the requested one; the cursor check in
+     * semantic_query_hover_reference_range still rejects ranges from another source. */
+    query->hoverDeclarationRange = query->resolvedMember.declarationRange;
+    query->hasHoverDeclarationRange = query->resolvedMember.hasDeclaration;
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER;
     query->moduleName = query->resolvedMember.module.moduleName;
     query->memberName = query->resolvedMember.memberName;
@@ -2319,12 +2324,40 @@ void ZrLanguageServer_LspSemanticQuery_Free(SZrState *state, SZrLspSemanticQuery
     memset(query, 0, sizeof(*query));
 }
 
+static TZrBool semantic_query_resolve_at_position(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  SZrLspPosition position,
+                                                  TZrBool characterCell,
+                                                  SZrLspSemanticQuery *query);
+
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
     SZrState *state,
     SZrLspContext *context,
     SZrString *uri,
     SZrLspPosition position,
     SZrLspSemanticQuery *query) {
+    return semantic_query_resolve_at_position(state, context, uri, position, ZR_FALSE, query);
+}
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveHoverAtPosition(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    SZrLspPosition position,
+    SZrLspSemanticQuery *query) {
+    return semantic_query_resolve_at_position(state, context, uri, position, ZR_TRUE, query);
+}
+
+/* characterCell: hover asks about the character under the pointer, so the parser matches the
+ * one-character cell half-open; caret requests keep a zero-width position (closed match). */
+static TZrBool semantic_query_resolve_at_position(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  SZrLspPosition position,
+                                                  TZrBool characterCell,
+                                                  SZrLspSemanticQuery *query) {
+    SZrFilePosition endPosition;
     SZrSemanticAnalyzer *analyzer;
     SZrLspProjectIndex *projectIndex;
     SZrFilePosition filePosition;
@@ -2342,7 +2375,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     query->uri = uri;
     query->position = position;
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
-    query->queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    endPosition = filePosition;
+    if (characterCell) {
+        endPosition.column += 1;
+        if (filePosition.offset > 0U) {
+            endPosition.offset += 1U;
+        }
+    }
+    query->queryRange = ZrParser_FileRange_Create(filePosition, endPosition, uri);
 
     /* scoped 虚拟 URI 的解释依赖项目身份；先解析元数据声明，不能交给普通源码符号后备。 */
     if (ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(uri)) {
@@ -2639,20 +2679,17 @@ static SZrFileRange semantic_query_hover_reference_range(const SZrLspSemanticQue
         semantic_query_hover_range_contains_cursor(query, query->canonicalReferenceRange)) {
         return query->canonicalReferenceRange;
     }
-
-    /* Native receiver metadata can resolve even when the use has no canonical reference,
-     * e.g. a field in a loop condition. Take only the matched AST token's range, not its type. */
-    if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER &&
-        query->analyzer != ZR_NULL && query->queryRange.start.offset != 0U) {
-        const SZrAstNode *token = ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
-                query->analyzer->ast, query->queryRange);
-        if (token != ZR_NULL && token->type == ZR_AST_IDENTIFIER_LITERAL &&
-            ZrLanguageServer_Lsp_StringsEqual(token->data.identifier.name, query->memberName) &&
-            semantic_query_hover_range_contains_cursor(query, token->location)) {
-            return token->location;
-        }
+    if (query->hasHoverDeclarationRange &&
+        semantic_query_hover_range_contains_cursor(query, query->hoverDeclarationRange)) {
+        return query->hoverDeclarationRange;
     }
-    return query->queryRange;
+    /* No fact-backed token range: keep the (zero-width) request position, as documented in
+     * Canonical Projection, rather than matching AST tokens by spelling (wrong under shadowing). */
+    {
+        SZrFileRange requestRange = query->queryRange;
+        requestRange.end = requestRange.start;
+        return requestRange;
+    }
 }
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrState *state,
