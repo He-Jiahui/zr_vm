@@ -42,8 +42,20 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
     const uint8_t destination = dst < p->slotCount ? p->kinds[dst] : 0;
     const uint8_t source = src < p->slotCount ? p->kinds[src] : 0;
     const ZrStrictRecordLayout *layout;
-    if (i->rhs && i->op != ZR_STRICT_OP_BYTE_READ && i->op != ZR_STRICT_OP_BYTE_WRITE) return 0;
+    if (i->rhs && i->op != ZR_STRICT_OP_BYTE_READ && i->op != ZR_STRICT_OP_BYTE_WRITE &&
+        (i->op < ZR_STRICT_OP_POOL_RENT || i->op > ZR_STRICT_OP_POOL_VIEW)) return 0;
     switch (i->op) {
+        case ZR_STRICT_OP_POOL_CREATE:
+            return destination == ZR_STRICT_VALUE_POOL && source == ZR_STRICT_VALUE_I64 && !i->immediate;
+        case ZR_STRICT_OP_POOL_CONTAINS:
+        case ZR_STRICT_OP_POOL_RECYCLE:
+        case ZR_STRICT_OP_POOL_VIEW:
+            return source == ZR_STRICT_VALUE_POOL && kind_is(p, i->rhs, ZR_STRICT_VALUE_POOL_HANDLE) &&
+                   p->slotLayouts[src] == p->slotLayouts[i->rhs] && !i->immediate &&
+                   (i->op == ZR_STRICT_OP_POOL_VIEW ? destination == ZR_STRICT_VALUE_READONLY_BORROW &&
+                       p->slotLayouts[dst] == p->slotLayouts[src] : destination == ZR_STRICT_VALUE_BOOL);
+        case ZR_STRICT_OP_POOL_SHRINK:
+            return destination == ZR_STRICT_VALUE_I64 && source == ZR_STRICT_VALUE_POOL && !i->immediate;
         case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
             return destination == ZR_STRICT_VALUE_MANUAL_BLOCK && source == ZR_STRICT_VALUE_I64;
         case ZR_STRICT_OP_BYTE_LENGTH:
@@ -56,8 +68,12 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
                    kind_is(p, i->rhs, ZR_STRICT_VALUE_I64) && !i->immediate;
         case ZR_STRICT_OP_INIT_RECORD:
         case ZR_STRICT_OP_OWN_RECORD:
-            if (!kind_is(p, dst, i->op == ZR_STRICT_OP_INIT_RECORD ? ZR_STRICT_VALUE_RECORD : ZR_STRICT_VALUE_UNIQUE) ||
-                (i->op == ZR_STRICT_OP_INIT_RECORD && i->immediate)) return 0;
+        case ZR_STRICT_OP_POOL_RENT:
+            if (i->op == ZR_STRICT_OP_POOL_RENT) {
+                if (destination != ZR_STRICT_VALUE_POOL_HANDLE || !kind_is(p, i->rhs, ZR_STRICT_VALUE_POOL) ||
+                    p->slotLayouts[dst] != p->slotLayouts[i->rhs]) return 0;
+            } else if (destination != (i->op == ZR_STRICT_OP_INIT_RECORD ? ZR_STRICT_VALUE_RECORD : ZR_STRICT_VALUE_UNIQUE) ||
+                       (i->op == ZR_STRICT_OP_INIT_RECORD && i->immediate)) return 0;
             layout = &p->layouts[p->slotLayouts[dst] - 1];
             if (i->op == ZR_STRICT_OP_INIT_RECORD && layout->destructor.instructionCount) return 0;
             if (src > p->slotCount || layout->fieldCount > p->slotCount - src) return 0;
@@ -83,10 +99,12 @@ static int verify_owner_shape(const ZrStrictProgram *p, const ZrStrictInstructio
             return source == destination &&
                    ((source == ZR_STRICT_VALUE_RECORD && !p->layouts[p->slotLayouts[src] - 1].destructor.instructionCount &&
                      !zr_strict_layout_has_owners(&p->layouts[p->slotLayouts[src] - 1])) ||
-                     source == ZR_STRICT_VALUE_SHARED || source == ZR_STRICT_VALUE_WEAK || source == ZR_STRICT_VALUE_MAYBE_SHARED);
+                     source == ZR_STRICT_VALUE_SHARED || source == ZR_STRICT_VALUE_WEAK ||
+                     source == ZR_STRICT_VALUE_MAYBE_SHARED || source == ZR_STRICT_VALUE_POOL_HANDLE);
         case ZR_STRICT_OP_IS_NULL:
             return destination == ZR_STRICT_VALUE_BOOL && !i->immediate &&
-                   (source == ZR_STRICT_VALUE_MAYBE_SHARED || source == ZR_STRICT_VALUE_MANUAL_BLOCK);
+                   (source == ZR_STRICT_VALUE_MAYBE_SHARED || source == ZR_STRICT_VALUE_MANUAL_BLOCK ||
+                    source == ZR_STRICT_VALUE_POOL_HANDLE);
         case ZR_STRICT_OP_DROP:
             return !dst && source >= ZR_STRICT_VALUE_RECORD && !zr_strict_is_borrow(source) && !i->immediate;
         case ZR_STRICT_OP_BORROW:
@@ -129,8 +147,9 @@ static int apply_owner_flow(const ZrStrictProgram *p, const ZrStrictInstruction 
     const uint32_t dst = i->dst, src = i->lhs;
     switch (i->op) {
         case ZR_STRICT_OP_INIT_RECORD:
-        case ZR_STRICT_OP_OWN_RECORD: {
-            if (facts[dst].available) return 0;
+        case ZR_STRICT_OP_OWN_RECORD:
+        case ZR_STRICT_OP_POOL_RENT: {
+            if (facts[dst].available || (i->op == ZR_STRICT_OP_POOL_RENT && !facts[i->rhs].available)) return 0;
             const ZrStrictRecordLayout *layout = &p->layouts[p->slotLayouts[dst] - 1];
             for (uint32_t field = 0; field < layout->fieldCount; ++field) {
                 if (!zr_strict_is_field_owner(layout->fields[field])) continue;
@@ -140,8 +159,14 @@ static int apply_owner_flow(const ZrStrictProgram *p, const ZrStrictInstruction 
             break;
         }
         case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
+        case ZR_STRICT_OP_POOL_CREATE:
             if (facts[dst].available) return 0;
             break;
+        case ZR_STRICT_OP_POOL_CONTAINS:
+        case ZR_STRICT_OP_POOL_RECYCLE:
+            return facts[src].available && facts[i->rhs].available;
+        case ZR_STRICT_OP_POOL_SHRINK:
+            return facts[src].available;
         case ZR_STRICT_OP_TRANSFER:
         case ZR_STRICT_OP_SHARE:
             if (facts[dst].available || !can_consume(&facts[src])) return 0;
@@ -159,9 +184,10 @@ static int apply_owner_flow(const ZrStrictProgram *p, const ZrStrictInstruction 
             if (!can_consume(&facts[src])) return 0;
             memset(&facts[src], 0, sizeof(facts[src]));
             return 1;
+        case ZR_STRICT_OP_POOL_VIEW:
         case ZR_STRICT_OP_BORROW:
         case ZR_STRICT_OP_BORROW_FIELD:
-            if (!facts[src].available || facts[src].writer || facts[dst].available) return 0;
+            if ((i->op == ZR_STRICT_OP_POOL_VIEW && !facts[i->rhs].available) || !facts[src].available || facts[src].writer || facts[dst].available) return 0;
             if (zr_strict_borrow_is_writable(p->kinds[dst])) {
                 if (facts[src].readers) return 0;
                 facts[src].writer = 1;

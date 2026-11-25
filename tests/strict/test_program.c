@@ -393,7 +393,42 @@ static void test_parent_allocation_failure_keeps_staged_owned_field(void) {
     assert(ZrStrictProgram_Verify(&p, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 1);
 }
 
+static void test_pool_views_in_verified_program(void) {
+    uint8_t kinds[] = {ZR_STRICT_VALUE_I64, ZR_STRICT_VALUE_POOL, ZR_STRICT_VALUE_I64,
+        ZR_STRICT_VALUE_POOL_HANDLE, ZR_STRICT_VALUE_POOL_HANDLE, ZR_STRICT_VALUE_READONLY_BORROW,
+        ZR_STRICT_VALUE_BOOL, ZR_STRICT_VALUE_I64};
+    uint32_t types[] = {0, 1, 0, 1, 1, 1, 0, 0};
+    ZrStrictRecordLayout layout = {.fieldCount = 1, .fields = {ZR_STRICT_VALUE_I64}, .name = "Student"};
+    ZrStrictInstruction code[] = {
+        {ZR_STRICT_OP_CONST, 0, 0, 0, 1},
+        {ZR_STRICT_OP_POOL_CREATE, 1, 0, 0, 0},
+        {ZR_STRICT_OP_CONST, 2, 0, 0, 42},
+        {ZR_STRICT_OP_POOL_RENT, 3, 2, 1, 0},
+        {ZR_STRICT_OP_CLONE, 4, 3, 0, 0},
+        {ZR_STRICT_OP_POOL_VIEW, 5, 1, 3, 0},
+        {ZR_STRICT_OP_POOL_RECYCLE, 6, 1, 4, 0},
+        {ZR_STRICT_OP_FIELD_READ, 7, 5, 0, 0},
+        {ZR_STRICT_OP_END_BORROW, 0, 5, 0, 0},
+        {ZR_STRICT_OP_RETURN, 0, 7, 0, 0},
+    };
+    ZrStrictProgram source = {.kinds = kinds, .slotCount = sizeof(kinds) / sizeof(*kinds), .instructions = code,
+        .instructionCount = sizeof(code) / sizeof(*code), .slotLayouts = types, .layouts = &layout, .layoutCount = 1};
+    uint32_t pc;
+    ZrStrictResult result;
+    assert(ZrStrictProgram_Run(&source, &result, &pc) == ZR_STRICT_PROGRAM_OK && result.scalar == 42);
+    ZrStrictInstruction recycle = code[6];
+    code[6] = (ZrStrictInstruction){ZR_STRICT_OP_DROP, 0, 1, 0, 0};
+    assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 6);
+    code[6] = recycle;
+    kinds[5] = ZR_STRICT_VALUE_BORROW;
+    assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 5);
+    kinds[5] = ZR_STRICT_VALUE_READONLY_BORROW;
+    code[6].rhs = source.slotCount;
+    assert(ZrStrictProgram_Verify(&source, &pc) == ZR_STRICT_PROGRAM_BAD_INSTRUCTION && pc == 6);
+}
+
 int main(void) {
+    test_pool_views_in_verified_program();
     test_verified_control_flow_round_trip();
     test_unverified_programs_fail_closed();
     test_arithmetic_fault_is_checked();

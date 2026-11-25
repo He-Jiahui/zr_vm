@@ -123,6 +123,10 @@ static const char *identifier(const SZrAstNode *node) {
 static size_t count(const SZrAstNodeArray *a) { return a ? a->count : 0; }
 static TZrBool same(const char *a, const char *b) { return a && b && !strcmp(a, b); }
 
+static TZrBool strict_runtime_type_name(const char *name) {
+    return same(name, "ManualBlock") || same(name, "StaticPool") || same(name, "PoolHandle");
+}
+
 static TZrBool field_owner(uint8_t kind) {
     return kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_SHARED ||
            kind == ZR_STRICT_VALUE_WEAK || kind == ZR_STRICT_VALUE_MANUAL_BLOCK;
@@ -242,7 +246,9 @@ static TZrBool emit(Lowerer *l, const SZrAstNode *node, uint32_t op, uint32_t ds
     switch (op) {
         case ZR_STRICT_OP_INIT_RECORD: case ZR_STRICT_OP_OWN_RECORD: case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
         case ZR_STRICT_OP_TRANSFER: case ZR_STRICT_OP_CLONE: case ZR_STRICT_OP_SHARE:
-        case ZR_STRICT_OP_DEGRADE: case ZR_STRICT_OP_WAKE: case ZR_STRICT_OP_BORROW: case ZR_STRICT_OP_BORROW_FIELD:
+        case ZR_STRICT_OP_DEGRADE: case ZR_STRICT_OP_WAKE: case ZR_STRICT_OP_UNWRAP_SHARED:
+        case ZR_STRICT_OP_BORROW: case ZR_STRICT_OP_BORROW_FIELD:
+        case ZR_STRICT_OP_POOL_CREATE: case ZR_STRICT_OP_POOL_RENT: case ZR_STRICT_OP_POOL_VIEW:
             l->live[dst] = 1;
             break;
         case ZR_STRICT_OP_FIELD_READ:
@@ -348,6 +354,14 @@ static uint32_t layout_from_type(const Lowerer *l, const SZrType *type) {
     return qualified_layout(l, identifier(type->name), identifier(member->name));
 }
 
+static uint32_t generic_record_argument(const Lowerer *l, const SZrAstNode *argument) {
+    if (argument->type != ZR_AST_TYPE) return layout_from_target(l, argument);
+    const SZrType *inner = &argument->data.type;
+    if (inner->dimensions || inner->referenceAccess || inner->ownershipQualifier ||
+        inner->isReadonlyView || inner->isDecoratorPseudoType) return 0;
+    return layout_from_type(l, inner);
+}
+
 static uint8_t binding_type_in(Lowerer *l, const SZrType *type, uint32_t *layout, uint32_t module) {
     uint32_t saved = l->module;
     select_module(l, module);
@@ -357,7 +371,7 @@ static uint8_t binding_type_in(Lowerer *l, const SZrType *type, uint32_t *layout
 }
 
 static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, uint32_t type,
-                                const SZrAstNodeArray *args, TZrBool owned) {
+                                const SZrAstNodeArray *args, TZrBool owned, uint32_t pool) {
     uint32_t output, first, depth = 0, firstLocal = l->program.slotCount, callerModule = l->module;
     const RecordModel *model;
     const ZrStrictRecordLayout *layout;
@@ -435,9 +449,11 @@ static uint32_t lower_construct(Lowerer *l, const SZrAstNode *node, uint32_t typ
                                         slot, scope.fields[field], 0)) goto fail;
     }
     if (!release_range(l, node, firstLocal, first)) goto fail;
-    output = new_slot(l, owned ? ZR_STRICT_VALUE_UNIQUE : ZR_STRICT_VALUE_RECORD, type, node);
-    if (output == INVALID_SLOT || !emit(l, node, owned ? ZR_STRICT_OP_OWN_RECORD : ZR_STRICT_OP_INIT_RECORD,
-            output, first, owned ? allocation_site(node) : 0)) goto fail;
+    uint8_t kind = pool != INVALID_SLOT ? ZR_STRICT_VALUE_POOL_HANDLE : owned ? ZR_STRICT_VALUE_UNIQUE : ZR_STRICT_VALUE_RECORD;
+    uint32_t op = pool != INVALID_SLOT ? ZR_STRICT_OP_POOL_RENT : owned ? ZR_STRICT_OP_OWN_RECORD : ZR_STRICT_OP_INIT_RECORD;
+    output = new_slot(l, kind, type, node);
+    if (output == INVALID_SLOT || !emit(l, node, op, output, first, owned ? allocation_site(node) : 0)) goto fail;
+    if (pool != INVALID_SLOT) l->program.instructions[l->program.instructionCount - 1].rhs = pool;
     for (uint32_t field = 0; field < layout->fieldCount; ++field)
         if (field_owner(layout->fields[field])) l->live[first + field] = 0;
     goto done;
@@ -565,6 +581,77 @@ static uint32_t lower_manual_try_alloc(Lowerer *l, const SZrAstNode *node, const
             ? dst : INVALID_SLOT;
 }
 
+static const SZrFunctionCall *pool_call(Lowerer *l, const SZrAstNode *node, uint32_t *pool, const char **member) {
+    if (node->type != ZR_AST_PRIMARY_EXPRESSION) return NULL;
+    const SZrPrimaryExpression *expr = &node->data.primaryExpression;
+    const SZrAstNodeArray *members = expr->members;
+    const char *base = identifier(expr->property);
+    if (!base || count(members) != 2 || members->nodes[0]->type != ZR_AST_MEMBER_EXPRESSION ||
+        members->nodes[1]->type != ZR_AST_FUNCTION_CALL) return NULL;
+    const SZrMemberExpression *selected = &members->nodes[0]->data.memberExpression;
+    if (selected->computed || selected->accessMode != ZR_POSTFIX_ACCESS_DIRECT ||
+        !(*member = identifier(selected->property))) return NULL;
+    const SZrFunctionCall *call = &members->nodes[1]->data.functionCall;
+    *pool = lookup(l, base);
+    if (*pool == INVALID_SLOT) return same(base, "StaticPool") ? call : NULL;
+    return l->program.kinds[*pool] == ZR_STRICT_VALUE_POOL ? call : NULL;
+}
+
+static uint32_t lower_pool_call(Lowerer *l, const SZrAstNode *node, const SZrFunctionCall *call,
+                                uint32_t pool, const char *member, uint8_t expected) {
+    if (l->inDestructor) return refuse(l, node, "a strict destructor cannot operate a pool");
+    if (call->hasNamedArgs || call->accessMode != ZR_POSTFIX_ACCESS_DIRECT)
+        return refuse(l, node, "strict pool operations require positional arguments");
+    if (call->argumentMarkers) {
+        for (size_t index = 0; index < call->argumentMarkers->length; ++index) {
+            const SZrCallArgumentSyntax *arg = ZrCore_Array_Get(call->argumentMarkers, index);
+            if (!arg || arg->marker != ZR_CALL_ARGUMENT_MARKER_NONE)
+                return refuse(l, node, "strict pool operations take arguments by value");
+        }
+    }
+    uint32_t type, input, op, key = 0;
+    uint8_t outKind;
+    if (pool == INVALID_SLOT) {
+        type = count(call->genericArguments) == 1 ? generic_record_argument(l, call->genericArguments->nodes[0]) : 0;
+        if (!same(member, "create") || !type || count(call->args) != 1)
+            return refuse(l, node, "use StaticPool.create<Record>(hardCap) with a strict record type");
+        input = lower_expression(l, call->args->nodes[0], ZR_STRICT_VALUE_I64);
+        if (input == INVALID_SLOT) return INVALID_SLOT;
+        if (l->program.kinds[input] != ZR_STRICT_VALUE_I64) return refuse(l, node, "strict pool hard cap must be int");
+        op = ZR_STRICT_OP_POOL_CREATE;
+        outKind = ZR_STRICT_VALUE_POOL;
+    } else {
+        if (count(call->genericArguments)) return refuse(l, node, "pool methods take their layout from the pool");
+        type = l->program.slotLayouts[pool];
+        if (same(member, "tryRent")) return lower_construct(l, node, type, call->args, ZR_TRUE, pool);
+        input = pool;
+        if (same(member, "shrink") && !count(call->args)) {
+            op = ZR_STRICT_OP_POOL_SHRINK;
+            outKind = ZR_STRICT_VALUE_I64;
+        } else if (count(call->args) == 1 && (same(member, "contains") || same(member, "recycle") || same(member, "view"))) {
+            key = lower_expression(l, call->args->nodes[0], ZR_STRICT_VALUE_POOL_HANDLE);
+            if (key == INVALID_SLOT) return INVALID_SLOT;
+            if (l->program.kinds[key] != ZR_STRICT_VALUE_POOL_HANDLE || l->program.slotLayouts[key] != type)
+                return refuse(l, node, "pool handle must match the pool element layout");
+            if (same(member, "view")) {
+                if (expected != ZR_STRICT_VALUE_READONLY_BORROW)
+                    return refuse(l, node, "declare a scoped ref readonly binding for a pool view");
+                op = ZR_STRICT_OP_POOL_VIEW;
+                outKind = ZR_STRICT_VALUE_READONLY_BORROW;
+            } else {
+                op = same(member, "contains") ? ZR_STRICT_OP_POOL_CONTAINS : ZR_STRICT_OP_POOL_RECYCLE;
+                outKind = ZR_STRICT_VALUE_BOOL;
+            }
+        } else {
+            return refuse(l, node, "expected a strict pool operation with matching arguments");
+        }
+    }
+    uint32_t dst = new_slot(l, outKind, outKind >= ZR_STRICT_VALUE_RECORD ? type : 0, node);
+    if (dst == INVALID_SLOT || !emit(l, node, op, dst, input, 0)) return INVALID_SLOT;
+    l->program.instructions[l->program.instructionCount - 1].rhs = key;
+    return dst;
+}
+
 /* Match a single member selection off a local byte view; multi-part or
  * computed access on ordinary records stays outside this built-in. */
 static const SZrMemberExpression *manual_view_member(Lowerer *l, const SZrAstNode *node, uint32_t *view) {
@@ -632,7 +719,7 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
         case ZR_AST_CONSTRUCT_EXPRESSION: {
             const SZrConstructExpression *expr = &node->data.constructExpression;
             if (expr->isResourceSurface && expr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE)
-                return lower_construct(l, node, layout_from_target(l, expr->target), expr->args, ZR_TRUE);
+                return lower_construct(l, node, layout_from_target(l, expr->target), expr->args, ZR_TRUE, INVALID_SLOT);
             if (!expr->isNew && expr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW) {
                 if (!is_borrow(expected))
                     return refuse(l, node, "declare a scoped ref or ref readonly binding for this borrow");
@@ -662,7 +749,7 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
             const SZrStructInitExpression *expr = &node->data.structInitExpression;
             if (!expr->hasNamedArgs && expr->typeInfo && !expr->typeInfo->dimensions &&
                 !expr->typeInfo->referenceAccess && !expr->typeInfo->ownershipQualifier)
-                return lower_construct(l, node, layout_from_type(l, expr->typeInfo), expr->args, ZR_FALSE);
+                return lower_construct(l, node, layout_from_type(l, expr->typeInfo), expr->args, ZR_FALSE, INVALID_SLOT);
             break;
         }
         case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION: return ownership_expression(l, node);
@@ -693,6 +780,8 @@ static uint32_t lower_expression(Lowerer *l, const SZrAstNode *node, uint8_t exp
                         ? slot : INVALID_SLOT;
             }
             if (allocation) return lower_manual_try_alloc(l, node, allocation);
+            const SZrFunctionCall *pooled = pool_call(l, node, &input, &field);
+            if (pooled) return lower_pool_call(l, node, pooled, input, field, expected);
             if (final_call(node)) return lower_call(l, node, ZR_TRUE, &slot) ? slot : INVALID_SLOT;
             member = manual_view_member(l, node, &input);
             if (member) return lower_byte_read(l, node, input, member);
@@ -729,17 +818,13 @@ static uint8_t binding_type(Lowerer *l, const SZrType *type, uint32_t *layout) {
     node = type->name;
     if (node->type == ZR_AST_GENERIC_TYPE && !type->referenceAccess) {
         const SZrGenericType *generic = &node->data.genericType;
-        if (!type->isImplicitBuiltinType || type->subType || count(generic->params) != 1) return 0;
-        const SZrAstNode *argument = generic->params->nodes[0];
-        if (argument->type == ZR_AST_TYPE) {
-            const SZrType *inner = &argument->data.type;
-            if (inner->dimensions || inner->referenceAccess || inner->ownershipQualifier ||
-                inner->isReadonlyView || inner->isDecoratorPseudoType) return 0;
-            *layout = layout_from_type(l, inner);
-        } else {
-            *layout = layout_from_target(l, argument);
-        }
+        if (type->subType || count(generic->params) != 1) return 0;
+        *layout = generic_record_argument(l, generic->params->nodes[0]);
         if (!*layout) return 0;
+        const char *genericName = name_of(generic->name);
+        if (!type->ownershipQualifier && same(genericName, "StaticPool")) return ZR_STRICT_VALUE_POOL;
+        if (!type->ownershipQualifier && same(genericName, "PoolHandle")) return ZR_STRICT_VALUE_POOL_HANDLE;
+        if (!type->isImplicitBuiltinType) return 0;
         switch (type->ownershipQualifier) {
             case ZR_OWNERSHIP_QUALIFIER_UNIQUE: return ZR_STRICT_VALUE_UNIQUE;
             case ZR_OWNERSHIP_QUALIFIER_SHARED: return ZR_STRICT_VALUE_SHARED;
@@ -957,7 +1042,8 @@ static TZrBool match_slot(const Lowerer *l, uint32_t slot, uint8_t kind, uint32_
 
 static uint32_t assignment_op(const Lowerer *l, uint8_t kind, uint32_t type) {
     if (kind < ZR_STRICT_VALUE_RECORD) return ZR_STRICT_OP_COPY;
-    if (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK) return ZR_STRICT_OP_TRANSFER;
+    if (kind == ZR_STRICT_VALUE_UNIQUE || kind == ZR_STRICT_VALUE_MANUAL_BLOCK || kind == ZR_STRICT_VALUE_POOL)
+        return ZR_STRICT_OP_TRANSFER;
     if (kind == ZR_STRICT_VALUE_RECORD) {
         const ZrStrictRecordLayout *layout = &l->program.layouts[type - 1];
         for (uint32_t field = 0; field < layout->fieldCount; ++field)
@@ -1186,6 +1272,10 @@ static TZrBool lower_statement(Lowerer *l, const SZrAstNode *node) {
             return input != INVALID_SLOT && end_frame_loans(l, node) && emit(l, node, ZR_STRICT_OP_RETURN, 0, input, 0);
         case ZR_AST_PRIMARY_EXPRESSION: {
             uint32_t first = l->program.slotCount;
+            uint32_t pool;
+            const char *member;
+            const SZrFunctionCall *pooled = pool_call(l, expr, &pool, &member);
+            if (pooled) return lower_pool_call(l, expr, pooled, pool, member, 0) != INVALID_SLOT && release_slots(l, node, first);
             if (!final_call(expr)) break;
             return lower_call(l, expr, ZR_FALSE, &input) && release_slots(l, node, first);
         }
@@ -1315,7 +1405,7 @@ static const char *record_name(const SZrAstNode *node) {
 
 static TZrBool register_record(Lowerer *l, const SZrAstNode *node) {
     const char *name = record_name(node);
-    if (!name || same(name, "ManualBlock") || strlen(name) >= ZR_STRICT_LAYOUT_NAME_SIZE ||
+    if (!name || strict_runtime_type_name(name) || strlen(name) >= ZR_STRICT_LAYOUT_NAME_SIZE ||
         declared_layout(l, l->module, name, ZR_FALSE) || l->program.layoutCount == ZR_STRICT_MAX_LAYOUTS) {
         (void)refuse(l, node, "invalid or duplicate strict record name");
         return ZR_FALSE;
@@ -1498,7 +1588,7 @@ static const SZrVariableDeclaration *static_import(const SZrAstNode *node) {
 
 static TZrBool add_import(Lowerer *l, const SZrAstNode *node, uint32_t target, const char *alias, const char *name) {
     StrictModule *scope = &l->modules[l->module];
-    if (!alias || same(alias, "ManualBlock") || find_import(l, l->module, alias) || scope->importCount == ZR_STRICT_MAX_SLOTS) {
+    if (!alias || strict_runtime_type_name(alias) || find_import(l, l->module, alias) || scope->importCount == ZR_STRICT_MAX_SLOTS) {
         (void)refuse(l, node, "invalid or duplicate StrictNoGC import binding");
         return ZR_FALSE;
     }

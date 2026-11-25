@@ -20,7 +20,7 @@ typedef struct StrictFlow {
 } StrictFlow;
 
 static TZrBool is_loan(uint32_t op) {
-    return op == ZR_STRICT_OP_BORROW || op == ZR_STRICT_OP_BORROW_FIELD;
+    return op == ZR_STRICT_OP_BORROW || op == ZR_STRICT_OP_BORROW_FIELD || op == ZR_STRICT_OP_POOL_VIEW;
 }
 
 static TZrBool is_writable(uint8_t kind) {
@@ -65,7 +65,9 @@ static TZrBool project_instruction(StrictFlow *flow, const ZrStrictInstruction *
     const uint32_t dst = i->dst, src = i->lhs;
     switch (i->op) {
         case ZR_STRICT_OP_INIT_RECORD:
-        case ZR_STRICT_OP_OWN_RECORD: {
+        case ZR_STRICT_OP_OWN_RECORD:
+        case ZR_STRICT_OP_POOL_RENT: {
+            if (i->op == ZR_STRICT_OP_POOL_RENT && !step(flow, i->rhs, ZR_SEMANTIC_IR_LOAD, NULL)) return ZR_FALSE;
             if (dst >= p->slotCount || !p->slotLayouts[dst] || p->slotLayouts[dst] > p->layoutCount)
                 return ZR_FALSE;
             uint32_t fields = p->layouts[p->slotLayouts[dst] - 1].fieldCount;
@@ -75,6 +77,7 @@ static TZrBool project_instruction(StrictFlow *flow, const ZrStrictInstruction *
             return step(flow, dst, ZR_SEMANTIC_IR_INITIALIZE, NULL);
         }
         case ZR_STRICT_OP_MANUAL_TRY_ALLOC:
+        case ZR_STRICT_OP_POOL_CREATE:
             return step(flow, dst, ZR_SEMANTIC_IR_INITIALIZE, NULL);
         case ZR_STRICT_OP_TRANSFER:
         case ZR_STRICT_OP_SHARE:
@@ -85,15 +88,21 @@ static TZrBool project_instruction(StrictFlow *flow, const ZrStrictInstruction *
         case ZR_STRICT_OP_UNWRAP_SHARED:
         case ZR_STRICT_OP_FIELD_READ:
             return step(flow, src, ZR_SEMANTIC_IR_LOAD, NULL) && step(flow, dst, ZR_SEMANTIC_IR_INITIALIZE, NULL);
+        case ZR_STRICT_OP_POOL_CONTAINS:
+        case ZR_STRICT_OP_POOL_RECYCLE:
+            return step(flow, src, ZR_SEMANTIC_IR_LOAD, NULL) && step(flow, i->rhs, ZR_SEMANTIC_IR_LOAD, NULL);
+        case ZR_STRICT_OP_POOL_SHRINK:
         case ZR_STRICT_OP_IS_NULL:
         case ZR_STRICT_OP_BYTE_LENGTH:
         case ZR_STRICT_OP_BYTE_READ:
             return step(flow, src, ZR_SEMANTIC_IR_LOAD, NULL);
         case ZR_STRICT_OP_DROP:
             return step(flow, src, ZR_SEMANTIC_IR_DROP, NULL);
+        case ZR_STRICT_OP_POOL_VIEW:
         case ZR_STRICT_OP_BORROW:
         case ZR_STRICT_OP_BORROW_FIELD:
-            return step(flow, src, is_writable(p->kinds[dst]) ? ZR_SEMANTIC_IR_BORROW_MUT : ZR_SEMANTIC_IR_BORROW_SHARED,
+            return (i->op != ZR_STRICT_OP_POOL_VIEW || step(flow, i->rhs, ZR_SEMANTIC_IR_LOAD, NULL)) &&
+                   step(flow, src, is_writable(p->kinds[dst]) ? ZR_SEMANTIC_IR_BORROW_MUT : ZR_SEMANTIC_IR_BORROW_SHARED,
                         &flow->places[dst]) && step(flow, dst, ZR_SEMANTIC_IR_INITIALIZE, NULL);
         case ZR_STRICT_OP_END_BORROW:
             return src < p->slotCount && flow->places[src].loan && step(flow, src, ZR_SEMANTIC_IR_DROP, NULL) &&
@@ -118,7 +127,7 @@ static TZrBool project_places(StrictFlow *flow, const SZrCliStrictLocation *loca
         StrictPlace *item = &flow->places[slot];
         /* These are local type identities in the projection. The strict
          * verifier independently checks kind and nominal layout compatibility. */
-        item->type = p->slotLayouts[slot] * (ZR_STRICT_VALUE_READONLY_BYTE_VIEW + 1) + p->kinds[slot];
+        item->type = p->slotLayouts[slot] * (ZR_STRICT_VALUE_POOL_HANDLE + 1) + p->kinds[slot];
         item->place = ZrParser_SemanticIr_AddLocal(f, slot + 1, &base, item->type, locations[0].range,
                                                    receiver);
         if (!item->place) return ZR_FALSE;

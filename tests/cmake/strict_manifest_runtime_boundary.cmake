@@ -175,11 +175,22 @@ function(check_strict_owner name source expected fault)
     math(EXPR inside "${begin_at} + ${begin_size}")
     string(SUBSTRING "${error}" ${inside} -1 error)
     string(FIND "${error}" "${end}" end_at)
-    if(NOT end_at EQUAL 0)
+    set(expected_report "")
+    if(STRICT_DEBUG AND owner_report_type)
+        if(end_at LESS_EQUAL 0)
+            message(FATAL_ERROR "${name}: Missing debug pool cleanup report: ${error}")
+        endif()
+        string(SUBSTRING "${error}" 0 ${end_at} expected_report)
+        if(NOT expected_report MATCHES "^StrictNoGC: outstanding ${owner_report_type} pool rental at [0-9]+:[0-9]+\n$")
+            message(FATAL_ERROR "${name}: Wrong debug pool cleanup report: ${error}")
+        endif()
+        string(STRIP "${expected_report}" expected_report)
+    elseif(NOT end_at EQUAL 0)
         message(FATAL_ERROR "${name}: Unexpected output during strict execution: ${error}")
     endif()
     string(LENGTH "${end}" end_size)
-    string(SUBSTRING "${error}" ${end_size} -1 error)
+    math(EXPR after_end "${end_at} + ${end_size}")
+    string(SUBSTRING "${error}" ${after_end} -1 error)
     string(STRIP "${error}" error)
     if(fault)
         if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error MATCHES "^StrictNoGC: .* at instruction [0-9]+$")
@@ -209,12 +220,13 @@ function(check_strict_owner name source expected fault)
             RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
     string(REPLACE "\r\n" "\n" output "${output}")
     string(STRIP "${output}" output)
+    string(REPLACE "\r\n" "\n" error "${error}")
     string(STRIP "${error}" error)
     if(fault)
         if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error STREQUAL reference_fault)
             message(FATAL_ERROR "${name}: Strict binary fault diverged (${status}): ${output}\n${error}")
         endif()
-    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL "${expected}\nexecuted_via=strict-binary" OR NOT error STREQUAL "")
+    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL "${expected}\nexecuted_via=strict-binary" OR NOT error STREQUAL expected_report)
         message(FATAL_ERROR "${name}: Strict binary needed source or a managed bootstrap (${status}): ${output}\n${error}")
     endif()
 
@@ -232,12 +244,13 @@ function(check_strict_owner name source expected fault)
     endif()
     execute_process(COMMAND "${aot_exe}" RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 30)
     string(STRIP "${output}" output)
+    string(REPLACE "\r\n" "\n" error "${error}")
     string(STRIP "${error}" error)
     if(fault)
         if(NOT status STREQUAL "1" OR NOT output STREQUAL "" OR NOT error STREQUAL reference_fault)
             message(FATAL_ERROR "${name}: Strict native fault diverged (${status}): ${output}\n${error}")
         endif()
-    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL expected OR NOT error STREQUAL "")
+    elseif(NOT status STREQUAL "0" OR NOT output STREQUAL expected OR NOT error STREQUAL expected_report)
         message(FATAL_ERROR "${name}: Strict ownership AOT C and interpreter disagree (${status}): ${output}\n${error}")
     endif()
 endfunction()
@@ -275,6 +288,79 @@ return owner.id;
 ]=])
 check_strict_owner(loop "${student_decl}${loop_program}" 42 FALSE)
 
+set(pool_reuse [=[
+let pool: StaticPool<Student> = StaticPool.create<Student>(1);
+let handle: PoolHandle<Student> = pool.tryRent(42);
+let saved = handle;
+if (true) {
+    let view: ref readonly Student = pool.view(handle);
+    if (!pool.recycle(handle)) { return 1; }
+    if (pool.contains(saved)) { return 2; }
+    let blocked = pool.tryRent(7);
+    if (blocked != null) { return 3; }
+    if (view.id != 42) { return 3; }
+}
+let reused = pool.tryRent(7);
+if (reused == null) { return 4; }
+if (pool.contains(saved)) { return 4; }
+pool.recycle(reused);
+if (pool.shrink() != 1) { return 5; }
+let newSlab = pool.tryRent(42);
+if (newSlab == null) { return 6; }
+if (pool.contains(saved)) { return 6; }
+if (true) {
+    let view: ref readonly Student = pool.view(newSlab);
+    pool.recycle(newSlab);
+    return view.id;
+}
+return 0;
+]=])
+check_strict_owner(pool_reuse "${student_decl}${pool_reuse}" 42 FALSE)
+
+set(pool_guard_decl [=[
+resource class PoolGuard {
+    pub var value: int;
+    pub @constructor(value: int) { this.value = value; }
+    pub @destructor() { let checked = 42 / this.value; }
+}
+]=])
+set(owner_report_type PoolGuard)
+check_strict_owner(pool_shutdown "${pool_guard_decl}\nlet pool = StaticPool.create<PoolGuard>(1);\nlet abandoned = pool.tryRent(0);\nreturn 42;" 42 FALSE)
+unset(owner_report_type)
+set(pool_deferred_drop [=[
+let pool = StaticPool.create<PoolGuard>(1);
+let handle = pool.tryRent(0);
+if (true) {
+    let view: ref readonly PoolGuard = pool.view(handle);
+    pool.recycle(handle);
+    if (view.value != 0) { return 1; }
+}
+return 42;
+]=])
+check_strict_owner(pool_deferred_drop "${pool_guard_decl}${pool_deferred_drop}" "" TRUE "destructor fault")
+
+set(strict_dependencies school)
+set(strict_dependency_school [=[
+pub resource class Student {
+    pub var id: int;
+    pub @constructor(id: int) { this.id = id; }
+}
+let students = StaticPool.create<Student>(1);
+pub fn Take(id: int): PoolHandle<Student> { return students.tryRent(id); }
+pub fn ReadAndRecycle(rental: PoolHandle<Student>): int {
+    let view: ref readonly Student = students.view(rental);
+    students.recycle(rental);
+    return view.id;
+}
+]=])
+set(module_pool [=[
+let { Take, ReadAndRecycle } = import(".school");
+let rental = Take(42);
+return ReadAndRecycle(rental);
+]=])
+check_strict_owner(module_pool "${module_pool}" 42 FALSE)
+unset(strict_dependencies)
+
 set(weak_start [=[
 let student: Unique<Student> = own Student(42);
 let owner: Shared<Student> = share(student);
@@ -306,6 +392,17 @@ if (null == candidate) {
 }
 ]=])
 check_strict_owner(weak_recover_owner "${student_decl}${weak_start}${weak_recover}" 42 FALSE)
+set(weak_scope_cleanup [=[
+let candidate = wake(observer);
+if (candidate != null) {
+    let recovered: Shared<Student> = candidate;
+    if (recovered.id != 42) { return false; }
+}
+drop(candidate);
+drop(clone);
+return wake(observer) == null;
+]=])
+check_strict_owner(weak_scope_cleanup "${student_decl}${weak_start}${weak_scope_cleanup}" true FALSE)
 set(weak_expired_payload [=[
 drop(clone);
 let candidate = wake(observer);
@@ -342,6 +439,23 @@ reject_strict_owner(weak_wrong_branch "${weak_start}let candidate = wake(observe
     "check the result of wake against null")
 reject_strict_owner(weak_readonly_payload "${weak_start}let candidate = wake(observer); if (candidate != null) { candidate.id = 0; } return 0;"
     "readonly field")
+
+set(pool_drop_while_view [=[
+let pool = StaticPool.create<Student>(1);
+let handle = pool.tryRent(42);
+let view: ref readonly Student = pool.view(handle);
+drop(pool);
+return view.id;
+]=])
+reject_strict_owner(pool_drop_while_view "${pool_drop_while_view}" "ownership analysis: conflicting borrow")
+set(pool_wrong_handle [=[
+struct Teacher { pub var id: int = 1; }
+let pool = StaticPool.create<Student>(1);
+let other = StaticPool.create<Teacher>(1);
+let handle = other.tryRent();
+return pool.contains(handle);
+]=])
+reject_strict_owner(pool_wrong_handle "${pool_wrong_handle}" "pool handle must match the pool element layout")
 
 set(moved_program [=[
 let student: Unique<Student> = own Student(42);

@@ -63,7 +63,7 @@ static int verify_instruction(const ZrStrictProgram *p, uint32_t pc, int usesFra
         case ZR_STRICT_OP_HALT:
             return !i->dst && !i->lhs && !i->rhs && !i->immediate;
         default:
-            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_UNWRAP_SHARED;
+            return usesFrame && i->op >= ZR_STRICT_OP_INIT_RECORD && i->op <= ZR_STRICT_OP_POOL_SHRINK;
     }
 }
 
@@ -71,7 +71,8 @@ static ZrStrictProgramStatus verify_code(const ZrStrictProgram *p, uint32_t *bad
     for (uint32_t slot = 0; slot < p->slotCount; ++slot) {
         uint8_t kind = p->kinds[slot];
         uint32_t type = p->slotLayouts ? p->slotLayouts[slot] : 0;
-        if (kind >= ZR_STRICT_VALUE_RECORD && kind <= ZR_STRICT_VALUE_READONLY_BORROW) {
+        if ((kind >= ZR_STRICT_VALUE_RECORD && kind <= ZR_STRICT_VALUE_READONLY_BORROW) ||
+            kind == ZR_STRICT_VALUE_POOL || kind == ZR_STRICT_VALUE_POOL_HANDLE) {
             if (!type || type > p->layoutCount) return ZR_STRICT_PROGRAM_BAD_LAYOUT;
         } else if (type || (!zr_strict_is_scalar(kind) && kind != ZR_STRICT_VALUE_MANUAL_BLOCK &&
                            !zr_strict_is_byte_view(kind))) {
