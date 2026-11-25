@@ -882,6 +882,7 @@ if(TARGET zr_vm_cli_executable)
             "-DMSVC_CRT=$<IF:$<CONFIG:Debug>,/MDd,/MD>"
             "-DSTRICT_INCLUDE=${CMAKE_SOURCE_DIR}/zr_vm_core/strict_runtime/include"
             "-DSTRICT_ARCHIVE=$<TARGET_FILE:zr_vm_strict_runtime>"
+            "-DSTRICT_SYMBOL_TOOL=${CMAKE_NM}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/strict_manifest_runtime_boundary.cmake")
     foreach(case IN ITEMS writeback field_write nested_init)
         foreach(mode IN ITEMS interp binary)

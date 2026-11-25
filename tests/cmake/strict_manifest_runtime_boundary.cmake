@@ -33,6 +33,18 @@ if(NOT status STREQUAL "0" OR NOT output STREQUAL "42\nexecuted_via=strict-binar
     message(FATAL_ERROR "Strict binary needed source or a managed bootstrap (${status}): ${output}\n${error}")
 endif()
 
+# Check all objects in the archive, including code not reached by the
+# scalar fixture. Linking each native fixture also confirms the dependency
+# boundary on toolchains without a compatible symbol reader.
+if(NOT MSVC AND EXISTS "${STRICT_SYMBOL_TOOL}")
+    execute_process(COMMAND "${STRICT_SYMBOL_TOOL}" -g "${STRICT_ARCHIVE}"
+            RESULT_VARIABLE status OUTPUT_VARIABLE strict_symbols ERROR_VARIABLE error TIMEOUT 30)
+    if(NOT status STREQUAL "0" OR NOT strict_symbols MATCHES "ZrStrictProgram_Run" OR
+            strict_symbols MATCHES "Zr(Core|Parser|Library|Common)[A-Za-z_]+")
+        message(FATAL_ERROR "Strict runtime archive is not isolated from the managed runtime (${status}): ${error}")
+    endif()
+endif()
+
 set(aot_exe "${TEST_WORK_DIR}/strict-native${EXE_SUFFIX}")
 if(MSVC)
     set(compile_args /nologo /TC /std:c11 "${MSVC_CRT}" "/I${STRICT_INCLUDE}" "${aot_source}" "${STRICT_ARCHIVE}"

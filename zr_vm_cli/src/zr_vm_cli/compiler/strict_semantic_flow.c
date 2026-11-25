@@ -204,6 +204,17 @@ static TZrBool project_cfg(StrictFlow *flow, const SZrCliStrictLocation *locatio
                                               0, ZR_PARSER_CFG_TERMINATOR_EXIT);
 }
 
+static TZrBool analysis_fits(const SZrSemanticIrFunction *f) {
+    /* The shared analyzer materializes block state and dense loan liveness
+     * tables. Bound their principal dimensions for generated source. */
+    const uint64_t places = f->places.places.length, blocks = f->cfg.blocks.length;
+    const uint64_t loans = f->loanFacts.length, code = f->instructions.length;
+    const uint64_t stateBytes = (blocks + 4) * places * 2 *
+        (sizeof(SZrSemanticPlaceFlowState) + 2 * sizeof(TZrLoanId));
+    const uint64_t loanBytes = loans * (places + f->values.length + 7 * code + 2 * (blocks + loans)) * sizeof(TZrBool);
+    return stateBytes + loanBytes <= UINT64_C(256) * 1024 * 1024;
+}
+
 TZrBool ZrCli_StrictSemanticFlow_Check(SZrState *state, const ZrStrictProgram *p, const SZrCliStrictLocation *locations,
                                      TZrBool receiverIsLive, uint32_t *badPc, const char **message) {
     TZrBool hasPlaces = ZR_FALSE, ok = ZR_FALSE;
@@ -219,8 +230,13 @@ TZrBool ZrCli_StrictSemanticFlow_Check(SZrState *state, const ZrStrictProgram *p
     ZrParser_SemanticIrFunction_Init(state, &flow.function, 1, 1);
     ZrParser_SemanticFlowResult_Init(state, &result);
     if (!p->instructionCount || !flow.places || !leaders || !irEnds ||
-        !project_places(&flow, locations, receiverIsLive) || !project_cfg(&flow, locations, leaders, irEnds, badPc) ||
-        !ZrParser_SemanticFlow_Analyze(state, &flow.function, &flow.function.cfg, &result)) goto done;
+        !project_places(&flow, locations, receiverIsLive) || !project_cfg(&flow, locations, leaders, irEnds, badPc)) goto done;
+    if (!analysis_fits(&flow.function)) {
+        *badPc = 0;
+        *message = "strict ownership analysis exceeds its flow budget";
+        goto done;
+    }
+    if (!ZrParser_SemanticFlow_Analyze(state, &flow.function, &flow.function.cfg, &result)) goto done;
 
     if (result.diagnostics.length) {
         const SZrSemanticFlowDiagnostic *diag = ZrCore_Array_Get(&result.diagnostics, 0);
