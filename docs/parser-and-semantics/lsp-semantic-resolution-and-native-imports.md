@@ -413,6 +413,7 @@ extern function 的 signature help 之前还有两个独立缺口：
 - hover 会展示 decorator 名称、类别以及目标声明，例如 `Target: class SingletonClass`。
 - 若 decorator 未来具备额外注册元信息，可以继续叠加到 hover 上，但“被修饰声明”仍然是主定义目标。
 - 语法错误让增量解析保留上一棵 AST（`usesFallbackAst`）期间，decorator definition / hover 两个专用入口直接返回 false，不把旧树上的目标或文案投影到当前文本；文本恢复合法并重新解析后按新声明继续导航。回归见 `tests/language_server/test_lsp_decorator_fallback_ast_cases.h`。
+- 同一回退期间，inlay hints（类型提示、形参名提示及其 textEdits）返回空集合，不把上一棵 AST 的声明或实参位置投影到当前文本；文本恢复合法并重新解析后按新 AST 恢复。回归见 `tests/language_server/test_lsp_inlay_fallback_ast.c`。
 
 这轮实现里还修了一个更底层的 parser 缺陷：顶层 `#decorator# class Foo {}` 之前会在 statement lookahead 时吃掉 decorator，导致 AST 上类声明没有保留 decorators。`parser_statements.c` 现在会在 decorator lookahead 前后保存并恢复 parser cursor，因此：
 

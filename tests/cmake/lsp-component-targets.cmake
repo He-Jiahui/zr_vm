@@ -30,6 +30,7 @@
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_stdio_handler_tests.cmake)
 
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/lsp-inlay-fallback-ast-tests.cmake)
 
     zr_vm_add_support_target(
             zr_vm_language_server_stdio_optional_capability_allocations_test
