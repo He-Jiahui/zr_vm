@@ -741,7 +741,8 @@ static TZrBool lsp_inlay_append_parameter_hints(SZrState *state,
 
 /** @brief 从当前文档的规范声明查询中生成指定范围内的类型提示。
  *  @pre uri 已在 context 中可分析，result 为未初始化或由同一 state 持有的提示指针数组；调用后用 FreeInlayHints 清理。
- *  @note 按声明源 URI 过滤项目级查询，再投影为文档位置；中途失败会清掉已加入的提示。 */
+ *  @note 按声明源 URI 过滤项目级查询，再投影为文档位置；中途失败会清掉已加入的提示。
+ *  @note 文档处于语法错误回退（usesFallbackAst）时返回空集合，不把上一有效 AST 的提示或 textEdits 投影到当前文本。 */
 TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
                                            SZrLspContext *context,
                                            SZrString *uri,
@@ -750,6 +751,7 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     SZrParserSemanticQueryScope scope;
     SZrArray declarations;
+    SZrFileVersion *fileVersion;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -757,6 +759,12 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
 
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspInlayHint *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    /* 回退 AST 的声明和实参位置属于上一版本文本；与 code lens / decorator 导航一样 fail closed。 */
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion != ZR_NULL && fileVersion->usesFallbackAst) {
+        return ZR_TRUE;
     }
 
     analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
