@@ -913,7 +913,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     return ZR_TRUE;
 }
 
-static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProgram *program,
+static TZrBool prepare_strict_program(const TZrChar *projectPath, ZrStrictProgram *program,
                                       SZrCliProjectContext *paths) {
     SZrGlobalState *compiler;
     SZrLibrary_Project *metadata;
@@ -923,11 +923,14 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
     TZrChar *manifest = ZR_NULL;
     TZrSize manifestLength = 0;
     TZrBool ok = ZR_FALSE;
-    if (command == ZR_NULL || command->projectPath == ZR_NULL ||
-        !ZrCli_Project_ReadTextFile(command->projectPath, &manifest, &manifestLength) ||
-        memchr(manifest, '\0', manifestLength) != ZR_NULL ||
+    if (projectPath == ZR_NULL) return ZR_FALSE;
+    if (!ZrCli_Project_ReadTextFile(projectPath, &manifest, &manifestLength)) {
+        fprintf(stderr, "%s: could not read the StrictNoGC project manifest\n", projectPath);
+        return ZR_FALSE;
+    }
+    if (memchr(manifest, '\0', manifestLength) != ZR_NULL ||
         ZrLibrary_Project_InspectMemoryPolicy(manifest) != ZR_LIBRARY_PROJECT_MEMORY_POLICY_STRICT_NO_GC) {
-        fprintf(stderr, "Could not read a StrictNoGC project manifest.\n");
+        fprintf(stderr, "%s: requires StrictNoGC: true in a version 3 project\n", projectPath);
         free(manifest);
         return ZR_FALSE;
     }
@@ -938,14 +941,14 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
         return ZR_FALSE;
     }
     metadata = ZrLibrary_Project_NewForAnalysis(compiler->mainThreadState, manifest,
-                                                (TZrNativeString)command->projectPath);
+                                                (TZrNativeString)projectPath);
     free(manifest);
     compiler->userData = metadata;
     zr_cli_module_collection_init(&modules);
-    if (ZrCli_ProjectContext_FromGlobal(&project, compiler, command->projectPath)) {
+    if (ZrCli_ProjectContext_FromGlobal(&project, compiler, projectPath)) {
         ok = zr_cli_collect_module_recursive(&project, compiler->mainThreadState, &modules, project.entryModule,
                                               ZR_FALSE, error, sizeof(error));
-        if (ok) {
+        if (ok && paths != ZR_NULL) {
             memcpy(paths->binaryRoot, project.binaryRoot, sizeof(paths->binaryRoot));
             memcpy(paths->entryModule, project.entryModule, sizeof(paths->entryModule));
         }
@@ -988,6 +991,13 @@ static TZrBool prepare_strict_program(const SZrCliCommand *command, ZrStrictProg
     ZrLibrary_Project_Free(compiler->mainThreadState, metadata);
     ZrCore_GlobalState_Free(compiler);
     return ok;
+}
+
+int ZrCli_Compiler_LintStrictProject(const TZrChar *projectPath) {
+    ZrStrictProgram program = {0};
+    TZrBool ok = prepare_strict_program(projectPath, &program, ZR_NULL);
+    ZrStrictProgram_Free(&program);
+    return ok ? 0 : 1;
 }
 
 typedef enum EZrStrictFileMode { ZR_STRICT_FILE_READ, ZR_STRICT_FILE_WRITE, ZR_STRICT_FILE_EMIT_C } EZrStrictFileMode;
@@ -1052,7 +1062,7 @@ int ZrCli_Compiler_DispatchStrict(const SZrCliCommand *command) {
             fprintf(stderr, "Could not read the StrictNoGC executable configuration: %s\n", command->projectPath);
             return 1;
         }
-    } else if (!prepare_strict_program(command, &program, &paths)) {
+    } else if (!prepare_strict_program(command->projectPath, &program, &paths)) {
         return 1;
     }
     if (compile || binaryOnly) {

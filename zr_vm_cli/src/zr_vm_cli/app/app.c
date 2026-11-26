@@ -106,6 +106,9 @@ int ZrCli_App_Run(int argc, char **argv) {
             return result;
         }
 
+        case ZR_CLI_MODE_LINT_PROJECT:
+            return ZrCli_Compiler_LintStrictProject(command.projectPath);
+
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);
             if (compileResult != 0) {

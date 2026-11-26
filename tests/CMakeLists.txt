@@ -885,6 +885,12 @@ if(TARGET zr_vm_cli_executable)
             "-DSTRICT_SYMBOL_TOOL=${CMAKE_NM}"
             "-DSTRICT_DEBUG=$<IF:$<CONFIG:Debug>,ON,OFF>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/strict_manifest_runtime_boundary.cmake")
+    add_test(NAME strict_project_lint
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/strict_project_lint"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/strict_project_lint.cmake")
+    set_tests_properties(strict_project_lint PROPERTIES TIMEOUT 45)
     foreach(case IN ITEMS writeback field_write nested_init)
         foreach(mode IN ITEMS interp binary)
             add_test(NAME struct_array_${case}_${mode}
