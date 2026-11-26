@@ -28,6 +28,11 @@ typedef struct SZrSemanticDaAnalysis {
     EZrParserDefiniteAssignmentState *readStates;
     TZrBool *readStateSeen;
     TZrSize readStateCount;
+    /* Fact indices (in referenceFacts order) that can belong to a statement of the current root;
+     * NULL means "scan every fact" (allocation fallback). Built once per root, reused by every
+     * dataflow iteration, so transfer cost no longer scales with facts of other functions. */
+    TZrSize *candidateFacts;
+    TZrSize candidateCount;
 } SZrSemanticDaAnalysis;
 
 /** @brief 以指针身份或字符串值比较两个 source 名称；两个空名称不匹配。 */
@@ -595,9 +600,14 @@ static void semantic_da_transfer_statement(SZrAstNode *statement, void *state, v
                              ZR_PARSER_DEFINITE_ASSIGNMENT_UNINIT);
     }
 
-    for (index = 0; index < analysis->context->referenceFacts.length; index++) {
-        SZrSemanticReferenceFact *fact =
-                (SZrSemanticReferenceFact *)ZrCore_Array_Get(&analysis->context->referenceFacts, index);
+    for (TZrSize position = 0;
+         position < (analysis->candidateFacts != ZR_NULL ? analysis->candidateCount
+                                                          : analysis->context->referenceFacts.length);
+         position++) {
+        SZrSemanticReferenceFact *fact;
+
+        index = analysis->candidateFacts != ZR_NULL ? analysis->candidateFacts[position] : position;
+        fact = (SZrSemanticReferenceFact *)ZrCore_Array_Get(&analysis->context->referenceFacts, index);
         if (fact == ZR_NULL ||
             !fact->isResolved ||
             fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
@@ -692,6 +702,8 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
     semanticAnalysis.readStateCount = context->referenceFacts.length;
     semanticAnalysis.readStates = ZR_NULL;
     semanticAnalysis.readStateSeen = ZR_NULL;
+    semanticAnalysis.candidateFacts = ZR_NULL;
+    semanticAnalysis.candidateCount = 0;
     if (semanticAnalysis.readStateCount > ZR_MAX_SIZE / sizeof(*semanticAnalysis.readStates) ||
         semanticAnalysis.readStateCount > ZR_MAX_SIZE / sizeof(*semanticAnalysis.readStateSeen) ||
         symbols->symbolIds.length > ZR_MAX_SIZE / sizeof(EZrParserDefiniteAssignmentState)) {
@@ -739,6 +751,27 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
                              semanticAnalysis.readStateCount * sizeof(TZrBool));
     }
 
+    /* Candidate facts for this root: same order as referenceFacts, excluding only facts that are
+     * unresolved / symbol-less (transfer skips them anyway) or provably outside the root's AST
+     * interval (Match can never include them). On allocation failure every fact is scanned. */
+    if (context->referenceFacts.length > 0 &&
+        context->referenceFacts.length <= ZR_MAX_SIZE / sizeof(TZrSize)) {
+        semanticAnalysis.candidateFacts = (TZrSize *)ZrCore_Memory_RawMallocWithType(
+                context->state->global,
+                context->referenceFacts.length * sizeof(TZrSize),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (semanticAnalysis.candidateFacts != ZR_NULL) {
+        for (TZrSize factIndex = 0; factIndex < context->referenceFacts.length; factIndex++) {
+            const SZrSemanticReferenceFact *fact =
+                    (const SZrSemanticReferenceFact *)ZrCore_Array_Get(&context->referenceFacts, factIndex);
+            if (fact != ZR_NULL && fact->isResolved && fact->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                ZrParser_SemanticDaAst_SubtreeMayContain(astIndex, root, fact->node)) {
+                semanticAnalysis.candidateFacts[semanticAnalysis.candidateCount++] = factIndex;
+            }
+        }
+    }
+
 /** 三个回调共享 symbolIds.length 个枚举槽；userData 指向本栈帧对象，仅在同步 Run 调用期间有效。 */
     analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
     analysis.stateSize = ZrParser_DefiniteAssignment_StateSize(symbols->symbolIds.length);
@@ -769,6 +802,13 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
                 context->state->global,
                 semanticAnalysis.readStateSeen,
                 semanticAnalysis.readStateCount * sizeof(TZrBool),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (semanticAnalysis.candidateFacts != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(
+                context->state->global,
+                semanticAnalysis.candidateFacts,
+                context->referenceFacts.length * sizeof(TZrSize),
                 ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
     return ok;

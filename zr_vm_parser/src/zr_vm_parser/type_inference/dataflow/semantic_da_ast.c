@@ -676,6 +676,21 @@ EZrSemanticDaAstMatch ZrParser_SemanticDaAst_Match(
                    : ZR_SEMANTIC_DA_AST_EXCLUDED;
 }
 
+TZrBool ZrParser_SemanticDaAst_SubtreeMayContain(
+        const SZrSemanticDaAstIndex *index,
+        const SZrAstNode *subtree,
+        const SZrAstNode *factNode) {
+    const SZrSemanticDaAstEntry *factEntry;
+    const SZrSemanticDaAstEntry *subtreeEntry;
+
+    factEntry = semantic_da_ast_find(index, factNode);
+    subtreeEntry = semantic_da_ast_find(index, subtree);
+    if (factEntry == ZR_NULL || subtreeEntry == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    return factEntry->begin >= subtreeEntry->begin && factEntry->begin < subtreeEntry->end;
+}
+
 TZrBool ZrParser_SemanticDaAst_VisitCfgRoots(
         const SZrSemanticDaAstIndex *index,
         TZrSemanticDaAstRootVisitor visitor,

@@ -33,6 +33,14 @@ EZrSemanticDaAstMatch ZrParser_SemanticDaAst_Match(
         const SZrAstNode *subtree,
         const SZrAstNode *factNode);
 
+/* Conservative prefilter for one CFG root: false only when both nodes are indexed and the fact
+ * node lies outside the subtree's preorder interval. Match can then never report INCLUDED for any
+ * node inside the subtree, and LEGACY (unindexed) facts are always kept. */
+TZrBool ZrParser_SemanticDaAst_SubtreeMayContain(
+        const SZrSemanticDaAstIndex *index,
+        const SZrAstNode *subtree,
+        const SZrAstNode *factNode);
+
 /* Visits script/function roots, a standalone block root, lambda bodies, and class/struct method bodies. */
 TZrBool ZrParser_SemanticDaAst_VisitCfgRoots(
         const SZrSemanticDaAstIndex *index,
