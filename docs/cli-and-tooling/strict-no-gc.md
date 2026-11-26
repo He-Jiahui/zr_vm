@@ -24,7 +24,15 @@ return 0;
 
 `wake` returns null if the payload is already gone. Inside the non-null branch you can read the payload, borrow it as `ref readonly`, or keep a strong reference with an explicit `Shared<T>` binding. The test must guard the same binding that you use.
 
-In CI, require the project to stay strict even if someone edits its manifest:
+Run this as a local or CI check:
+
+```sh
+zr_vm_cli lint app.zrp
+```
+
+`lint` (also `--lint`) checks the entry source and its transitive imports using the same allocation and ownership rules as a strict build. It returns 0 on success or 1 with diagnostics on failure, including if the manifest no longer enables `StrictNoGC`. It does not run project code, read build artifacts as inputs, or write build outputs. To lint another entry, point the command at the manifest that declares it.
+
+For CI jobs that build or run the project, require the mode explicitly:
 
 ```sh
 zr_vm_cli --require-strict-no-gc --compile app.zrp --emit-aot-c

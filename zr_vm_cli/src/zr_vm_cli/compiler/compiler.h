@@ -30,6 +30,8 @@ TZrBool ZrCli_Compiler_ApplyProjectAotWriterOptions(const SZrCliProjectContext *
 /** @brief 将编译成败转换为进程退出码的 app 入口。 */
 /* Selects only the strict compiler and runtime. No managed fallback. */
 int ZrCli_Compiler_DispatchStrict(const SZrCliCommand *command);
+/* Verifies current StrictNoGC source without loading or writing an executable. */
+int ZrCli_Compiler_LintStrictProject(const TZrChar *projectPath);
 int ZrCli_Compiler_CompileProject(const SZrCliCommand *command);
 
 #endif

@@ -20,7 +20,8 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9,
     ZR_CLI_MODE_MIGRATE_SYNTAX = 10,
     ZR_CLI_MODE_TEST = 11,
-    ZR_CLI_MODE_EXPLAIN_OPTIMIZE = 12
+    ZR_CLI_MODE_EXPLAIN_OPTIMIZE = 12,
+    ZR_CLI_MODE_LINT_PROJECT = 13
 } EZrCliMode;
 
 /** @brief 迁移报告的输出协议，由 migrate syntax 专用参数选择。 */

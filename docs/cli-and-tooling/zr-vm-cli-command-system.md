@@ -114,6 +114,7 @@ doc_type: module-detail
   - `REPL`
   - `RUN_PROJECT`
   - `COMPILE_PROJECT`
+  - `LINT_PROJECT`
   - `RUN_INLINE`
   - `RUN_PROJECT_MODULE`
 - `SZrCliCommand`
@@ -144,6 +145,7 @@ doc_type: module-detail
 - 无参数
 - `<project.zrp>`
 - `--compile <project.zrp>`
+- `lint <project.zrp>`（也可用 `--lint`）：检查 [StrictNoGC](strict-no-gc.md) 项目及其传递依赖，不执行项目或生成构建产物。
 - `-e <code>`
 - `-c <code>`
 - `--project <project.zrp> -m <module>`
@@ -159,7 +161,7 @@ doc_type: module-detail
 - `--help` 和 `--version` 必须独占，不能混入其它 flag、透传参数或修饰符。
 - `-i/--interactive` 只能用于有 active run path 的模式：
   - 合法：位置参数项目运行、`--project -m`、`-e/-c`、`--compile --run`
-  - 非法：help、version、compile-only
+  - 非法：help、version、compile-only、lint
 - `-m` 只能和 `--project <project.zrp>` 组合。
 - `-m` 不能和 `--compile` 组合。
 - `--project ... -m ...` 在 v1 只支持：

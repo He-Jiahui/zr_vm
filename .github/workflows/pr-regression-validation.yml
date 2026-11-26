@@ -59,11 +59,11 @@ jobs:
           -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
       - name: Build all default targets
         run: cmake --build "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}" --parallel 2
-      - name: Test StrictNoGC interpreter and native C
+      - name: Test StrictNoGC lint, interpreter, and native C
         run: >-
           ctest --test-dir "${{ runner.temp }}/zr-debug-${{ matrix.compiler }}"
           --output-on-failure --no-tests=error
-          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|language_server_stdio_strict_no_gc_diagnostics)$'
+          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|strict_project_lint|language_server_stdio_strict_no_gc_diagnostics)$'
       - name: Validate required CTest registrations
         env:
           BUILD_DIR: ${{ runner.temp }}/zr-debug-${{ matrix.compiler }}
@@ -206,11 +206,11 @@ jobs:
           zr_vm_fused_add_operand_packing_test
           zr_vm_function_instruction_verification_test
           zr_vm_project_import_resolver_test
-      - name: Test StrictNoGC interpreter and native C
+      - name: Test StrictNoGC lint, interpreter, and native C
         run: >-
           ctest --test-dir "D:/cargo-targets/zr-ci"
           -C Debug --output-on-failure --no-tests=error
-          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|language_server_stdio_strict_no_gc_diagnostics)$'
+          -R '^(test_strict_ownership|test_strict_program|strict_manifest_runtime_boundary|strict_project_lint|language_server_stdio_strict_no_gc_diagnostics)$'
       - name: Validate required Windows CTest registrations
         env:
           BUILD_DIR: D:/cargo-targets/zr-ci

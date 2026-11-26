@@ -24,7 +24,8 @@ typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9,
     ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX = 10,
     ZR_CLI_PRIMARY_MODE_TEST = 11,
-    ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE = 12
+    ZR_CLI_PRIMARY_MODE_EXPLAIN_OPTIMIZE = 12,
+    ZR_CLI_PRIMARY_MODE_LINT = 13
 } EZrCliPrimaryMode;
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
@@ -155,6 +156,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s\n"
             "  %s <project.zrp> [run-options] [-- <args...>]\n"
             "  %s --compile <project.zrp> [compile-options] [--run [run-options]] [-- <args...>]\n"
+            "  %s lint <project.zrp>\n"
             "  %s --dump-zrp-metadata <file>\n"
             "  %s --diff-zrp-metadata <before> <after>\n"
             "  %s --check-zrp-metadata-version <file>\n"
@@ -171,6 +173,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  no arguments                      Start the REPL.\n"
             "  <project.zrp>                    Run the project entry from the .zrp file.\n"
             "  --compile <project.zrp>          Compile reachable project-local modules.\n"
+            "  lint, --lint <project.zrp>       Check StrictNoGC source without writing or running a build.\n"
             "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
             "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
             "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
@@ -231,6 +234,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             name,
             name,
             name,
+            name,
             name);
     if (requiredLength < 0) {
         return ZR_NULL;
@@ -247,6 +251,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s\n"
              "  %s <project.zrp> [run-options] [-- <args...>]\n"
              "  %s --compile <project.zrp> [compile-options] [--run [run-options]] [-- <args...>]\n"
+             "  %s lint <project.zrp>\n"
              "  %s --dump-zrp-metadata <file>\n"
              "  %s --diff-zrp-metadata <before> <after>\n"
              "  %s --check-zrp-metadata-version <file>\n"
@@ -263,6 +268,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  no arguments                      Start the REPL.\n"
              "  <project.zrp>                    Run the project entry from the .zrp file.\n"
              "  --compile <project.zrp>          Compile reachable project-local modules.\n"
+             "  lint, --lint <project.zrp>       Check StrictNoGC source without writing or running a build.\n"
              "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
              "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
              "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
@@ -305,6 +311,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --project demo.zrp -m tools.seed --execution-mode binary -- foo bar\n",
             name,
             name,
+             name,
              name,
              name,
              name,
@@ -605,6 +612,19 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "lint") == 0 || strcmp(argument, "--lint") == 0) {
+            if (!zr_cli_command_set_primary_mode(&primaryMode, ZR_CLI_PRIMARY_MODE_LINT, argument,
+                                                 errorBuffer, errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing <project.zrp> after %s", argument);
+                return ZR_FALSE;
+            }
+            outCommand->projectPath = argv[++index];
+            continue;
+        }
+
         if (strcmp(argument, "--compile") == 0) {
             if (!zr_cli_command_set_primary_mode(&primaryMode,
                                                  ZR_CLI_PRIMARY_MODE_COMPILE,
@@ -889,6 +909,20 @@ TZrBool ZrCli_Command_Parse(int argc,
 
         positionalSeen = ZR_TRUE;
         positionalPath = argument;
+    }
+
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_LINT) {
+        if (interactiveRequested || executionModeSpecified || outCommand->programArgs != ZR_NULL ||
+            outCommand->moduleName != ZR_NULL || outCommand->runAfterCompile || outCommand->emitExecutedVia ||
+            outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC || outCommand->incremental ||
+            outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+            outCommand->debugAddress != ZR_NULL || outCommand->profileEnabled || outCommand->coverageEnabled ||
+            outCommand->dumpBytecodeEnabled || outCommand->heapSummaryEnabled) {
+            zr_cli_write_error(errorBuffer, errorBufferSize, "lint cannot be combined with run or build options");
+            return ZR_FALSE;
+        }
+        outCommand->mode = ZR_CLI_MODE_LINT_PROJECT;
+        return ZR_TRUE;
     }
 
     if (outCommand->requireStrictNoGc && primaryMode != ZR_CLI_PRIMARY_MODE_COMPILE &&
