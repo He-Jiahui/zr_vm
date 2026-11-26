@@ -31,6 +31,7 @@
 
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_lsp_wasm_response_tests.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/lsp-semantic-tokens-fallback-ast-tests.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/lsp-position-codec-line-index-tests.cmake)
 
     zr_vm_add_support_target(
             zr_vm_language_server_stdio_optional_capability_allocations_test
