@@ -712,7 +712,9 @@ static void semantic_token_scan_source(SZrState *state,
     }
 }
 
-/* stdio 与 WASM 共用的 full-token 入口：锁定文档内容快照后汇合语义和文本候选。 */
+/* stdio 与 WASM 共用的 full-token 入口：锁定文档内容快照后汇合语义和文本候选。
+ * 语法错误回退（usesFallbackAst）期间 AST 属于上一版本文本：只发出与无 AST 时相同的文本候选，
+ * 不把旧树的符号、import 绑定或位置投影到当前文本；重新解析成功后恢复语义 token。 */
 TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                                                SZrLspContext *context,
                                                SZrString *uri,
@@ -735,6 +737,9 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     if (analyzer == ZR_NULL) {
         analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    }
+    if (snapshot.usesFallbackAst) {
+        analyzer = ZR_NULL;
     }
 
     if (!result->isValid) {

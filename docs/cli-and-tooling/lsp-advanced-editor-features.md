@@ -231,6 +231,7 @@ doc_type: module-detail
 - stdio 的 `inlineValue`、`moniker` 和 `linkedEditingRange` 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；provider 无结果时仍分别保持空数组或 `null`。
 - stdio 的 semantic tokens full、full/delta 和 range 在 URI、position 或 range 解析失败时返回 `-32602 InvalidParams`；合法请求仍按既有 full/delta/range 响应结构返回。
 - stdio 的 `semanticTokens/full/delta` 还要求字符串 `previousResultId`；缺失、`null`、数字或数组值返回 `-32602 InvalidParams`，合法 result id 继续支持 unchanged/minimal delta。
+- 语法错误让增量解析保留上一棵 AST（`usesFallbackAst`）期间，semantic tokens 只发布与无 AST 时相同的文本候选（保留字、decorator、meta-method），不把上一棵 AST 的符号、import 绑定或位置投影到当前文本；文本恢复合法并重新解析后恢复语义 token。VS Code 扩展的 TextMate 语法（`zr_vm_language_server_extension/syntaxes/zr.tmLanguage.json`）在此期间继续提供基础着色。回归见 `tests/language_server/test_lsp_semantic_tokens_fallback_ast.c`。
 - stdio 的 `workspace/symbol` 要求字符串 `query`；缺失或非字符串值返回 `-32602 InvalidParams`，合法空字符串仍保留查询语义。
 - stdio 的 `workspace/diagnostic` 要求 object params；缺失、`null`、标量或数组参数返回 `-32602 InvalidParams`，合法空对象及 `previousResultIds` / progress 字段仍保留既有 workspace report 行为。
 - stdio 的 `workspace/willRenameFiles` 要求 object params、数组 `files` 以及每个文件项的字符串 `oldUri` / `newUri`；缺失或畸形参数返回 `-32602 InvalidParams`，合法空 files 或无编辑 rename 仍返回成功 `null`。
