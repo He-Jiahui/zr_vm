@@ -1672,20 +1672,41 @@ extern "C" EZrJitHostStatus ZrJit_Host_Compile(
         return diagnostic != ZR_NULL ? diagnostic->status
                                      : ZR_JIT_HOST_STATUS_NOT_REGISTERED;
     }
-    if (request->publication.target.architecture !=
-            impl->options.target.architecture ||
-        request->publication.target.platform != impl->options.target.platform ||
-        request->publication.target.pointerSize != impl->options.target.pointerSize ||
-        request->publication.target.endianness != impl->options.target.endianness ||
-        request->publication.target.abiVersion != impl->options.target.abiVersion ||
-        request->publication.target.targetTripleHash !=
-            impl->options.target.targetTripleHash ||
-        request->publication.target.layoutHash != impl->options.target.layoutHash) {
-        return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
-                        impl->options.target.architecture,
-                        request->publication.target.architecture,
-                        impl->options.target.layoutHash,
-                        request->publication.target.layoutHash);
+    {
+        /* 报告首个不同的字段（JIT-U1b）：32 位字段放 expected/actual，hash 字段放
+         * expectedHash/actualHash 且 32 位槽为零，与 core ZrCore_HostJit_ValidateTarget 一致。 */
+        const SZrHostJitTargetContract &registered = impl->options.target;
+        const SZrHostJitTargetContract &requested = request->publication.target;
+        if (requested.architecture != registered.architecture) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            registered.architecture, requested.architecture);
+        }
+        if (requested.platform != registered.platform) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            registered.platform, requested.platform);
+        }
+        if (requested.pointerSize != registered.pointerSize) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            registered.pointerSize, requested.pointerSize);
+        }
+        if (requested.endianness != registered.endianness) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            registered.endianness, requested.endianness);
+        }
+        if (requested.abiVersion != registered.abiVersion) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            registered.abiVersion, requested.abiVersion);
+        }
+        if (requested.targetTripleHash != registered.targetTripleHash) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            0u, 0u,
+                            registered.targetTripleHash, requested.targetTripleHash);
+        }
+        if (requested.layoutHash != registered.layoutHash) {
+            return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
+                            0u, 0u,
+                            registered.layoutHash, requested.layoutHash);
+        }
     }
     if (impl->machineCodeAvailable) {
         /* The optional source deliberately has no LLVM ABI dependency yet;

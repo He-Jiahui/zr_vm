@@ -175,6 +175,51 @@ static void test_descriptor_target_mismatch_diagnostic(void) {
 
 /* 由启用 ZR_VM_ENABLE_HOST_JIT 的 CTest 入口核对无 provider 注册、fallback 和记录 lease 生命周期。
  * 只有一个 debugEntryCount=0 负例；编译返回 fallback 不执行 ExecBC，入口查询返回零。 */
+/* JIT-U1b：Compile 的发布目标检查须报告实际不同的字段。hash 字段按 core
+ * ValidateTarget 惯例放入 expectedHash/actualHash（32 位槽为零）；两者都不同时先报 triple。 */
+static void test_compile_target_mismatch_diagnostic(const SZrJitHostCompileRequest *validRequest) {
+    SZrJitHostCompileRequest request;
+    SZrJitHostDiagnostic diagnostic;
+    SZrHostJitCodeHandle prepared;
+    const TZrUInt64 tripleHash = validRequest->publication.target.targetTripleHash;
+    const TZrUInt64 layoutHash = validRequest->publication.target.layoutHash;
+    const TZrUInt64 otherTriple = tripleHash | ((TZrUInt64)1u << 40u);
+    const TZrUInt64 otherLayout = layoutHash | ((TZrUInt64)1u << 41u);
+
+    request = *validRequest;
+    request.publication.target.targetTripleHash = otherTriple;
+    ZrJit_Host_DiagnosticInit(&diagnostic);
+    assert(ZrJit_Host_Compile(&request, &prepared, &diagnostic) ==
+           ZR_JIT_HOST_STATUS_TARGET_MISMATCH);
+    assert(diagnostic.status == ZR_JIT_HOST_STATUS_TARGET_MISMATCH);
+    assert(diagnostic.expectedHash == tripleHash);
+    assert(diagnostic.actualHash == otherTriple);
+    assert(diagnostic.expected == 0u && diagnostic.actual == 0u);
+
+    /* 发布事实与状态图的 layout 摘要须与目标一致，否则 ValidateCompileRequest 先拒绝。 */
+    request = *validRequest;
+    request.publication.target.layoutHash = otherLayout;
+    request.publication.layoutHash = otherLayout;
+    request.stateMaps.frameLayoutHash = otherLayout;
+    ZrJit_Host_DiagnosticInit(&diagnostic);
+    assert(ZrJit_Host_Compile(&request, &prepared, &diagnostic) ==
+           ZR_JIT_HOST_STATUS_TARGET_MISMATCH);
+    assert(diagnostic.expectedHash == layoutHash);
+    assert(diagnostic.actualHash == otherLayout);
+    assert(diagnostic.expected == 0u && diagnostic.actual == 0u);
+
+    request = *validRequest;
+    request.publication.target.targetTripleHash = otherTriple;
+    request.publication.target.layoutHash = otherLayout;
+    request.publication.layoutHash = otherLayout;
+    request.stateMaps.frameLayoutHash = otherLayout;
+    ZrJit_Host_DiagnosticInit(&diagnostic);
+    assert(ZrJit_Host_Compile(&request, &prepared, &diagnostic) ==
+           ZR_JIT_HOST_STATUS_TARGET_MISMATCH);
+    assert(diagnostic.expectedHash == tripleHash);
+    assert(diagnostic.actualHash == otherTriple);
+}
+
 int main(void) {
     SZrHostJitOptions options;
     SZrExecIrDiagnostic executionDiagnostic;
@@ -272,6 +317,7 @@ int main(void) {
     assert(ZrJit_Host_Compile(&request, &prepared, &diagnostic) ==
            ZR_JIT_HOST_STATUS_FALLBACK_EXECBC);
     assert(prepared.record == ZR_NULL);
+    test_compile_target_mismatch_diagnostic(&request);
 
     /* 记录发布仍无可执行入口；Evict 后活跃 lease 阻止 Collect 与关闭，Release 后再回收关闭。 */
     ZrJit_Host_DiagnosticInit(&diagnostic);
