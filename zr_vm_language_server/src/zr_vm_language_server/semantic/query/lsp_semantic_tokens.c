@@ -28,6 +28,7 @@ static TZrBool semantic_token_is_identifier_start(TZrChar value);
 static TZrBool semantic_token_is_identifier_char(TZrChar value);
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              SZrArray *entries,
+                                             const SZrLspLineIndex *lines,
                                              const TZrChar *content,
                                              TZrSize contentLength,
                                              TZrSize startOffset,
@@ -35,6 +36,7 @@ static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              TZrUInt32 typeIndex);
 static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
                                                             SZrArray *entries,
+                                                            const SZrLspLineIndex *lines,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
                                                             TZrSize startOffset,
@@ -59,7 +61,8 @@ static void semantic_token_scan_source(SZrState *state,
                                        TZrSize contentLength,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrArray *bindings,
-                                       SZrArray *entries);
+                                       SZrArray *entries,
+                                       const SZrLspLineIndex *lines);
 
 /* 导入绑定名可能采用 VM 的短串或长串布局，比较前统一借用只读视图。 */
 static void semantic_token_get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
@@ -108,26 +111,29 @@ static TZrBool semantic_token_is_identifier_char(TZrChar value) {
 /* 无 modifier 的文本候选走与声明 token 相同的跨度校验入口。 */
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              SZrArray *entries,
+                                             const SZrLspLineIndex *lines,
                                              const TZrChar *content,
                                              TZrSize contentLength,
                                              TZrSize startOffset,
                                              TZrSize endOffset,
                                              TZrUInt32 typeIndex) {
-    return ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(
-        state, entries, content, contentLength, startOffset, endOffset, typeIndex, 0U);
+    return ZrLanguageServer_LspSemanticTokenEntries_AddUtf16SpanWithLines(
+        state, entries, lines, content, contentLength, startOffset, endOffset, typeIndex, 0U);
 }
 
 /* 保留 canonical 查询的 declaration 位，并交由 entries 层合并同跨度候选。 */
 static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
                                                             SZrArray *entries,
+                                                            const SZrLspLineIndex *lines,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
                                                             TZrSize startOffset,
                                                             TZrSize endOffset,
                                                             TZrUInt32 typeIndex,
                                                             TZrUInt32 modifiers) {
-    return ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(state,
+    return ZrLanguageServer_LspSemanticTokenEntries_AddUtf16SpanWithLines(state,
                                                                   entries,
+                                                                  lines,
                                                                   content,
                                                                   contentLength,
                                                                   startOffset,
@@ -363,7 +369,8 @@ static void semantic_token_scan_source(SZrState *state,
                                        TZrSize contentLength,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrArray *bindings,
-                                       SZrArray *entries) {
+                                       SZrArray *entries,
+                                       const SZrLspLineIndex *lines) {
     TZrSize offset = 0;
     TZrUInt32 line = 0;
     TZrUInt32 character = 0;
@@ -466,6 +473,7 @@ static void semantic_token_scan_source(SZrState *state,
                 character++;
                 semantic_token_add_utf16_span(state,
                                               entries,
+                                              lines,
                                               content,
                                               contentLength,
                                               start,
@@ -486,6 +494,7 @@ static void semantic_token_scan_source(SZrState *state,
             if (semantic_token_is_meta_method(content + start, offset - start)) {
                 semantic_token_add_utf16_span(state,
                                               entries,
+                                              lines,
                                               content,
                                               contentLength,
                                               start,
@@ -516,7 +525,7 @@ static void semantic_token_scan_source(SZrState *state,
                 character++;
             }
             length = offset - start;
-            startPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+            startPosition = ZrLanguageServer_LspLineIndex_ByteOffsetToUtf16Position(lines, content,
                                                                                         contentLength,
                                                                                         start);
             startLine = (TZrUInt32)startPosition.line;
@@ -525,6 +534,7 @@ static void semantic_token_scan_source(SZrState *state,
             if (semantic_token_is_reserved_word(content + start, length)) {
                 semantic_token_add_utf16_span(state,
                                               entries,
+                                              lines,
                                               content,
                                               contentLength,
                                               start,
@@ -542,6 +552,7 @@ static void semantic_token_scan_source(SZrState *state,
                 if (canonicalType >= 0) {
                     semantic_token_add_utf16_span_with_modifiers(state,
                                                                  entries,
+                                                                 lines,
                                                                  content,
                                                                  contentLength,
                                                                  start,
@@ -551,6 +562,7 @@ static void semantic_token_scan_source(SZrState *state,
                 } else if (semantic_token_is_contextual_word(content + start, length)) {
                     semantic_token_add_utf16_span(state,
                                                   entries,
+                                                  lines,
                                                   content,
                                                   contentLength,
                                                   start,
@@ -584,6 +596,7 @@ static void semantic_token_scan_source(SZrState *state,
                 if (tokenType >= 0) {
                     semantic_token_add_utf16_span_with_modifiers(state,
                                                                  entries,
+                                                                 lines,
                                                                  content,
                                                                  contentLength,
                                                                  start,
@@ -615,6 +628,7 @@ static void semantic_token_scan_source(SZrState *state,
                 if (tokenType >= 0) {
                     semantic_token_add_utf16_span_with_modifiers(state,
                                                                  entries,
+                                                                 lines,
                                                                  content,
                                                                  contentLength,
                                                                  start,
@@ -627,6 +641,7 @@ static void semantic_token_scan_source(SZrState *state,
 
             semantic_token_add_utf16_span(state,
                                           entries,
+                                          lines,
                                           content,
                                           contentLength,
                                           start,
@@ -678,7 +693,7 @@ static void semantic_token_scan_source(SZrState *state,
                     segmentLength = chainOffset - segmentStart;
                     {
                         SZrLspPosition segmentPosition =
-                            ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                            ZrLanguageServer_LspLineIndex_ByteOffsetToUtf16Position(lines, content,
                                                                                         contentLength,
                                                                                         segmentStart);
                         segmentLine = (TZrUInt32)segmentPosition.line;
@@ -696,6 +711,7 @@ static void semantic_token_scan_source(SZrState *state,
                     if (tokenType >= 0) {
                         semantic_token_add_utf16_span_with_modifiers(state,
                                                                      entries,
+                                                                     lines,
                                                                      content,
                                                                      contentLength,
                                                                      segmentStart,
@@ -724,6 +740,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     SZrArray entries;
     SZrArray bindings;
+    SZrLspLineIndex lines;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -760,13 +777,18 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
         semantic_token_add_symbol_tokens(state, context, analyzer, uri, &entries);
     }
 
+    /* 每个文本候选都要把字节偏移转为 UTF-16 位置；一次建立行首索引，避免逐 token 从文件开头扫描（O(n²)）。
+     * 分配失败时索引为空，转换退回完整扫描，结果不变。 */
+    (void)ZrLanguageServer_LspLineIndex_Build(state, &lines, snapshot.content, snapshot.contentLength);
     semantic_token_scan_source(state,
                                uri,
                                snapshot.content,
                                snapshot.contentLength,
                                analyzer,
                                &bindings,
-                               &entries);
+                               &entries,
+                               &lines);
+    ZrLanguageServer_LspLineIndex_Free(state, &lines);
     ZrLanguageServer_LspSemanticTokenEntries_AppendEncoded(state, &entries, result);
 
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);

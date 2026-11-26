@@ -3,6 +3,7 @@
 
 #include "semantic/query/lsp_semantic_token_canonical.h"
 #include "interface/lsp_interface_internal.h"
+#include "interface/lsp_position_codec.h"
 
 /** @brief 编码前的绝对 UTF-16 坐标；同一位置的候选先合并，再转换为 LSP 相对五元组。 */
 typedef struct SZrLspSemanticTokenEntry {
@@ -30,6 +31,17 @@ void ZrLanguageServer_LspSemanticTokenEntries_Add(
 TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(
         SZrState *state,
         SZrArray *entries,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize startOffset,
+        TZrSize endOffset,
+        TZrUInt32 typeIndex,
+        TZrUInt32 modifiers);
+/** @brief 与 AddUtf16Span 相同，但用请求内的行首索引转换 UTF-16 位置；lines 为空或不匹配 content 时退回完整扫描。 */
+TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16SpanWithLines(
+        SZrState *state,
+        SZrArray *entries,
+        const SZrLspLineIndex *lines,
         const TZrChar *content,
         TZrSize contentLength,
         TZrSize startOffset,

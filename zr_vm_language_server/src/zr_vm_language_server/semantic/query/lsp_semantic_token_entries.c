@@ -86,6 +86,20 @@ TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(
         TZrSize endOffset,
         TZrUInt32 typeIndex,
         TZrUInt32 modifiers) {
+    return ZrLanguageServer_LspSemanticTokenEntries_AddUtf16SpanWithLines(
+            state, entries, ZR_NULL, content, contentLength, startOffset, endOffset, typeIndex, modifiers);
+}
+
+TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16SpanWithLines(
+        SZrState *state,
+        SZrArray *entries,
+        const SZrLspLineIndex *lines,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize startOffset,
+        TZrSize endOffset,
+        TZrUInt32 typeIndex,
+        TZrUInt32 modifiers) {
     SZrLspPosition startPosition;
     SZrLspPosition endPosition;
     TZrInt32 tokenLength;
@@ -96,10 +110,10 @@ TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(
     }
 
     /* LSP 的列和长度以 UTF-16 code unit 计数，原始字节差不可直接发送。 */
-    startPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(
-            content, contentLength, startOffset);
-    endPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(
-            content, contentLength, endOffset);
+    startPosition = ZrLanguageServer_LspLineIndex_ByteOffsetToUtf16Position(
+            lines, content, contentLength, startOffset);
+    endPosition = ZrLanguageServer_LspLineIndex_ByteOffsetToUtf16Position(
+            lines, content, contentLength, endOffset);
     if (startPosition.line != endPosition.line) {
         return ZR_FALSE;
     }
