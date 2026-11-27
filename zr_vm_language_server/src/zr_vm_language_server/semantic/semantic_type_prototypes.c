@@ -13,6 +13,10 @@ typedef struct SZrSemanticPrototypeContextSnapshot {
     SZrAstNode *typeNode;
     SZrString *typeName;
     SZrAstNode *functionNode;
+    /* Stable copy of the owner prototype for the pushed scope. The parser may grow and reallocate
+     * typePrototypes while this scope is active (import/generic instantiation), so an element
+     * address would dangle; the copy's inner arrays are not moved by that reallocation. */
+    SZrTypePrototypeInfo prototypeCopy;
 } SZrSemanticPrototypeContextSnapshot;
 
 /* 外壳登记和详情填充依赖本地精确名字，避免查找时额外实例化泛型类型。返回值只在 typePrototypes 未扩容前有效。 */
@@ -91,9 +95,14 @@ static void semantic_type_prototypes_push_context(SZrSemanticAnalyzer *analyzer,
 
     typeName = semantic_type_prototypes_owner_name(ownerTypeNode);
     if (typeName != ZR_NULL) {
+        SZrTypePrototypeInfo *found = semantic_type_prototypes_find_exact(compilerState, typeName);
         compilerState->currentTypeNode = ownerTypeNode;
         compilerState->currentTypeName = typeName;
-        compilerState->currentTypePrototypeInfo = semantic_type_prototypes_find_exact(compilerState, typeName);
+        compilerState->currentTypePrototypeInfo = ZR_NULL;
+        if (found != ZR_NULL) {
+            snapshot->prototypeCopy = *found;
+            compilerState->currentTypePrototypeInfo = &snapshot->prototypeCopy;
+        }
     }
 
     if (functionNode != ZR_NULL) {
@@ -111,8 +120,8 @@ static void semantic_type_prototypes_pop_context(SZrSemanticAnalyzer *analyzer,
     }
 
     compilerState = analyzer->compilerState;
-    /* BUG: 嵌套声明推断可实例化闭合泛型并扩容 typePrototypes；snapshot 借存的元素地址
-     * 随扩容失效。此处恢复旧地址后，parser 的 const 泛型查找会解引用悬空原型。 */
+    /* push 让 currentTypePrototypeInfo 指向 snapshot 内的原型副本（不再借用 typePrototypes 元素地址），
+     * 所以嵌套推断扩容 typePrototypes 后，这里恢复的外层指针仍有效：外层要么是 NULL，要么是外层 snapshot 的副本。 */
     compilerState->currentTypePrototypeInfo = snapshot->typePrototype;
     compilerState->currentTypeNode = snapshot->typeNode;
     compilerState->currentTypeName = snapshot->typeName;

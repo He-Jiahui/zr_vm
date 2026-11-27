@@ -198,6 +198,10 @@ typedef struct SZrSemanticTypecheckContextSnapshot {
     SZrAstNode *typeNode;
     SZrString *typeName;
     SZrAstNode *functionNode;
+    /* Stable copy of the owner prototype for the pushed scope. The parser may grow and reallocate
+     * typePrototypes while this scope is active (import/generic instantiation), so an element
+     * address would dangle; the copy's inner arrays are not moved by that reallocation. */
+    SZrTypePrototypeInfo prototypeCopy;
 } SZrSemanticTypecheckContextSnapshot;
 
 static SZrTypeEnvironment *semantic_typecheck_push_runtime_type_binding_scope(
@@ -838,10 +842,14 @@ static void semantic_typecheck_push_compiler_context(SZrSemanticAnalyzer *analyz
 
     typeName = semantic_typecheck_extract_owner_type_name(ownerTypeNode);
     if (typeName != ZR_NULL) {
+        SZrTypePrototypeInfo *found = find_compiler_type_prototype_inference(compilerState, typeName);
         compilerState->currentTypeNode = ownerTypeNode;
         compilerState->currentTypeName = typeName;
-        compilerState->currentTypePrototypeInfo =
-            find_compiler_type_prototype_inference(compilerState, typeName);
+        compilerState->currentTypePrototypeInfo = ZR_NULL;
+        if (found != ZR_NULL) {
+            snapshot->prototypeCopy = *found;
+            compilerState->currentTypePrototypeInfo = &snapshot->prototypeCopy;
+        }
     }
 
     if (functionNode != ZR_NULL) {
