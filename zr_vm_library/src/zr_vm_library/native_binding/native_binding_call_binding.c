@@ -402,10 +402,12 @@ EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
     if (state == ZR_NULL || state->global == ZR_NULL || contract == ZR_NULL || outTarget == ZR_NULL) {
         return ZR_CALL_BINDING_INVALID_ARGUMENT;
     }
-    /* BUG: diagnostic 为 NULL 时 INVALID_TOKEN、INVALID_SLOT 等真实状态被折叠为
-     * MISSING_CONTRACT；CheckContract 本身已返回精确状态。 */
-    if (ZrCore_CallBinding_CheckContract(contract, diagnostic) != ZR_CALL_BINDING_OK) {
-        return diagnostic != ZR_NULL ? diagnostic->status : ZR_CALL_BINDING_MISSING_CONTRACT;
+    /* 直接返回 CheckContract 的精确状态（DB-3）：结果不随可选 diagnostic 是否提供而变化。 */
+    {
+        EZrCallBindingStatus contractStatus = ZrCore_CallBinding_CheckContract(contract, diagnostic);
+        if (contractStatus != ZR_CALL_BINDING_OK) {
+            return contractStatus;
+        }
     }
     registry = native_registry_get(state->global);
     if (registry == ZR_NULL || !registry->bindingEntries.isValid) {
