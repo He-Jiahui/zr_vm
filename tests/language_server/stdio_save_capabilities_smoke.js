@@ -161,8 +161,11 @@ async function main() {
                 await definition('before-disk-save', 16);
                 fs.writeFileSync(filePath, 'class AfterSave { }\n', 'utf8');
                 const afterVersion = await save();
-                assert.ok(Number.isInteger(beforeVersion) && afterVersion === beforeVersion + 1,
-                          'didSave must publish the next disk snapshot generation');
+                // Disk reads advance the content generation, not the client version
+                // (8ac37f301 "preserve editor epochs across close and disk refresh"); the
+                // definition checks around this save prove the refresh itself.
+                assert.ok(Number.isInteger(beforeVersion) && afterVersion === beforeVersion,
+                          'didSave disk refresh must not advance the client version');
                 await definition('after-disk-save', 15);
             }, rootUri);
         }));
