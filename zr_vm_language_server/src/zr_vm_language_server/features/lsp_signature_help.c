@@ -1729,6 +1729,10 @@ typedef struct SZrSignatureCompilerContextSnapshot {
     SZrAstNode *typeNode;
     SZrAstNode *functionNode;
     SZrString *typeName;
+    /* Stable copy of the owner prototype for the pushed scope. The parser may grow and reallocate
+     * typePrototypes while this scope is active (import/generic instantiation), so an element
+     * address would dangle; the copy's inner arrays are not moved by that reallocation. */
+    SZrTypePrototypeInfo prototypeCopy;
 } SZrSignatureCompilerContextSnapshot;
 
 /* 只在同步类型转换期间切换编译器上下文；snapshot 属于本次调用栈。 */
@@ -1750,7 +1754,8 @@ static void signature_push_type_resolution_context(
     }
 
     if (context->typePrototype != ZR_NULL) {
-        compilerState->currentTypePrototypeInfo = context->typePrototype;
+        snapshot->prototypeCopy = *context->typePrototype;
+        compilerState->currentTypePrototypeInfo = &snapshot->prototypeCopy;
         compilerState->currentTypeName = context->typePrototype->name;
     }
     if (context->typeNode != ZR_NULL) {
