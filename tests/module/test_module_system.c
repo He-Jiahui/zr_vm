@@ -1367,6 +1367,57 @@ void tearDown(void) {}
 
 // ==================== 1. 脚本级变量作为 __entry 局部变量 ====================
 
+/* DB-1：有限但很大的分量（1e200）或很小的分量（1e-200）不得让范数在平方和阶段溢出或下溢；
+ * 每个检查占一位，返回值缺哪一位即指出哪个 callback 仍按 sqrt(平方和) 直接计算。 */
+static void test_math_norms_survive_square_overflow(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Math Norms Survive Square Overflow And Underflow";
+    const char *source =
+            "let math = import(\"zr.math\");\n"
+            "var bits = 0;\n"
+            "if (new math.Vector2(1e200, 0.0).length() == 1e200) { bits = bits + 1; }\n"
+            "if (new math.Vector2(1e200, 0.0).normalized().x == 1.0) { bits = bits + 2; }\n"
+            "if (new math.Vector3(1e200, 0.0, 0.0).length() == 1e200) { bits = bits + 4; }\n"
+            "if (new math.Vector3(0.0, 1e200, 0.0).normalized().y == 1.0) { bits = bits + 8; }\n"
+            "if (new math.Vector4(1e200, 0.0, 0.0, 0.0).length() == 1e200) { bits = bits + 16; }\n"
+            "if (new math.Vector4(0.0, 0.0, 0.0, 1e200).normalized().w == 1.0) { bits = bits + 32; }\n"
+            "if (new math.Vector2(1e200, 0.0).distance(new math.Vector2(0.0, 0.0)) == 1e200) { bits = bits + 64; }\n"
+            "if (new math.Vector3(1e200, 0.0, 0.0).distance(new math.Vector3(0.0, 0.0, 0.0)) == 1e200) { bits = bits + 128; }\n"
+            "if (new math.Vector4(1e200, 0.0, 0.0, 0.0).distance(new math.Vector4(0.0, 0.0, 0.0, 0.0)) == 1e200) { bits = bits + 256; }\n"
+            "if (new math.Complex(1e200, 0.0).magnitude() == 1e200) { bits = bits + 512; }\n"
+            "if (new math.Complex(0.0, 1e200).normalized().imag == 1.0) { bits = bits + 1024; }\n"
+            "if (new math.Quaternion(1e200, 0.0, 0.0, 0.0).length() == 1e200) { bits = bits + 2048; }\n"
+            "if (new math.Quaternion(0.0, 0.0, 0.0, 1e200).normalized().w == 1.0) { bits = bits + 4096; }\n"
+            "var tiny = new math.Vector2(3e-200, 4e-200).length();\n"
+            "if (tiny > 4.9999e-200 && tiny < 5.0001e-200) { bits = bits + 8192; }\n"
+            "if (new math.Vector2(3.0, 4.0).length() == 5.0) { bits = bits + 16384; }\n"
+            "return bits;\n";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "math_norm_overflow_test.zr", 26);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(32767, result);
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_script_level_variables_as_entry_locals(void) {
     SZrTestTimer timer;
     const char *testSummary = "Script Level Variables as __entry Locals";
@@ -8095,6 +8146,7 @@ int main(void) {
 
     // 11. prototypeData 中 using 字段元数据恢复
     RUN_TEST(test_module_restores_owned_field_prototype_metadata);
+    RUN_TEST(test_math_norms_survive_square_overflow);
 
     // 12. prototypeData 中高级 OOP runtime descriptor 元数据恢复
     RUN_TEST(test_module_restores_advanced_oop_runtime_descriptor_metadata);

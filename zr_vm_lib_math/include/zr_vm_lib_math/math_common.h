@@ -212,6 +212,26 @@ TZrBool ZrMath_AlmostEqual(TZrFloat64 lhs, TZrFloat64 rhs, TZrFloat64 epsilon);
  * Vector2/3/4 的点积、长度与比较回调传入快照；结构体跨成员访问的具体 count/backend BUG 与未闭合 intrinsic TODO 见布局证据块。
  */
 TZrFloat64 ZrMath_Dot(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrSize count);
+/**
+ * ## Summary
+ * 由调用方已算出的平方和得到欧氏范数；平方和在 double 中溢出或下溢时改用按最大分量缩放的算法。
+ *
+ * ## Parameters
+ * @param[in] sumOfSquares 调用方按原有顺序算出的分量平方和（例如 `ZrMath_Dot(v, v, n)`）。
+ * @param[in] values 同一组分量，至少含 `count` 个可读 `TZrFloat64`。
+ * @param[in] count 分量数。
+ *
+ * ## Returns
+ * @return 平方和有限且不小于 `DBL_MIN` 时返回 `sqrt(sumOfSquares)`，与原实现逐位相同；否则返回
+ *         `max|v| * sqrt(Σ(v/max|v|)^2)`：含 NaN 分量时为 NaN，含无穷分量时为 +Inf，全零时为 0。
+ *
+ * ## Constraints and lifecycle
+ * 纯值运算，不访问 VM 状态；只在平方和越界的少见输入上多做两遍分量循环（DB-1）。
+ *
+ * ## References
+ * Vector2/3/4 的 length/normalized/distance、Complex 的 magnitude/normalized、Quaternion 的 length/normalized。
+ */
+TZrFloat64 ZrMath_NormFromSumOfSquares(TZrFloat64 sumOfSquares, const TZrFloat64 *values, TZrSize count);
 
 /**
  * ## Summary

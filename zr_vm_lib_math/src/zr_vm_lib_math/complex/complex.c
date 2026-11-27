@@ -20,10 +20,14 @@ TZrBool ZrMath_Complex_Construct(ZrLibCallContext *context, SZrTypeValue *result
     return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields)); /* 可复用兼容目标；有效 state 的字段写入失败会 Throw，不保证整体回滚。 */
 }
 TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限输入 (1e200, 0) 的平方中间值溢出，magnitude 返回无穷；
-     * 同一计算也使 normalized 把非零复数错误地归一化为零。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathComplex value; if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(value.real * value.real + value.imag * value.imag)); return ZR_TRUE;
+    {
+        const TZrFloat64 components[2] = {value.real, value.imag};
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(value.real * value.real + value.imag * value.imag, components, 2));
+    }
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_Phase(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
@@ -39,10 +43,13 @@ TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result
 }
 TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 模长不超过 ZR_MATH_EPSILON 时交付零复数；其余输入按计算模长缩放。 */
-    /* BUG: (1e200, 0) 的平方范数溢出后按无穷模缩放，非零复数得到零复数。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathComplex value; TZrFloat64 magnitude; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    magnitude = sqrt(value.real * value.real + value.imag * value.imag);
+    {
+        const TZrFloat64 components[2] = {value.real, value.imag};
+        magnitude = ZrMath_NormFromSumOfSquares(value.real * value.real + value.imag * value.imag, components, 2);
+    }
     object = magnitude <= ZR_MATH_EPSILON ? ZrMath_MakeComplex(context->state, 0.0, 0.0)
                                           : ZrMath_MakeComplex(context->state, value.real / magnitude, value.imag / magnitude); /* 两分支共用新对象字段工厂。 */
     if (object == ZR_NULL) return ZR_FALSE;
