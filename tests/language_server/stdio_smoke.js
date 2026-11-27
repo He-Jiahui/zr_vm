@@ -2285,7 +2285,7 @@ async function main() {
         /^[1-9][0-9]*$/.test(pluginIdentity.generation),
     'virtual declaration identity must retain its project, provider source, and nonzero generation');
     const pluginDeclarationText = await client.request('zr/nativeDeclarationDocument', { uri: pluginLocation.uri });
-    const pluginDeclarationPosition = findPosition(pluginDeclarationText, 'pub makePoint()', 0, 4);
+    const pluginDeclarationPosition = findPosition(pluginDeclarationText, 'pub fn makePoint()', 0, 7);
     assertStrict.deepEqual(pluginLocation.range, {
         start: pluginDeclarationPosition,
         end: { line: pluginDeclarationPosition.line, character: pluginDeclarationPosition.character + 9 },
@@ -3773,6 +3773,13 @@ async function main() {
         item.name === 'watched_after_refresh'),
     'workspace/didChangeWatchedFiles delete must retain a source still indexed by another project');
 
+    // An open editor overlay owns its document and ignores disk events (stdio_workspace_files.c),
+    // so close the .zrp opened for the documentLink check before deleting it on disk.
+    client.notify('textDocument/didClose', { textDocument: { uri: zrpLinksUri } });
+    await waitForDiagnosticsUri(
+        client,
+        zrpLinksUri,
+        'linked_paths.zrp didClose diagnostics uri mismatch');
     fs.unlinkSync(zrpLinksPath);
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
