@@ -791,6 +791,54 @@ static TZrBool semantic_rd_join(void *dst, const void *src, void *userData) {
     return changed;
 }
 
+/* Per-root symbol subset: only symbols of facts that some statement of this CFG can apply.
+ * Uses the same semantic_rd_fact_in_statement predicate as the transfer, on every block statement
+ * (a superset of the transferred ones). Slots evolve independently per symbol (init, join and
+ * transfer never mix symbols), so solving with the subset gives every included symbol exactly the
+ * same fixpoint, and excluded symbols are never read by this root. The dataflow state, copied per
+ * block per iteration, then scales with the root instead of the whole file. */
+static TZrBool semantic_rd_build_root_symbol_map(SZrSemanticContext *context,
+                                                 const SZrSemanticRdSymbolMap *fileSymbols,
+                                                 const SZrParserCfg *cfg,
+                                                 SZrSemanticRdSymbolMap *rootSymbols) {
+    ZrCore_Array_Construct(&rootSymbols->symbolIds);
+    ZrCore_Array_Construct(&rootSymbols->declarationRanges);
+    ZrCore_Array_Init(context->state, &rootSymbols->symbolIds, sizeof(TZrSymbolId), ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(context->state, &rootSymbols->declarationRanges, sizeof(SZrFileRange),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
+    if (!rootSymbols->symbolIds.isValid || !rootSymbols->declarationRanges.isValid ||
+        rootSymbols->symbolIds.head == ZR_NULL || rootSymbols->declarationRanges.head == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize blockIndex = 0; blockIndex < cfg->blocks.length; blockIndex++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&cfg->blocks, blockIndex);
+        if (block == ZR_NULL || block->statement == ZR_NULL) {
+            continue;
+        }
+        for (TZrSize factIndex = 0; factIndex < context->referenceFacts.length; factIndex++) {
+            const SZrSemanticReferenceFact *fact =
+                    (const SZrSemanticReferenceFact *)ZrCore_Array_Get(&context->referenceFacts, factIndex);
+            TZrSize fileIndex;
+            /* Cheap per-fact rejects and the statement predicate first; the linear map lookups only
+             * run for facts this root actually owns. */
+            if (fact == ZR_NULL || !fact->isResolved || fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
+                (fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION && fact->kind != ZR_SEMANTIC_REFERENCE_READ &&
+                 fact->kind != ZR_SEMANTIC_REFERENCE_WRITE) ||
+                !semantic_rd_fact_in_statement(block->statement, fact) ||
+                semantic_rd_symbol_map_find(rootSymbols, fact->symbolId, ZR_NULL) ||
+                !semantic_rd_symbol_map_find(fileSymbols, fact->symbolId, &fileIndex)) {
+                continue;
+            }
+            if (!semantic_rd_symbol_map_add_or_update(context->state, rootSymbols, fact->symbolId,
+                                                      semantic_rd_symbol_map_range_at(fileSymbols, fileIndex))) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
 /* read snapshots 与栈上 callback userData 都属于本次同步调用，并在所有 CFG/Result 清理后失效。
  * TODO: callback 会立即改写 READ fact；若 Dataflow_Run 在已执行 transfer 后失败，本函数没有回滚。 */
 static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
@@ -800,6 +848,8 @@ static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
     SZrParserDataflowResult result;
     SZrParserDataflowAnalysis analysis;
     SZrSemanticRdAnalysis semanticAnalysis;
+    SZrSemanticRdSymbolMap rootSymbols;
+    TZrBool hasRootSymbols = ZR_FALSE;
     TZrBool ok;
 
     if (context == ZR_NULL ||
@@ -809,6 +859,8 @@ static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
         symbols->symbolIds.length == 0) {
         return ZR_TRUE;
     }
+    ZrCore_Array_Construct(&rootSymbols.symbolIds);
+    ZrCore_Array_Construct(&rootSymbols.declarationRanges);
 
     semanticAnalysis.context = context;
     semanticAnalysis.symbols = symbols;
@@ -854,7 +906,6 @@ static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
     }
 
     analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
-    analysis.stateSize = semantic_rd_state_size(symbols->symbolIds.length);
     analysis.initEntry = semantic_rd_init_entry;
     analysis.join = semantic_rd_join;
     analysis.transferStatement = semantic_rd_transfer_statement;
@@ -862,12 +913,20 @@ static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
 
     ZrParser_Cfg_Init(context->state, &cfg);
     ZrParser_DataflowResult_Init(&result);
-    ok = ZrParser_Cfg_BuildWithSemanticContext(
-                 context->state, &cfg, root, context) &&
-         ZrParser_Dataflow_Run(context->state, &cfg, &analysis, &result);
+    ok = ZrParser_Cfg_BuildWithSemanticContext(context->state, &cfg, root, context);
     if (ok) {
-        semantic_rd_apply_read_slots(&semanticAnalysis);
+        hasRootSymbols = semantic_rd_build_root_symbol_map(context, symbols, &cfg, &rootSymbols);
+        /* On failure keep the whole-file map: slower, same result. */
+        semanticAnalysis.symbols = hasRootSymbols ? &rootSymbols : symbols;
+        if (semanticAnalysis.symbols->symbolIds.length > 0) {
+            analysis.stateSize = semantic_rd_state_size(semanticAnalysis.symbols->symbolIds.length);
+            ok = ZrParser_Dataflow_Run(context->state, &cfg, &analysis, &result);
+            if (ok) {
+                semantic_rd_apply_read_slots(&semanticAnalysis);
+            }
+        }
     }
+    semantic_rd_free_symbol_map(context, &rootSymbols);
     ZrParser_DataflowResult_Free(context->state, &result);
     ZrParser_Cfg_Free(context->state, &cfg);
     if (semanticAnalysis.readSlots != ZR_NULL) {
