@@ -116,6 +116,18 @@ typedef struct SZrSemanticAnalysisMetrics {
  * scopedQueryAnalyzer 和 ownedAst 由本对象拥有，borrowedAst 由历史快照持有。
  * 文档更新必须先完成旧 AST 的缓存保留判定，再交由解析器替换 AST。
  */
+/** @brief definition 请求的 reaching-definition 解析缓存键；键不变时 facts 已处于解析后状态，可跳过整文件重算。
+ *  @note factSignature 只覆盖 RD 不会改写的身份字段（node、kind、symbolId、isResolved、range），
+ *        所以任何事实重新发布、增删或改范围都会让缓存失效；分析器替换时随新分析器清零。 */
+typedef struct SZrSemanticReachingDefinitionCache {
+    const SZrSemanticContext *context;
+    const SZrAstNode *ast;
+    TZrSize executionCount;
+    TZrSize factCount;
+    TZrUInt64 factSignature;
+    TZrBool isValid;
+} SZrSemanticReachingDefinitionCache;
+
 typedef struct SZrSemanticAnalyzer {
     SZrState *state;
     SZrSymbolTable *symbolTable;
@@ -136,6 +148,7 @@ typedef struct SZrSemanticAnalyzer {
     TZrBool preserveScopedQueryAnalyzerOnNextAstChange;
     TZrSize cacheStorageAccessOrder;   // workspace cache LRU access order
     SZrSemanticAnalysisMetrics metrics;
+    SZrSemanticReachingDefinitionCache reachingDefinitionCache;
 } SZrSemanticAnalyzer;
 
 /**

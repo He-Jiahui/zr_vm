@@ -1640,6 +1640,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->preserveScopedQueryAnalyzerOnNextAstChange = ZR_FALSE;
     analyzer->cacheStorageAccessOrder = 0U;
     memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
+    memset(&analyzer->reachingDefinitionCache, 0, sizeof(analyzer->reachingDefinitionCache));
     
     if (analyzer->symbolTable == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));

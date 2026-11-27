@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "semantic/query/lsp_semantic_definition_query.h"
 #include "semantic/analyzer/semantic_analyzer_query_source.h"
 
@@ -31,6 +32,65 @@ static TZrBool semantic_definition_query_append_location(SZrState *state,
     location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
+}
+
+/* FNV-1a over the identity fields that reaching-definition resolution never writes. */
+static TZrUInt64 semantic_definition_query_fact_signature(const SZrSemanticContext *context) {
+    TZrUInt64 hash = 1469598103934665603ULL;
+
+    for (TZrSize index = 0; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get((SZrArray *)&context->referenceFacts, index);
+        TZrUInt64 words[8];
+
+        if (fact == ZR_NULL) {
+            continue;
+        }
+        words[0] = (TZrUInt64)(uintptr_t)fact->node;
+        words[1] = (TZrUInt64)fact->kind;
+        words[2] = (TZrUInt64)fact->symbolId;
+        words[3] = (TZrUInt64)fact->isResolved;
+        words[4] = (TZrUInt64)fact->range.start.offset;
+        words[5] = (TZrUInt64)fact->range.end.offset;
+        words[6] = ((TZrUInt64)(TZrUInt32)fact->range.start.line << 32) | (TZrUInt32)fact->range.start.column;
+        words[7] = (TZrUInt64)(uintptr_t)fact->range.source;
+        for (TZrSize w = 0; w < 8; w++) {
+            hash ^= words[w];
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+/* Linear and CFG reaching definitions rewrite only definition ranges and are idempotent, so on an
+ * unchanged analysis (same context, AST, execution, facts) a repeated definition request (e.g. VS
+ * Code Ctrl+hover) can reuse the previous resolution instead of re-solving the whole file. */
+static void semantic_definition_query_resolve_reaching_definitions(SZrSemanticAnalyzer *analyzer) {
+    SZrSemanticReachingDefinitionCache *cache = &analyzer->reachingDefinitionCache;
+    SZrSemanticContext *context = analyzer->semanticContext;
+    TZrUInt64 signature = semantic_definition_query_fact_signature(context);
+    TZrBool resolved = ZR_TRUE;
+
+    if (cache->isValid && cache->context == context && cache->ast == analyzer->ast &&
+        cache->executionCount == analyzer->metrics.executionCount &&
+        cache->factCount == context->referenceFacts.length && cache->factSignature == signature) {
+        return;
+    }
+    cache->isValid = ZR_FALSE;
+    ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(context);
+    if (analyzer->ast != ZR_NULL) {
+        /* TODO: CFG 解析返回失败时这里仍继续查询；需构造解析失败的快照，
+         * 核对线性事实是否可能让跳转落到不可达赋值，或是否应回退到声明。 */
+        resolved = ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(context, analyzer->ast);
+    }
+    if (resolved) {
+        cache->context = context;
+        cache->ast = analyzer->ast;
+        cache->executionCount = analyzer->metrics.executionCount;
+        cache->factCount = context->referenceFacts.length;
+        cache->factSignature = signature;
+        cache->isValid = ZR_TRUE;
+    }
 }
 
 /* 跳转定义优先使用光标处控制流可达的赋值，解析失败时保留声明导航。 */
@@ -68,14 +128,7 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
     }
 
     /* 先尝试补齐线性及 CFG 路径；DefinitionsOf 据此选择使用点可达的定义集合。 */
-    ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(query->analyzer->semanticContext);
-    if (query->analyzer->ast != ZR_NULL) {
-        /* TODO: CFG 解析返回失败时这里仍继续查询；需构造解析失败的快照，
-         * 核对线性事实是否可能让跳转落到不可达赋值，或是否应回退到声明。 */
-        (void)ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(
-                query->analyzer->semanticContext,
-                query->analyzer->ast);
-    }
+    semantic_definition_query_resolve_reaching_definitions(query->analyzer);
     ZrParser_SemanticQueryScope_Module(&scope);
 
     ZrCore_Array_Construct(&definitions);
