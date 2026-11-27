@@ -3987,16 +3987,86 @@ static ZR_FORCE_INLINE TZrBool zr_container_result_copy_no_profile(SZrState *sta
     return state == ZR_NULL || state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 返回整数值与有限或无穷 double 的三路比较；调用方已排除 NaN。 */
+static TZrInt64 zr_container_compare_integer_with_double(const SZrTypeValue *integer, TZrDouble value) {
+    TZrDouble rounded;
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(integer->type)) {
+        TZrUInt64 exact = integer->value.nativeObject.nativeUInt64;
+        TZrUInt64 truncated;
+        if (value < 0.0) return 1;
+        if (value >= 18446744073709551616.0) return -1;
+        /* double 舍入单调：舍入结果与 value 不同则方向即真实方向；相同则 value 为可精确转换的整数。 */
+        rounded = (TZrDouble)exact;
+        if (rounded < value) return -1;
+        if (rounded > value) return 1;
+        truncated = (TZrUInt64)value;
+        return exact < truncated ? -1 : (exact > truncated ? 1 : 0);
+    } else {
+        TZrInt64 exact = integer->value.nativeObject.nativeInt64;
+        TZrInt64 truncated;
+        if (value < -9223372036854775808.0) return 1;
+        if (value >= 9223372036854775808.0) return -1;
+        rounded = (TZrDouble)exact;
+        if (rounded < value) return -1;
+        if (rounded > value) return 1;
+        truncated = (TZrInt64)value;
+        return exact < truncated ? -1 : (exact > truncated ? 1 : 0);
+    }
+}
+
+/* 数值分量的三路比较：有符号与无符号整数按数学值精确比较，混合浮点不经 int64→double 截断精度。 */
+static TZrInt64 zr_container_numeric_compare(const SZrTypeValue *lhs, const SZrTypeValue *rhs) {
+    TZrBool lhsFloat = ZR_VALUE_IS_TYPE_FLOAT(lhs->type);
+    TZrBool rhsFloat = ZR_VALUE_IS_TYPE_FLOAT(rhs->type);
+
+    if (!lhsFloat && !rhsFloat) {
+        TZrBool lhsUnsigned = ZR_VALUE_IS_TYPE_UNSIGNED_INT(lhs->type);
+        TZrBool rhsUnsigned = ZR_VALUE_IS_TYPE_UNSIGNED_INT(rhs->type);
+        if (lhsUnsigned && rhsUnsigned) {
+            TZrUInt64 a = lhs->value.nativeObject.nativeUInt64;
+            TZrUInt64 b = rhs->value.nativeObject.nativeUInt64;
+            return a < b ? -1 : (a > b ? 1 : 0);
+        }
+        if (!lhsUnsigned && !rhsUnsigned) {
+            TZrInt64 a = lhs->value.nativeObject.nativeInt64;
+            TZrInt64 b = rhs->value.nativeObject.nativeInt64;
+            return a < b ? -1 : (a > b ? 1 : 0);
+        }
+        if (lhsUnsigned) {
+            TZrInt64 b = rhs->value.nativeObject.nativeInt64;
+            TZrUInt64 a = lhs->value.nativeObject.nativeUInt64;
+            if (b < 0) return 1;
+            return a < (TZrUInt64)b ? -1 : (a > (TZrUInt64)b ? 1 : 0);
+        } else {
+            TZrInt64 a = lhs->value.nativeObject.nativeInt64;
+            TZrUInt64 b = rhs->value.nativeObject.nativeUInt64;
+            if (a < 0) return -1;
+            return (TZrUInt64)a < b ? -1 : ((TZrUInt64)a > b ? 1 : 0);
+        }
+    }
+    {
+        TZrDouble lhsDouble = lhsFloat ? lhs->value.nativeObject.nativeDouble : 0.0;
+        TZrDouble rhsDouble = rhsFloat ? rhs->value.nativeObject.nativeDouble : 0.0;
+        if ((lhsFloat && lhsDouble != lhsDouble) || (rhsFloat && rhsDouble != rhsDouble)) {
+            return 1;
+        }
+        if (lhsFloat && rhsFloat) {
+            return lhsDouble < rhsDouble ? -1 : (lhsDouble > rhsDouble ? 1 : 0);
+        }
+        return lhsFloat ? -zr_container_compare_integer_with_double(rhs, lhsDouble)
+                        : zr_container_compare_integer_with_double(lhs, rhsDouble);
+    }
+}
+
 /* Pair.compareTo 先比较可解释的字符串、数值及对象协议；无协议时的哈希/类型
  * 顺序只是容器的兜底排序，调用方不能把它当成跨运行实例的稳定序列化顺序。
  */
-/** @brief 先判相等，再处理字符串和数字、对象 compareTo，最后以哈希/类型兜底；数字分支存在下方已记录的精度和 unsigned 排序缺陷。 */
+/** @brief 先判相等，再处理字符串和数字、对象 compareTo，最后以哈希/类型兜底；数字分支按数学值精确比较（DB-2）。 */
 static TZrInt64 zr_container_values_compare(SZrState *state, const SZrTypeValue *lhs, const SZrTypeValue *rhs) {
     SZrTypeValue result;
     const TZrChar *lhsText;
     const TZrChar *rhsText;
-    TZrDouble lhsNumber;
-    TZrDouble rhsNumber;
     TZrUInt64 lhsHash;
     TZrUInt64 rhsHash;
 
@@ -4025,17 +4095,11 @@ static TZrInt64 zr_container_values_compare(SZrState *state, const SZrTypeValue 
         return strcmp(lhsText, rhsText);
     }
 
-    /* BUG: UInt64 经 nativeInt64 解释后大于 INT64_MAX 的值会变成负数；
-     * 64 位整数再转 double 还会使 2^53 与 2^53+1 失去顺序，甚至双向比较均返回 1。
-     * Pair.compareTo 通过 kPairMetaMethods 可达；需补齐有符号/无符号边界测试。
-     */
+    /* 已修复（DB-2）：整数按有符号/无符号精确比较，整数与浮点经单调舍入后再精确比较，
+     * 数值相等返回 0；NaN 沿用原先的“大于”兜底。 */
     if ((ZR_VALUE_IS_TYPE_INT(lhs->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(lhs->type) || ZR_VALUE_IS_TYPE_FLOAT(lhs->type)) &&
         (ZR_VALUE_IS_TYPE_INT(rhs->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rhs->type) || ZR_VALUE_IS_TYPE_FLOAT(rhs->type))) {
-        lhsNumber = ZR_VALUE_IS_TYPE_FLOAT(lhs->type) ? lhs->value.nativeObject.nativeDouble
-                                                      : (TZrDouble)lhs->value.nativeObject.nativeInt64;
-        rhsNumber = ZR_VALUE_IS_TYPE_FLOAT(rhs->type) ? rhs->value.nativeObject.nativeDouble
-                                                      : (TZrDouble)rhs->value.nativeObject.nativeInt64;
-        return lhsNumber < rhsNumber ? -1 : 1;
+        return zr_container_numeric_compare(lhs, rhs);
     }
 
     if ((lhs->type == ZR_VALUE_TYPE_OBJECT || lhs->type == ZR_VALUE_TYPE_ARRAY) && lhs->value.object != ZR_NULL) {
@@ -5645,7 +5709,7 @@ static TZrBool zr_container_pair_equals(ZrLibCallContext *context, SZrTypeValue 
  * @return 输入入口拒绝时false；写比较整数时回调true。结果不独立保证线程FINE、跨运行稳定或严格全序。
  *
  * ## Constraints and lifecycle
- * 回调bool与VM返回值数量、threadStatus分开；线程非FINE时外层dispatcher拒绝结果，无错误但false时外层转null。字段值是借用，Core复制决定owner/STRUCT行为；回调不建立跨域、锁或完整字段快照。 other转对象后没有equals入口的owner检查，也不核K/V形状；底层可调用用户equals/compareTo后使用哈希/类型兜底。BUG: 合法Pair数值分量比较仍经过已记录values_compare::numeric-order的double精度与unsigned排序缺陷；此入口引用既有问题，不增加新问题身份。TODO: 沿用户比较重入核分量借用、形状限制与顺序一致性。
+ * 回调bool与VM返回值数量、threadStatus分开；线程非FINE时外层dispatcher拒绝结果，无错误但false时外层转null。字段值是借用，Core复制决定owner/STRUCT行为；回调不建立跨域、锁或完整字段快照。 other转对象后没有equals入口的owner检查，也不核K/V形状；底层可调用用户equals/compareTo后使用哈希/类型兜底。数值分量经 values_compare 的精确数值比较（DB-2 已修复原 double 精度与 unsigned 排序缺陷）。TODO: 沿用户比较重入核分量借用、形状限制与顺序一致性。
  *
  * ## References
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:7599;zr_vm_lib_container/src/zr_vm_lib_container/module.c:7610;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5653;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5663;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5668;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5673;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5675;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5678;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3994;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4034;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4037;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4038;tests/container/test_container_runtime.c:1799;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:620;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:664;zr_vm_library/include/zr_vm_library/native_binding.h:671
