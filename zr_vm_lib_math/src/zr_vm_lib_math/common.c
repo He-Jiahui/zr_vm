@@ -3,6 +3,8 @@
 //
 
 #include "zr_vm_lib_math/math_common.h"
+#include <float.h>
+#include <math.h>
 
 #include <stdio.h>
 
@@ -43,6 +45,33 @@ TZrFloat64 ZrMath_AbsFloat(TZrFloat64 value) {
 
 TZrBool ZrMath_AlmostEqual(TZrFloat64 lhs, TZrFloat64 rhs, TZrFloat64 epsilon) {
     return ZrMath_AbsFloat(lhs - rhs) <= epsilon;
+}
+
+TZrFloat64 ZrMath_NormFromSumOfSquares(TZrFloat64 sumOfSquares, const TZrFloat64 *values, TZrSize count) {
+    TZrFloat64 scale = 0.0;
+    TZrFloat64 scaledSum = 0.0;
+
+    /* 常见输入保持原结果：平方和既未溢出也未下溢时直接开方。 */
+    if (isfinite(sumOfSquares) && sumOfSquares >= DBL_MIN) {
+        return sqrt(sumOfSquares);
+    }
+    for (TZrSize index = 0; index < count; index++) {
+        TZrFloat64 magnitude = fabs(values[index]);
+        if (isnan(magnitude)) {
+            return magnitude;
+        }
+        if (magnitude > scale) {
+            scale = magnitude;
+        }
+    }
+    if (scale == 0.0 || isinf(scale)) {
+        return scale;
+    }
+    for (TZrSize index = 0; index < count; index++) {
+        TZrFloat64 ratio = values[index] / scale;
+        scaledSum += ratio * ratio;
+    }
+    return scale * sqrt(scaledSum);
 }
 
 TZrFloat64 ZrMath_Dot(const TZrFloat64 *lhs, const TZrFloat64 *rhs, TZrSize count) {

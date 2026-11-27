@@ -42,19 +42,27 @@ TZrBool ZrMath_Vector4_Construct(ZrLibCallContext *context, SZrTypeValue *result
     return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Vector4_Length(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限 (1e200,0,0,0) 的平方和溢出为无穷，虽然数学长度仍可由 double 表示。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector4 value; if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4))); return ZR_TRUE;
+    {
+        const TZrFloat64 components[4] = {value.x, value.y, value.z, value.w};
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 4), components, 4));
+    }
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 value; if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: (1e200, 0, 0, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零向量。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector4 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    length = sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4));
+    {
+        const TZrFloat64 components[4] = {value.x, value.y, value.z, value.w};
+        length = ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 4), components, 4);
+    }
     /* BUG: MakeVector4 的新对象初始 nodeMap 容量为 4、load threshold 为 3；前三字段后第四个 w 触发扩桶，
      * HASH_BUCKET Memory_Allocate 失败会静默漏字段。factory 仍返回非空对象，调用方可继续发布它。
      * 同一 factory 发布路径也被 Lerp、MetaAdd、MetaSub、MetaNeg 和 Matrix4x4.mulVector 使用。 */
@@ -72,12 +80,12 @@ TZrBool ZrMath_Vector4_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&lhs, (TZrFloat64 *)&rhs, 4)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_Distance(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: (1e200,0,0,0) 到零点的有限距离可表示，但局部差分的平方先溢出，结果返回无穷。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL; TZrFloat64 d[4];
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector4Object(context->state, other, &rhs)) return ZR_FALSE;
     d[0] = lhs.x - rhs.x; d[1] = lhs.y - rhs.y; d[2] = lhs.z - rhs.z; d[3] = lhs.w - rhs.w;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot(d, d, 4))); return ZR_TRUE;
+    ZrLib_Value_SetFloat(context->state, result, ZrMath_NormFromSumOfSquares(ZrMath_Dot(d, d, 4), d, 4)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL; TZrFloat64 factor = 0.0; SZrObject *object;

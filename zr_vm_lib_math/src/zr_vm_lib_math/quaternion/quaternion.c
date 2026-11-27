@@ -48,9 +48,14 @@ TZrBool ZrMath_Quaternion_Construct(ZrLibCallContext *context, SZrTypeValue *res
 }
 
 TZrBool ZrMath_Quaternion_Length(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 构造器允许有限 double 分量且无范围校验；(1e200,0,0,0) 平方溢出，length 返回无穷。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathQuaternion q; if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w)); return ZR_TRUE;
+    {
+        const TZrFloat64 components[4] = {q.x, q.y, q.z, q.w};
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w, components, 4));
+    }
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion q; if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
@@ -58,10 +63,13 @@ TZrBool ZrMath_Quaternion_LengthSquared(ZrLibCallContext *context, SZrTypeValue 
 }
 TZrBool ZrMath_Quaternion_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 零长度采用单位四元数作为中性回退，区别于 Complex 的零结果。 */
-    /* BUG: 合法有限输入 (1e200,0,0,0) 的平方范数溢出为无穷，除后得到零四元数。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathQuaternion q; TZrFloat64 len; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
-    len = sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
+    {
+        const TZrFloat64 components[4] = {q.x, q.y, q.z, q.w};
+        len = ZrMath_NormFromSumOfSquares(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w, components, 4);
+    }
     if (len <= ZR_MATH_EPSILON) object = ZrMath_MakeQuaternion(context->state, 0.0, 0.0, 0.0, 1.0);
     else object = ZrMath_MakeQuaternion(context->state, q.x/len, q.y/len, q.z/len, q.w/len);
     if (object == ZR_NULL) return ZR_FALSE;

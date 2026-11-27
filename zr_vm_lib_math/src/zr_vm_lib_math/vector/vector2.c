@@ -22,12 +22,14 @@ TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result
 }
 
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限向量 (1e200, 0) 的点积中间值溢出，length 得到无穷；
-     * normalized 沿用该范数后把非零向量压成零向量。详见 ZrMath_Vector2_Normalized 回调。 */
-    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector2 value;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2)));
+    {
+        const TZrFloat64 components[2] = {value.x, value.y};
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 2), components, 2));
+    }
     return ZR_TRUE;
 }
 
@@ -41,13 +43,15 @@ TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
 }
 
 TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: (1e200, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零向量。
-     * BUG: 当新对象/字段键 pin 要扩容满载的 ignored-root 表且 RawMalloc 失败时，
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
+    /* BUG: 当新对象/字段键 pin 要扩容满载的 ignored-root 表且 RawMalloc 失败时，
      * SetFieldCString 可静默漏写 x/y，下面仍把新对象作为成功结果交付。 */
-    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrMathVector2 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    length = sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2));
+    {
+        const TZrFloat64 components[2] = {value.x, value.y};
+        length = ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 2), components, 2);
+    }
     object = length <= ZR_MATH_EPSILON ? ZrMath_MakeVector2(context->state, 0.0, 0.0)
                                        : ZrMath_MakeVector2(context->state, value.x / length, value.y / length);
     if (object == ZR_NULL) return ZR_FALSE;
@@ -66,7 +70,7 @@ TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: (1e200, 0) 到零点的有限距离在平方差阶段溢出，回调返回无穷。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector2 lhs; ZrMathVector2 rhs; SZrObject *other = ZR_NULL;
     TZrFloat64 dx; TZrFloat64 dy;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &lhs) ||
@@ -75,7 +79,8 @@ TZrBool ZrMath_Vector2_Distance(ZrLibCallContext *context, SZrTypeValue *result)
     dx = lhs.x - rhs.x; dy = lhs.y - rhs.y;
     {
         const TZrFloat64 delta[2] = {dx, dy};
-        ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot(delta, delta, 2)));
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(ZrMath_Dot(delta, delta, 2), delta, 2));
     }
     return ZR_TRUE;
 }

@@ -36,19 +36,27 @@ TZrBool ZrMath_Vector3_Construct(ZrLibCallContext *context, SZrTypeValue *result
 }
 
 TZrBool ZrMath_Vector3_Length(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限 (1e200, 0, 0) 的平方和先溢出为无穷，sqrt 后仍为无穷，而数学长度可由 double 表示。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector3 value; if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 3))); return ZR_TRUE;
+    {
+        const TZrFloat64 components[3] = {value.x, value.y, value.z};
+        ZrLib_Value_SetFloat(context->state, result,
+                             ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 3), components, 3));
+    }
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 value; if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 3)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限 (1e200, 0, 0) 的平方范数溢出；非零分量再除以无穷变成零，返回零而非单位向量。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector3 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
-    length = sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 3));
+    {
+        const TZrFloat64 components[3] = {value.x, value.y, value.z};
+        length = ZrMath_NormFromSumOfSquares(ZrMath_Dot(components, components, 3), components, 3);
+    }
     object = length <= ZR_MATH_EPSILON ? ZrMath_MakeVector3(context->state, 0.0, 0.0, 0.0)
                                        : ZrMath_MakeVector3(context->state, value.x / length, value.y / length, value.z / length);
     if (object == ZR_NULL) return ZR_FALSE;
@@ -63,11 +71,11 @@ TZrBool ZrMath_Vector3_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((TZrFloat64 *)&lhs, (TZrFloat64 *)&rhs, 3)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Distance(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* BUG: 有限 (1e200, 0, 0) 到零点的距离可表示，但平方差先溢出，最终回调返回无穷。 */
+    /* 已修复（DB-1）：平方和溢出/下溢时 ZrMath_NormFromSumOfSquares 按最大分量缩放。 */
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; TZrFloat64 d[3];
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;
-    d[0] = lhs.x - rhs.x; d[1] = lhs.y - rhs.y; d[2] = lhs.z - rhs.z; ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot(d, d, 3))); return ZR_TRUE;
+    d[0] = lhs.x - rhs.x; d[1] = lhs.y - rhs.y; d[2] = lhs.z - rhs.z; ZrLib_Value_SetFloat(context->state, result, ZrMath_NormFromSumOfSquares(ZrMath_Dot(d, d, 3), d, 3)); return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; TZrFloat64 factor = 0.0; SZrObject *object;
