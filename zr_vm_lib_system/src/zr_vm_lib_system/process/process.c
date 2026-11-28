@@ -14,6 +14,7 @@
 
 #include "zr_vm_lib_system/process.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -78,8 +79,14 @@ TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeVal
         /* TODO: 核对支持平台的 time_t 宽度；长毫秒值转为较窄 time_t 前没有可表示范围检查。 */
         sleepTime.tv_sec = (time_t)(clampedMilliseconds / 1000);
         sleepTime.tv_nsec = (long)((clampedMilliseconds % 1000) * 1000000);
-        /* BUG: nanosleep 的 EINTR/其他错误未检查，剩余时长未重试；下方仍写 null 并报告成功。 */
-        nanosleep(&sleepTime, ZR_NULL);
+        /* 被信号打断（EINTR）时按剩余时长重试，睡满请求时长（DB-8）。其余 errno 仅 EINVAL/EFAULT，
+         * 对此处构造的 timespec 不可达，不单独报告。 */
+        {
+            struct timespec remaining;
+            while (nanosleep(&sleepTime, &remaining) != 0 && errno == EINTR) {
+                sleepTime = remaining;
+            }
+        }
     }
 #endif
 
