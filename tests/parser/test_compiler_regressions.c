@@ -2415,6 +2415,56 @@ void test_native_network_loopback_runtime_returns_expected_payload(void) {
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
 }
+/* DB-9：零字节 UDP 数据报是合法报文；send("") 发出长度 0 后，receive 必须返回 payload 为空、
+ * length 为 0 的 UdpPacket，而不是与超时同形的 null。 */
+void test_native_network_udp_empty_datagram_round_trips(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Native Network UDP Empty Datagram Round Trips";
+    const char *source =
+            "let network = import(\"zr.network\");\n"
+            "var socket = network.udp.bind(\"127.0.0.1\", 0);\n"
+            "var sent = socket.send(\"127.0.0.1\", socket.port(), \"\");\n"
+            "var packet = socket.receive(16, 3000);\n"
+            "socket.close();\n"
+            "if (sent != 0) { return \"UDP_EMPTY_FAIL send\"; }\n"
+            "if (packet == null) { return \"UDP_EMPTY_FAIL null\"; }\n"
+            "if (packet.payload != \"\" || packet.length != 0) { return \"UDP_EMPTY_FAIL payload\"; }\n"
+            "return \"UDP_EMPTY_PASS\";\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+    SZrString *resultString;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Loopback UDP empty datagram",
+                 "Testing that a zero-length UDP datagram is received as an empty packet instead of null");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(state->global));
+    sourceName = ZrCore_String_CreateFromNative(state, "native_network_udp_empty_datagram_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+    resultString = ZR_CAST_STRING(state, result.value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("UDP_EMPTY_PASS", ZrCore_String_GetNativeString(resultString));
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
 /* BUG: global 建立后若 Unity 硬断言失败，会跳过末尾 CommonGlobalState_Free，遗留本用例资源。 */
 void test_native_network_loopback_project_run_returns_expected_payload(void) {
     SZrRegressionTestTimer timer;

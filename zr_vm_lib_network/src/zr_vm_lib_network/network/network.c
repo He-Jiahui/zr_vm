@@ -777,9 +777,9 @@ TZrBool ZrNetwork_UdpSocketReceive(SZrNetworkUdpSocket *socket, TZrUInt32 timeou
         return ZR_FALSE;
     }
     received = recvfrom(socketHandle, (char *)buffer, (int)bufferSize, 0, (struct sockaddr *)&storage, &storageLength);
-    /* BUG: UDP 的零字节数据报是合法报文。UdpSocket.send(host, port, "") 会发送长度 0，
-     * 此处却将 recvfrom 返回 0 视作失败，VM 的 receive 因而返回 null 并丢失发送端。 */
-    if (received <= 0) {
+    /* UDP 的零字节数据报是合法报文（UdpSocket.send(host, port, "") 发送长度 0）：recvfrom 返回 0
+     * 时按成功交付空包与发送端，只有负值才是 socket 错误（DB-9）。 */
+    if (received < 0) {
         return ZR_FALSE;
     }
     if (outRemoteEndpoint != ZR_NULL) {

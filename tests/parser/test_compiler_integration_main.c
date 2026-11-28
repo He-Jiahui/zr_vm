@@ -91,6 +91,7 @@ extern void test_reserved_type_query_targets_compile_without_explicit_imports(vo
 extern void test_qualified_container_types_compile_through_function_predeclaration_paths(void);
 extern void test_native_network_loopback_runtime_returns_expected_payload(void);
 extern void test_native_network_loopback_project_run_returns_expected_payload(void);
+extern void test_native_network_udp_empty_datagram_round_trips(void);
 extern void test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data(void);
 extern void test_project_local_struct_pair_shadows_native_pair_at_runtime(void);
 extern void test_lsp_language_feature_matrix_runtime_returns_expected_total(void);
@@ -275,6 +276,7 @@ int main(void) {
     RUN_TEST(test_qualified_container_types_compile_through_function_predeclaration_paths);
     RUN_TEST(test_native_network_loopback_runtime_returns_expected_payload);
     RUN_TEST(test_native_network_loopback_project_run_returns_expected_payload);
+    RUN_TEST(test_native_network_udp_empty_datagram_round_trips);
     RUN_TEST(test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data);
     RUN_TEST(test_project_local_struct_pair_shadows_native_pair_at_runtime);
     RUN_TEST(test_lsp_language_feature_matrix_runtime_returns_expected_total);

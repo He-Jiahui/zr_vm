@@ -195,9 +195,8 @@ static TZrBool zr_network_udp_receive(ZrLibCallContext *context, SZrTypeValue *r
     }
 
     memset(&remoteEndpoint, 0, sizeof(remoteEndpoint));
-    /* BUG: 空 datagram 可由同一模块的 send("") 发出，recvfrom 成功返回 0 时
-     * network.c 的 UdpSocketReceive 将 received <= 0 判为失败，此处把它作为
-     * 超时返回 null；应区分有效零字节包、超时与 socket 错误。 */
+    /* 空 datagram（send("") 发出）由 UdpSocketReceive 作为长度 0 的成功结果交付，
+     * 这里构造 payload 为空的 UdpPacket；false 仅表示超时或 socket 错误（DB-9）。 */
     if (!ZrNetwork_UdpSocketReceive(&handle->value.udpSocket,
                                     timeoutMs,
                                     buffer,
