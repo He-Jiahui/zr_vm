@@ -20,7 +20,7 @@ else()
 endif()
 set(ZR_VM_FILE_PATH_FIXTURE_ROOT "${CMAKE_BINARY_DIR}/tests/generated/file-path-operations"
         CACHE PATH "Explicitly registered generated filesystem fixture root")
-set(file_path_cases move_self move_self_no_overwrite copy_ancestor move_ancestor move_missing_source
+set(file_path_cases move_self move_self_no_overwrite copy_ancestor move_ancestor copy_descendant move_descendant move_missing_source
         copy_self_control copy_sibling_control move_sibling_control copy_component_prefix_control join_overflow join_control)
 if(WIN32)
     list(APPEND file_path_cases unc_root drive_relative)

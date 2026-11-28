@@ -85,6 +85,20 @@ static void filesystem_case(const char *name, char *root) {
         check(matches(siblingFile, "sibling payload"), "ancestor rejection preserves sibling data");
         return;
     }
+    if (strcmp(name, "copy_descendant") == 0 || strcmp(name, "move_descendant") == 0) {
+        /* A directory must not be copied or moved into its own subtree: the copy would
+         * re-enumerate the new target and grow without bound. */
+        if (!join(root, "nest/source", source) || !join(source, "child", target) ||
+            !join(source, "payload.txt", sourceFile)) return;
+        check(ZrLibrary_File_CreateDirectories(source) && write_file(sourceFile, "source payload"),
+              "create source directory with owned payload");
+        success = strcmp(name, "copy_descendant") == 0
+                ? ZrLibrary_File_Copy(source, target, ZR_TRUE) : ZrLibrary_File_Move(source, target, ZR_TRUE);
+        check(!success, "descendant target inside the source directory is rejected");
+        check(matches(sourceFile, "source payload"), "descendant rejection preserves the source payload");
+        check(ZrLibrary_File_Exist(target) == ZR_LIBRARY_FILE_NOT_EXIST, "descendant rejection creates no target");
+        return;
+    }
     if (!join(root, "source.txt", source) || !join(root, "target.txt", target)) return;
     if (strcmp(name, "move_missing_source") == 0) {
         check(write_file(target, "target payload"), "create an existing overwrite target");
