@@ -62,6 +62,7 @@ extern void test_ownership_intrinsic_share_expression_consumes_unique_owner(void
 extern void test_current_ownership_surface_emits_dedicated_opcodes(void);
 extern void test_ownership_intrinsics_emit_dedicated_opcodes_and_execute(void);
 extern void test_ownership_reference_views_and_gc_bridge_emit_dedicated_opcodes(void);
+extern void test_native_network_payload_keeps_embedded_nul_bytes(void);
 extern void test_ownership_unique_share_runtime_moves_source_to_null(void);
 extern void test_ownership_reference_views_and_gc_bridge_runtime_follow_surface_contract(void);
 extern void test_ownership_generic_real_fixture_executes_session_lifecycle(void);
@@ -311,6 +312,7 @@ int main(void) {
     RUN_TEST(test_repeated_constructor_string_arguments_survive_quickening_across_calls);
     RUN_TEST(test_initializer_bound_local_is_visible_on_next_source_line);
     RUN_TEST(test_noop_primitive_casts_do_not_emit_conversion_opcodes);
+    RUN_TEST(test_native_network_payload_keeps_embedded_nul_bytes);
     RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);
     RUN_TEST(test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths);
     RUN_TEST(test_w2_load_typed_arithmetic_probe_reports_residual_candidates);
