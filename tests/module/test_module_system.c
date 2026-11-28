@@ -7,10 +7,17 @@
 // Created by Auto on 2025/01/XX.
 //
 
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L /* sigaction/setitimer/clock_gettime for the DB-8 sleep test */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if !defined(_WIN32)
+#include <signal.h>
+#include <sys/time.h>
+#endif
 #include "unity.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -1565,6 +1572,72 @@ static void test_module_export_collection(void) {
 }
 
 // ==================== 4. 模块缓存机制 ====================
+
+#if !defined(_WIN32)
+static void test_system_sleep_alarm_handler(int signalNumber) {
+    (void)signalNumber;
+}
+
+/* DB-8：sleepMilliseconds 在 POSIX 上必须睡满请求时长；被不带 SA_RESTART 的信号打断时
+ * nanosleep 返回 EINTR，实现需按剩余时间重试，而不是提前返回成功。 */
+static void test_system_sleep_survives_signal_interruption(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Process Sleep Survives Signal Interruption";
+    const char *source =
+            "let system = import(\"zr.system\");\n"
+            "system.process.sleepMilliseconds(300);\n"
+            "return 1;\n";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        TZrInt64 result = 0;
+        struct sigaction action;
+        struct sigaction previous;
+        struct itimerval alarmAt;
+        struct itimerval disarm;
+        struct timespec started;
+        struct timespec finished;
+        long elapsedMs;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "system_sleep_eintr_test.zr", 26);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        memset(&action, 0, sizeof(action));
+        action.sa_handler = test_system_sleep_alarm_handler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = 0; /* no SA_RESTART: nanosleep must see EINTR */
+        TEST_ASSERT_EQUAL_INT(0, sigaction(SIGALRM, &action, &previous));
+        memset(&alarmAt, 0, sizeof(alarmAt));
+        memset(&disarm, 0, sizeof(disarm));
+        alarmAt.it_value.tv_usec = 50000;
+        clock_gettime(CLOCK_MONOTONIC, &started);
+        TEST_ASSERT_EQUAL_INT(0, setitimer(ITIMER_REAL, &alarmAt, ZR_NULL));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+        clock_gettime(CLOCK_MONOTONIC, &finished);
+        setitimer(ITIMER_REAL, &disarm, ZR_NULL);
+        sigaction(SIGALRM, &previous, ZR_NULL);
+
+        elapsedMs = (long)(finished.tv_sec - started.tv_sec) * 1000L +
+                    (long)(finished.tv_nsec - started.tv_nsec) / 1000000L;
+        TEST_ASSERT_EQUAL_INT64(1, result);
+        TEST_ASSERT_TRUE_MESSAGE(elapsedMs >= 290, "sleep returned early after a signal interrupted it");
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+#endif
 
 static void test_module_cache_operations(void) {
     SZrTestTimer timer;
@@ -8074,6 +8147,9 @@ int main(void) {
 
     // 4. 模块缓存机制
     RUN_TEST(test_module_cache_operations);
+#if !defined(_WIN32)
+    RUN_TEST(test_system_sleep_survives_signal_interruption);
+#endif
 
     // 5. 内部模块导入 helper / zr.import 隐藏
     RUN_TEST(test_module_import_helper_and_hidden_zr_import);
