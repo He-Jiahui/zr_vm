@@ -31,6 +31,8 @@ typedef struct ZrNetworkVmHandle {
 SZrObject *zr_network_self_object(const ZrLibCallContext *context);
 /** @brief 将网络层错误规范化为 VM 运行时异常，并返回 ZR_FALSE 便于调用方传播。 */
 TZrBool zr_network_raise_runtime_error(SZrState *state, const TZrChar *message);
+/** @brief 按显式字节数把收到的数据设为 VM 字符串（可含内嵌 NUL）；创建失败时与 ZrLib_Value_SetString 一样抛内存异常。 */
+void zr_network_set_bytes_string(SZrState *state, SZrTypeValue *value, const TZrByte *bytes, TZrSize length);
 /** @brief 创建带模块类型的 VM 对象；类型暂不可用时回退为普通对象。 */
 SZrObject *zr_network_new_typed_object(SZrState *state, const TZrChar *moduleName, const TZrChar *typeName);
 /** @brief 把构造完成的对象设为原生函数结果。 */

@@ -222,10 +222,8 @@ static TZrBool zr_network_tcp_stream_read(ZrLibCallContext *context, SZrTypeValu
     }
 
     buffer[readLength] = '\0';
-    /* BUG: TCP 可读出含 NUL 的字节，但 SetString 走 C 字符串长度，首个 NUL 后的
-     * 已读字节会从返回值消失；应按 readLength 构造有显式长度的脚本字符串。证据：
-     * StreamRead 按 recv 长度返回，native_binding_create_string 使用原生字符串长度。 */
-    ZrLib_Value_SetString(context->state, result, (const TZrChar *) buffer);
+    /* 按 readLength 建串，内嵌 NUL 后的已读字节不丢失（DB-10）。 */
+    zr_network_set_bytes_string(context->state, result, buffer, readLength);
     free(buffer);
     return ZR_TRUE;
 }
@@ -240,15 +238,14 @@ static TZrBool zr_network_tcp_stream_write(ZrLibCallContext *context, SZrTypeVal
         return ZR_FALSE;
     }
 
-    /* BUG: 脚本字符串可保存嵌入 NUL，但 strlen 使 write 只发送其前缀；应使用
-     * ZrCore_String_GetByteLength(text) 指定真实字节数。 */
+    /* 按脚本字符串的真实字节数发送，内嵌 NUL 不截断（DB-10）。 */
     nativeText = ZrCore_String_GetNativeString(text);
     /* BUG: transport 分批 send 成功后若后续 send 失败，outWritten 仍为 0；本回调
      * 返回 0 掩盖了已发送的前缀，调用方重试可能重复发送。证据：network.c 的
      * StreamWrite 仅在全部成功后写出 total。 */
     if (!ZrNetwork_StreamWrite(&handle->value.stream,
                                (const TZrByte *) nativeText,
-                               nativeText != ZR_NULL ? strlen(nativeText) : 0,
+                               nativeText != ZR_NULL ? ZrCore_String_GetByteLength(text) : 0,
                                &written)) {
         written = 0;
     }
