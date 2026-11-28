@@ -1427,6 +1427,50 @@ static void test_script_level_variables_as_entry_locals(void) {
 
 // ==================== 2. pub/pri/pro 可见性修饰符解析 ====================
 
+/* DB-7：system.gc.collect 的 kind 必须整段字节精确匹配；"full\x00tail" 含内嵌 NUL，
+ * 不得被 C 字符串比较截断成 "full"。以 10 次调用的 fullCollectionCount 差值判断是否真的做了 full 收集，
+ * 与后台自动收集的噪声无关。 */
+static void test_system_gc_collect_rejects_embedded_nul_kind(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System GC Collect Rejects Embedded NUL Kind";
+    const char *source =
+            "let system = import(\"zr.system\");\n"
+            "fn fullDelta(kind: string): int {\n"
+            "    var before = system.gc.get_stats().fullCollectionCount;\n"
+            "    var i = 0;\n"
+            "    while (i < 10) { system.gc.collect(kind); i = i + 1; }\n"
+            "    return system.gc.get_stats().fullCollectionCount - before;\n"
+            "}\n"
+            "var embedded = fullDelta(\"full\\x00tail\");\n"
+            "var full = fullDelta(\"full\");\n"
+            "if (full - embedded >= 10) { return 1; }\n"
+            "return 0;\n";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "system_gc_embedded_nul_kind_test.zr", 35);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_visibility_modifiers_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Visibility Modifiers Parsing";
@@ -8071,6 +8115,7 @@ int main(void) {
 
     // 3. 模块导出收集
     RUN_TEST(test_module_export_collection);
+    RUN_TEST(test_system_gc_collect_rejects_embedded_nul_kind);
 
     // 4. 模块缓存机制
     RUN_TEST(test_module_cache_operations);
