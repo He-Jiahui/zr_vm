@@ -155,6 +155,7 @@ static TZrBool system_gc_read_collection_kind(const ZrLibCallContext *context,
                                               EZrGarbageCollectCollectionKind *outKind) {
     SZrString *kindString = ZR_NULL;
     const TZrChar *kindText = ZR_NULL;
+    TZrSize kindLength = 0;
 
     if (context == ZR_NULL || outKind == ZR_NULL) {
         return ZR_FALSE;
@@ -174,17 +175,17 @@ static TZrBool system_gc_read_collection_kind(const ZrLibCallContext *context,
         return ZR_FALSE;
     }
 
-    /* BUG: VM native-string view 可含内嵌 NUL；合法 token "full\x00tail" 会被 strcmp 当作 "full" 接受。
-     * API 要求整段字节精确匹配 minor/major/full；此处需要长度感知比较。 */
-    if (strcmp(kindText, "minor") == 0) {
+    /* 整段字节精确匹配 minor/major/full（DB-7）：VM 字符串可含内嵌 NUL，"full\x00tail" 不得按 C 字符串截断后接受。 */
+    kindLength = ZrCore_String_GetByteLength(kindString);
+    if (kindLength == 5u && memcmp(kindText, "minor", 5u) == 0) {
         *outKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
         return ZR_TRUE;
     }
-    if (strcmp(kindText, "major") == 0) {
+    if (kindLength == 5u && memcmp(kindText, "major", 5u) == 0) {
         *outKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR;
         return ZR_TRUE;
     }
-    if (strcmp(kindText, "full") == 0) {
+    if (kindLength == 4u && memcmp(kindText, "full", 4u) == 0) {
         *outKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
         return ZR_TRUE;
     }
