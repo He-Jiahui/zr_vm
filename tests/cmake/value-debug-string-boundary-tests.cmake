@@ -10,7 +10,10 @@ set_target_properties(zr_vm_value_debug_string_bounds_test PROPERTIES C_STANDARD
 if(MSVC)
     target_compile_options(zr_vm_value_debug_string_bounds_test PRIVATE /W4 /utf-8)
 else()
-    target_compile_options(zr_vm_value_debug_string_bounds_test PRIVATE -Wall -Wextra -Werror)
+    # The oracle intentionally truncates `expected` to the same CAPACITY as the
+    # product's bounded debug string; GCC 14 -Wformat-truncation flags exactly that.
+    target_compile_options(zr_vm_value_debug_string_bounds_test PRIVATE -Wall -Wextra -Werror
+            -Wno-format-truncation)
 endif()
 foreach(case IN ITEMS long_type long_key long_value long_array object_exact_fit
         object_exact_capacity short_object short_array preview_10 preview_11)
