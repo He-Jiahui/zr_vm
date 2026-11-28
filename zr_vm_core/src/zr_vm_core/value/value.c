@@ -563,6 +563,33 @@ SZrString *ZrCore_Value_CallMetaToString(struct SZrState *state, SZrTypeValue *v
     return ZR_NULL;
 }
 // 将值转换为调试字符串，包含详细信息（用于测试和调试）
+/* 向固定调试缓冲追加格式化文本（DB-5）。snprintf 返回“本应写入”的长度，旧代码直接累加到 offset，
+ * 文本达到容量后 offset 越过缓冲尾、剩余长度按无符号回绕，后续追加与结尾 NUL 都会越界写。
+ * 这里在截断时把 offset 钳在最后一个字节（留给结尾 NUL），结果与一次性 snprintf 截断的前缀相同。 */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 3, 4)))
+#endif
+static void value_debug_appendf(char *buffer, TZrSize *offset, const char *format, ...) {
+    const TZrSize last = ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - 1u;
+    TZrSize remaining;
+    va_list arguments;
+    int written;
+
+    if (*offset >= last) {
+        *offset = last;
+        return;
+    }
+    remaining = ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - *offset;
+    va_start(arguments, format);
+    written = vsnprintf(buffer + *offset, remaining, format, arguments);
+    va_end(arguments);
+    if (written < 0) {
+        buffer[*offset] = '\0';
+        return;
+    }
+    *offset = (TZrSize)written >= remaining ? last : *offset + (TZrSize)written;
+}
+
 SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZrCore_String_CreateFromNative(state, "<null>");
@@ -589,7 +616,7 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
                 }
             }
 
-            offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "<object type=%s>{", typeName);
+            value_debug_appendf(buffer, &offset, "<object type=%s>{", typeName);
 
             // 遍历 nodeMap 获取字段（最多展示预览上限）
             TZrSize fieldCount = 0;
@@ -605,20 +632,20 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
                             TZrNativeString keyNative = ZrCore_String_GetNativeString(keyStr);
                             if (keyNative != ZR_NULL) {
                                 if (fieldCount > 0) {
-                                    offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, ", ");
+                                    value_debug_appendf(buffer, &offset, ", ");
                                 }
-                                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "%s : ", keyNative);
+                                value_debug_appendf(buffer, &offset, "%s : ", keyNative);
 
                                 // 获取值的字符串表示
                                 SZrString *valueStr = ZrCore_Value_ConvertToString(state, &pair->value);
                                 if (valueStr != ZR_NULL) {
                                     TZrNativeString valueNative = ZrCore_String_GetNativeString(valueStr);
                                     if (valueNative != ZR_NULL) {
-                                        offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "%s",
+                                        value_debug_appendf(buffer, &offset, "%s",
                                                            valueNative);
                                     }
                                 } else {
-                                    offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "<?>");
+                                    value_debug_appendf(buffer, &offset, "<?>");
                                 }
                                 fieldCount++;
                             }
@@ -630,15 +657,15 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
 
             // 如果有更多字段，添加省略号
             if (totalFieldCount > maxElementsToShow) {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, ", ...");
+                value_debug_appendf(buffer, &offset, ", ...");
             }
 
             // 只有当总数达到预览上限时才显示 count 信息
             if (totalFieldCount >= maxElementsToShow) {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, " | count = %lu}",
+                value_debug_appendf(buffer, &offset, " | count = %lu}",
                                    (unsigned long) totalFieldCount);
             } else {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "}");
+                value_debug_appendf(buffer, &offset, "}");
             }
             break;
         }
@@ -653,7 +680,7 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
 
             // 尝试从 nodeMap 中获取数组元素（假设数组元素通过 nodeMap 存储）
             // 注意：这可能不是数组的实际存储方式，需要根据实际实现调整
-            offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "[");
+            value_debug_appendf(buffer, &offset, "[");
 
             TZrSize elementCount = 0;
             TZrSize totalElementCount = 0;
@@ -663,17 +690,17 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
                     SZrHashKeyValuePair *pair = obj->nodeMap.buckets[i];
                     while (pair != ZR_NULL && elementCount < maxElementsToShow) {
                         if (elementCount > 0) {
-                            offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, ", ");
+                            value_debug_appendf(buffer, &offset, ", ");
                         }
                         // 获取值的字符串表示
                         SZrString *valueStr = ZrCore_Value_ConvertToString(state, &pair->value);
                         if (valueStr != ZR_NULL) {
                             TZrNativeString valueNative = ZrCore_String_GetNativeString(valueStr);
                             if (valueNative != ZR_NULL) {
-                                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "%s", valueNative);
+                                value_debug_appendf(buffer, &offset, "%s", valueNative);
                             }
                         } else {
-                            offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "<?>");
+                            value_debug_appendf(buffer, &offset, "<?>");
                         }
                         elementCount++;
                         pair = pair->next;
@@ -683,15 +710,15 @@ SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *valu
 
             // 如果有更多元素，添加省略号
             if (totalElementCount > maxElementsToShow) {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, ", ...");
+                value_debug_appendf(buffer, &offset, ", ...");
             }
 
             // 只有当总数达到预览上限时才显示 count 信息
             if (totalElementCount >= maxElementsToShow) {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, " | count = %lu]",
+                value_debug_appendf(buffer, &offset, " | count = %lu]",
                                    (unsigned long) totalElementCount);
             } else {
-                offset += snprintf(buffer + offset, ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH - offset, "]");
+                value_debug_appendf(buffer, &offset, "]");
             }
             break;
         }
