@@ -12,8 +12,10 @@ if (MSVC)
     target_compile_options(zr_vm_ssa_integer_proof_producer PRIVATE
             "/FI${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_proof_shim.h")
 else ()
-    target_compile_options(zr_vm_ssa_integer_proof_producer PRIVATE -include
-            "${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_proof_shim.h")
+    # SHELL: keeps "-include <file>" together; the settings copied above already carry an
+    # -include and CMake de-duplicates repeated plain "-include" tokens.
+    target_compile_options(zr_vm_ssa_integer_proof_producer PRIVATE
+            "SHELL:-include \"${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_proof_shim.h\"")
 endif ()
 
 add_executable(zr_vm_ssa_source_integer_expression_proof_test

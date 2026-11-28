@@ -73,7 +73,9 @@ else ()
             "${CMAKE_SOURCE_DIR}/zr_vm_parser/include" "${CMAKE_SOURCE_DIR}/zr_vm_library/include"
             "${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser"
             "${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler"
-            "${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir")
+            "${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir"
+            # ssa_literal_script_fixture.h includes exec_ir/exec_ir_mutation_internal.h (core private).
+            "${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core")
     target_compile_definitions(zr_vm_ssa_source_descriptor_oom_test PRIVATE
             UNITY_INCLUDE_CONFIG_H UNITY_INCLUDE_DOUBLE UNITY_DOUBLE_PRECISION=1e-6
             UNITY_USE_FLUSH_STDOUT ZR_LIBRARY_TYPE_STATIC=1

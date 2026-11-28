@@ -17,10 +17,12 @@ if (MSVC)
     target_compile_options(zr_vm_ssa_integer_fault_producer PRIVATE
             "/FI${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h")
 else ()
-    target_compile_options(zr_vm_ssa_integer_fault_private_parser PRIVATE -include
-            "${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_faults_graph_shim.h")
-    target_compile_options(zr_vm_ssa_integer_fault_producer PRIVATE -include
-            "${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h")
+    # SHELL: keeps "-include <file>" together; the settings copied above already carry an
+    # -include and CMake de-duplicates repeated plain "-include" tokens.
+    target_compile_options(zr_vm_ssa_integer_fault_private_parser PRIVATE
+            "SHELL:-include \"${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_faults_graph_shim.h\"")
+    target_compile_options(zr_vm_ssa_integer_fault_producer PRIVATE
+            "SHELL:-include \"${_zr_returned_execir_root}/tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h\"")
 endif ()
 
 add_executable(zr_vm_ssa_source_integer_expression_faults_test
