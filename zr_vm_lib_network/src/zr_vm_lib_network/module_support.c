@@ -17,6 +17,22 @@ SZrObject *zr_network_self_object(const ZrLibCallContext *context) {
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);
 }
 
+/* 收到的网络数据按 recv 返回的真实长度建串，内嵌 NUL 不截断（DB-10）。 */
+void zr_network_set_bytes_string(SZrState *state, SZrTypeValue *value, const TZrByte *bytes, TZrSize length) {
+    SZrString *stringObject;
+
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+    stringObject = ZrCore_String_Create(state, (TZrNativeString)(bytes != ZR_NULL ? bytes : (const TZrByte *)""),
+                                        bytes != ZR_NULL ? length : 0u);
+    if (stringObject == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
+    ZrLib_Value_SetStringObject(state, value, stringObject);
+}
+
 /** @brief 将底层传输失败写入脚本异常状态；调用者仍须以 false 停止当前 native 调用。 */
 TZrBool zr_network_raise_runtime_error(SZrState *state, const TZrChar *message) {
     SZrTypeValue errorValue;

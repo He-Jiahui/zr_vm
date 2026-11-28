@@ -58,10 +58,8 @@ static TZrBool zr_network_udp_finish_packet(SZrState *state,
         return zr_network_raise_runtime_error(state, "failed to allocate UdpPacket object");
     }
 
-    /* BUG: datagram 可含 NUL；SetString 按 C 字符串长度复制，payload 被截短，
-     * 而 length 仍为 readLength。证据：UdpSocketReceive/recvfrom 返回真实字节数，
-     * native_binding_create_string 用原生字符串长度；修复应显式传入 readLength。 */
-    ZrLib_Value_SetString(state, &fieldValue, (const TZrChar *) buffer);
+    /* payload 按 readLength 建串，与 length 字段一致，内嵌 NUL 不截断（DB-10）。 */
+    zr_network_set_bytes_string(state, &fieldValue, buffer, readLength);
     ZrLib_Object_SetFieldCString(state, packet, "payload", &fieldValue);
     ZrLib_Value_SetInt(state, &fieldValue, (TZrInt64) readLength);
     ZrLib_Object_SetFieldCString(state, packet, "length", &fieldValue);
@@ -154,8 +152,7 @@ static TZrBool zr_network_udp_send(ZrLibCallContext *context, SZrTypeValue *resu
         return ZR_FALSE;
     }
 
-    /* BUG: 脚本字符串允许嵌入 NUL，此处 strlen 使 datagram 仅发送前缀；
-     * 应从 ZrCore_String_GetByteLength(payload) 获取字节数。 */
+    /* 按 payload 的真实字节数发送 datagram，内嵌 NUL 不截断（DB-10）。 */
     nativePayload = ZrCore_String_GetNativeString(payload);
     /* BUG: 对已 close 的 socket 调用 send 时，UdpSocketSend 在 isOpen 检查处
      * 直接返回 false，不写 error；此处把未初始化栈数组当 C 字符串抛出，
@@ -164,7 +161,7 @@ static TZrBool zr_network_udp_send(ZrLibCallContext *context, SZrTypeValue *resu
     if (!ZrNetwork_UdpSocketSend(&handle->value.udpSocket,
                                  &target,
                                  (const TZrByte *)nativePayload,
-                                 nativePayload != ZR_NULL ? strlen(nativePayload) : 0,
+                                 nativePayload != ZR_NULL ? ZrCore_String_GetByteLength(payload) : 0,
                                  &written,
                                  error,
                                  sizeof(error))) {

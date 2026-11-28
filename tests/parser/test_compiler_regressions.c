@@ -2255,6 +2255,68 @@ void test_native_network_optional_argument_import_compiles_without_unknown_param
     ZR_TEST_DIVIDER();
 }
 /* BUG: state 建立后若 Unity 硬断言失败，会跳过末尾 State_Destroy，遗留本用例资源。 */
+/* DB-10：脚本字符串可含内嵌 NUL；TCP write/read 与 UDP send/receive 必须按真实字节数收发，
+ * 不得在首个 NUL 处截断（write/send 曾用 strlen，read/receive 曾按 C 字符串建串）。 */
+void test_native_network_payload_keeps_embedded_nul_bytes(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Native Network Payload Keeps Embedded NUL Bytes";
+    const char *source =
+            "let network = import(\"zr.network\");\n"
+            "var payload = \"a\\x00b\";\n"
+            "var socket = network.udp.bind(\"127.0.0.1\", 0);\n"
+            "var sent = socket.send(\"127.0.0.1\", socket.port(), payload);\n"
+            "var packet = socket.receive(16, 3000);\n"
+            "var listener = network.tcp.listen(\"127.0.0.1\", 0);\n"
+            "var client = network.tcp.connect(\"127.0.0.1\", listener.port());\n"
+            "var server = listener.accept(3000);\n"
+            "var wrote = client.write(payload);\n"
+            "var received = server.read(16, 3000);\n"
+            "server.close();\n"
+            "client.close();\n"
+            "listener.close();\n"
+            "socket.close();\n"
+            "if (payload.length != 3) { return \"NUL_FAIL fixture\"; }\n"
+            "if (sent != 3) { return \"NUL_FAIL udp send\"; }\n"
+            "if (packet == null || packet.length != 3 || packet.payload.length != 3) { return \"NUL_FAIL udp receive\"; }\n"
+            "if (wrote != 3) { return \"NUL_FAIL tcp write\"; }\n"
+            "if (received == null || received.length != 3) { return \"NUL_FAIL tcp read\"; }\n"
+            "return \"NUL_PASS\";\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+    SZrString *resultString;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Loopback payload bytes",
+                 "Testing that TCP and UDP payloads with an embedded NUL keep all bytes in both directions");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(state->global));
+    sourceName = ZrCore_String_CreateFromNative(state, "native_network_payload_embedded_nul_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+    resultString = ZR_CAST_STRING(state, result.value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("NUL_PASS", ZrCore_String_GetNativeString(resultString));
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Static TypeId Targets Compile Without Explicit Imports";
